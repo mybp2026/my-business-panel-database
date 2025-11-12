@@ -277,9 +277,9 @@ create table product_attribute (
         on delete cascade
 );
 
--- =====================================
--- FUNCTIONS AND TRIGGERS
--- =====================================
+-- ==========================================================================
+--                          FUNCTIONS AND TRIGGERS
+-- ==========================================================================
 
 create or replace procedure verify_tenant_payment(_payment_id uuid)
 language plpgsql
@@ -827,9 +827,9 @@ create table score_transaction(
     created_at timestamp default current_timestamp
 );
 
--- =====================================
--- FUNCTIONS AND TRIGGERS
--- =====================================
+-- ==========================================================================
+--                          FUNCTIONS AND TRIGGERS
+-- ==========================================================================
 
 create or replace function check_sale_payment_completion(_sale_id uuid)
 returns boolean as $$
