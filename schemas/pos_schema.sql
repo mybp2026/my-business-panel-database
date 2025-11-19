@@ -112,7 +112,6 @@ create table if not exists return_reason(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-
 insert into return_reason(reason_code, reason_name, description) values
     ('DEFECT', 'Defecto de fábrica', 'El producto tiene un defecto de fabricación'),
     ('SIZE_CHANGE', 'Cambio de talla', 'El cliente requiere una talla diferente'),

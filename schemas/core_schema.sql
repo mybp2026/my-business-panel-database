@@ -32,6 +32,7 @@ create table if not exists document_type(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+truncate table document_type restart identity cascade;
 insert into document_type(type_name, description) values
     ('passport', 'International travel document'),
     ('driver_license', 'Official driving permit'),
@@ -45,7 +46,7 @@ create table if not exists customer_segment(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
     );
-
+truncate table customer_segment restart identity cascade;
 insert into customer_segment(segment_name, segment_hierarchy) values
     ('vip', 1),
     ('loyal', 2),
@@ -61,15 +62,13 @@ create table if not exists customer_segment_margin_type(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+truncate table customer_segment_margin_type restart identity cascade;
 insert into customer_segment_margin_type(type_name, description) values
     ('spending_based', 'Discounts based on total spending'),
     ('seniority_based', 'Discounts based on customer seniority'),
-    ('frequency_based', 'Discounts based on a monthly basis purchase frequency')
+    ('frequency_based', 'Discounts based on a monthly basis purchase frequency'),
+    ('free_selection', 'Customers can select products for free up to a limit')
 on conflict do nothing;
-    -- TODO: agregar free_selection 
---     insert into customer_segment_margin_type(type_name, description) values
---     ('free_selection', 'Customers can select products for free up to a limit')
--- on conflict do nothing;
 
 create table if not exists customer_segment_margin(
     customer_segment_margin_id uuid primary key not null default gen_random_uuid(),
@@ -81,7 +80,6 @@ create table if not exists customer_segment_margin(
     frequency_per_month int check (frequency_per_month >= 0)
 );
 
--- n:m table to link customers to tenants
 create table if not exists tenant_customer(
     tenant_customer_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,  
@@ -109,6 +107,7 @@ create table if not exists role(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+truncate table role restart identity cascade;
 insert into role(role_name, role_hierarchy) values
     ('superuser', 4),
     ('admin', 3),
@@ -135,11 +134,13 @@ create table if not exists currency(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-insert into currency(currency_id_code, currency_name, symbol, exchange_rate_to_usd) values
-('USD', 'US Dollar', '$', 1.000000),
-('EUR', 'Euro', '€', 1.100000),
-('GBP', 'British Pound', '£', 1.250000),
-('JPY', 'Japanese Yen', '¥', 0.009000)
+truncate table currency restart identity cascade;
+insert into currency(currency_code, currency_name, symbol) values
+('CRC', 'Costa Rican Colón', '₡'),
+('USD', 'US Dollar', '$'),
+('EUR', 'Euro', '€'),
+('GBP', 'British Pound', '£'),
+('JPY', 'Japanese Yen', '¥')
 on conflict do nothing;
 
 create table if not exists tax_rate(
@@ -149,6 +150,7 @@ create table if not exists tax_rate(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+truncate table tax_rate restart identity cascade;
 insert into tax_rate(region, rate_percentage) values
 ('US Federal', 10.00),
 ('EU Standard', 20.00),
@@ -164,6 +166,7 @@ create table if not exists subscription_type (
     subscription_type_cost numeric(5,2)
     -- TODO: corroborar como se gestionarán las suscripciones del SaaS
 );
+truncate table subscription_type restart identity cascade;
 insert into subscription_type (subscription_type_name, subscription_type_detail, duration_months, subscription_type_cost) values
 ('Basic', 'Basic subscription plan', 1, 9.99),
 ('Standard', 'Standard subscription plan', 6, 49.99),
@@ -177,6 +180,7 @@ create table if not exists payment_method(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+truncate table payment_method restart identity cascade;
 insert into payment_method(name, description) values
 ('cash', 'Payment made with cash'),
 ('debit_card', 'Payment made with debit card'),
