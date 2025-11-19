@@ -1,9 +1,24 @@
 create schema if not exists core;
 set search_path to core;
 
+create table if not exists region(
+    region_id serial primary key,
+    region_name varchar(100) unique not null,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+);
+insert into region(region_name) values
+    ('Costa Rica'),
+    ('Panama'),
+    ('United States'),
+    ('United Kingdom'),
+    ('Japan')
+on conflict do nothing;
+
 create table if not exists tenant(
     tenant_id uuid primary key default gen_random_uuid(),
     tenant_name varchar(100) unique not null,
+    region_id integer references core.region(region_id) on delete set null,
     contact_email varchar(100) not null,
     is_subscribed boolean default false,
     created_at timestamp default current_timestamp,
@@ -141,15 +156,18 @@ on conflict do nothing;
 create table if not exists tax_rate(
     tax_rate_id serial primary key,
     region varchar(100) unique not null,
+    region_id integer references core.region(region_id) on delete set null,
     rate_percentage numeric(5,2) not null check (rate_percentage >= 0 and rate_percentage <= 100),
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-insert into tax_rate(region, rate_percentage) values
-('US Federal', 10.00),
-('EU Standard', 20.00),
-('UK Standard', 20.00),
-('JP Standard', 8.00)
+insert into core.tax_rate(region, region_id, rate_percentage) values
+('CR Standard', (select region_id from core.region where region_name = 'Costa Rica'), 13.00),
+('PA Standard', (select region_id from core.region where region_name = 'Panama'), 7.00),
+('US Federal', (select region_id from core.region where region_name = 'United States'), 10.00),
+('EU Standard', null, 20.00),
+('UK Standard', (select region_id from core.region where region_name = 'United Kingdom'), 20.00),
+('JP Standard', (select region_id from core.region where region_name = 'Japan'), 8.00)
 on conflict do nothing;
 
 create table if not exists subscription_type ( 
