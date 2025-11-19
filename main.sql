@@ -2,9 +2,24 @@
 create schema if not exists core;
 set search_path to core;
 
+create table if not exists region(
+    region_id serial primary key,
+    region_name varchar(100) unique not null,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+);
+insert into region(region_name) values
+    ('Costa Rica'),
+    ('Panama'),
+    ('United States'),
+    ('United Kingdom'),
+    ('Japan')
+on conflict do nothing;
+
 create table if not exists tenant(
     tenant_id uuid primary key default gen_random_uuid(),
     tenant_name varchar(100) unique not null,
+    region_id integer references core.region(region_id) on delete set null,
     contact_email varchar(100) not null,
     is_subscribed boolean default false,
     created_at timestamp default current_timestamp,
@@ -33,7 +48,6 @@ create table if not exists document_type(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table document_type restart identity cascade;
 insert into document_type(type_name, description) values
     ('passport', 'International travel document'),
     ('driver_license', 'Official driving permit'),
@@ -47,7 +61,6 @@ create table if not exists customer_segment(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
     );
-truncate table customer_segment restart identity cascade;
 insert into customer_segment(segment_name, segment_hierarchy) values
     ('vip', 1),
     ('loyal', 2),
@@ -63,7 +76,6 @@ create table if not exists customer_segment_margin_type(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table customer_segment_margin_type restart identity cascade;
 insert into customer_segment_margin_type(type_name, description) values
     ('spending_based', 'Discounts based on total spending'),
     ('seniority_based', 'Discounts based on customer seniority'),
@@ -108,7 +120,6 @@ create table if not exists role(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table role restart identity cascade;
 insert into role(role_name, role_hierarchy) values
     ('superuser', 4),
     ('admin', 3),
@@ -135,7 +146,6 @@ create table if not exists currency(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table currency restart identity cascade;
 insert into currency(currency_code, currency_name, symbol) values
 ('CRC', 'Costa Rican Colón', '₡'),
 ('USD', 'US Dollar', '$'),
@@ -147,16 +157,18 @@ on conflict do nothing;
 create table if not exists tax_rate(
     tax_rate_id serial primary key,
     region varchar(100) unique not null,
+    region_id integer references core.region(region_id) on delete set null,
     rate_percentage numeric(5,2) not null check (rate_percentage >= 0 and rate_percentage <= 100),
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table tax_rate restart identity cascade;
-insert into tax_rate(region, rate_percentage) values
-('US Federal', 10.00),
-('EU Standard', 20.00),
-('UK Standard', 20.00),
-('JP Standard', 8.00)
+insert into core.tax_rate(region, region_id, rate_percentage) values
+('CR Standard', (select region_id from core.region where region_name = 'Costa Rica'), 13.00),
+('PA Standard', (select region_id from core.region where region_name = 'Panama'), 7.00),
+('US Federal', (select region_id from core.region where region_name = 'United States'), 10.00),
+('EU Standard', null, 20.00),
+('UK Standard', (select region_id from core.region where region_name = 'United Kingdom'), 20.00),
+('JP Standard', (select region_id from core.region where region_name = 'Japan'), 8.00)
 on conflict do nothing;
 
 create table if not exists subscription_type ( 
@@ -167,7 +179,6 @@ create table if not exists subscription_type (
     subscription_type_cost numeric(5,2)
     -- TODO: corroborar como se gestionarán las suscripciones del SaaS
 );
-truncate table subscription_type restart identity cascade;
 insert into subscription_type (subscription_type_name, subscription_type_detail, duration_months, subscription_type_cost) values
 ('Basic', 'Basic subscription plan', 1, 9.99),
 ('Standard', 'Standard subscription plan', 6, 49.99),
@@ -181,7 +192,6 @@ create table if not exists payment_method(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table payment_method restart identity cascade;
 insert into payment_method(name, description) values
 ('cash', 'Payment made with cash'),
 ('debit_card', 'Payment made with debit card'),
@@ -293,7 +303,6 @@ create table if not exists product_attribute (
         references core.product(tenant_id, product_id) 
         on delete cascade
 );
-
 -- ==========================================================================
 --                          FUNCTIONS AND TRIGGERS
 -- ==========================================================================
@@ -523,15 +532,6 @@ drop trigger if exists update_tenant_payment_timestamp on tenant_payment;
 create trigger update_tenant_payment_timestamp before update on tenant_payment
 for each row execute function update_timestamp();
 
-
-
-
-
-
-
-
-
-
 -- SCHEMA: pos_module   
 create schema if not exists pos_module;
 set search_path to pos_module;
@@ -540,8 +540,9 @@ create table if not exists sale(
     sale_id uuid primary key default gen_random_uuid(),
     branch_id uuid not null references core.branch(branch_id) on delete cascade,  
     sale_date timestamp not null default current_timestamp,
-    user_id uuid not null references core.users(user_id) on delete set null,
     currency_id integer references core.currency(currency_id) on delete set null,
+    subtotal_amount numeric(10,2) not null default 0 check (subtotal_amount >= 0),
+    tax_amount numeric(10,2) not null default 0 check (tax_amount >= 0),
     total_amount numeric(10,2) not null,
     is_completed boolean default false,
     created_at timestamp not null default current_timestamp,
@@ -647,7 +648,6 @@ create table if not exists return_reason(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-
 insert into return_reason(reason_code, reason_name, description) values
     ('DEFECT', 'Defecto de fábrica', 'El producto tiene un defecto de fabricación'),
     ('SIZE_CHANGE', 'Cambio de talla', 'El cliente requiere una talla diferente'),
@@ -842,6 +842,7 @@ create table if not exists score_transaction(
 -- ==========================================================================
 --                          FUNCTIONS AND TRIGGERS
 -- ==========================================================================
+
 create or replace function check_sale_payment_completion(_sale_id uuid)
 returns boolean as $$
 declare
@@ -850,7 +851,8 @@ declare
     _is_completed boolean;
     _pending_payments int;
 begin
-    select total_amount, is_completed into _sale_total, _is_completed
+    select total_amount, is_completed 
+    into _sale_total, _is_completed
     from pos_module.sale
     where sale_id = _sale_id;
     
@@ -859,7 +861,6 @@ begin
     end if;
     
     if _is_completed then
-        raise notice '   ℹ️  Sale % is already completed', _sale_id;
         return true;
     end if;
     
@@ -869,7 +870,6 @@ begin
     and verified = false;
     
     if _pending_payments > 0 then
-        raise notice '   ⚠️  Sale % has % pending payment(s)', _sale_id, _pending_payments;
         return false;
     end if;
     
@@ -878,11 +878,10 @@ begin
     where sale_id = _sale_id
     and verified = true;
     
-    raise notice '   💰 Sale total: $%', _sale_total;
+    raise notice '   💰 Sale total (with tax): $%', _sale_total;
     raise notice '   💳 Payments total: $%', _payments_total;
     raise notice '   📊 Difference: $%', (_sale_total - _payments_total);
     
-    -- Validar si los pagos cubren el total (tolerancia de $0.01)
     if abs(_payments_total - _sale_total) <= 0.01 then
         update pos_module.sale
         set is_completed = true,
@@ -891,10 +890,12 @@ begin
         
         raise notice '   ✅ Sale % marked as COMPLETED', _sale_id;
         return true;
+        
     elsif _payments_total > _sale_total then
-        raise warning 'Overpayment detected: Sale total $%, Payments total $%',
+        raise warning 'Overpayment detected: Expected $%, Paid $%',
             _sale_total, _payments_total;
         return false;
+        
     else
         raise notice '   ⏳ Sale % still pending (shortage: $%)', 
             _sale_id, (_sale_total - _payments_total);
@@ -907,6 +908,46 @@ exception
         return false;
 end;
 $$ language plpgsql;
+
+create or replace function link_sale_to_session()
+returns trigger as $$
+declare 
+    _session_id uuid;
+begin
+    select crs.cash_register_session_id into _session_id
+    from pos_module.cash_register_session crs
+    join pos_module.cash_register cr on crs.cash_register_id = cr.cash_register_id
+    where cr.branch_id = new.branch_id
+    and crs.is_active = true
+    limit 1;
+    
+    if _session_id is not null then
+        insert into pos_module.cash_register_sale(
+            cash_register_session_id,
+            sale_id,
+            transaction_time
+        ) values (
+            _session_id,
+            new.sale_id,
+            current_timestamp
+        )
+        on conflict (sale_id) do nothing;
+        
+        raise notice '✅ Sale % linked to session %', new.sale_id, _session_id;
+    else
+        raise warning 'No active cash register session for branch %', new.branch_id;
+    end if;
+    
+    return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists on_sale_completed_link_sale_to_session on pos_module.sale;
+create trigger on_sale_completed_link_sale_to_session
+    after update of is_completed on pos_module.sale
+    for each row
+    when (old.is_completed is false and new.is_completed is true)
+    execute function link_sale_to_session();
 
 create or replace function calculate_bill_total()
 returns trigger as $$
@@ -930,12 +971,40 @@ begin
 end;
 $$ language plpgsql;
 
--- Trigger for return_product 
 drop trigger if exists calculate_total_price_return_product_trigger on pos_module.return_product;
 create trigger calculate_total_price_return_product_trigger
     before insert or update on pos_module.return_product
     for each row
     execute function calculate_total_price();
+
+create or replace function pos_module.get_bill(_sale_id uuid)
+returns table (
+    bill_id uuid,
+    sale_id uuid,
+    tenant_customer_id uuid,
+    currency_id integer,
+    subtotal_amount numeric(10,2),
+    tax_amount numeric(10,2),
+    total_amount numeric(10,2),
+    created_at timestamp,
+    updated_at timestamp
+) as $$
+begin
+    return query
+    select 
+        b.bill_id,
+        b.sale_id,
+        b.tenant_customer_id,
+        b.currency_id,
+        b.subtotal_amount,
+        b.tax_amount,
+        b.total_amount,
+        b.created_at,
+        b.updated_at
+    from pos_module.bill b
+    where b.sale_id = _sale_id;
+end;
+$$ language plpgsql;
 
 create or replace function create_bill()
 returns trigger as $$
@@ -944,7 +1013,9 @@ declare
     _tenant_customer_id uuid;
     _tenant_id uuid;
     _currency_id integer;
-    _total_amount numeric(10,2);
+    _subtotal numeric(10,2);
+    _tax numeric(10,2);
+    _total numeric(10,2);
     _payment_ids uuid[];
 begin
     raise notice '🧾 Creating bill for sale: %', new.sale_id;
@@ -969,11 +1040,15 @@ begin
     where tenant_customer_id = _tenant_customer_id;
     
     _currency_id := new.currency_id;
-    _total_amount := new.total_amount;
+    _subtotal := new.subtotal_amount;  
+    _tax := new.tax_amount;            
+    _total := new.total_amount;        
     
     raise notice '   Customer: %', _tenant_customer_id;
     raise notice '   Tenant: %', _tenant_id;
-    raise notice '   Total: $%', _total_amount;
+    raise notice '   Subtotal: $%', _subtotal;
+    raise notice '   Tax: $%', _tax;
+    raise notice '   Total: $%', _total;
 
     insert into pos_module.bill (
         sale_id,              
@@ -986,14 +1061,13 @@ begin
         new.sale_id,         
         _tenant_customer_id,
         _currency_id,
-        _total_amount,
-        0.00,
-        _total_amount
+        _subtotal,
+        _tax,
+        _total
     ) returning bill_id into _bill_id;
     
     raise notice '   ✅ Bill created: %', _bill_id;
     
-    -- Vincular pagos
     select array_agg(customer_payment_id) into _payment_ids
     from pos_module.customer_payment
     where sale_id = new.sale_id
@@ -1008,32 +1082,26 @@ begin
     where customer_payment_id = any(_payment_ids);
     
     raise notice '   ✅ % payment(s) linked to bill', array_length(_payment_ids, 1);
-
-    
     raise notice '';
     raise notice '🎉 Bill creation completed successfully';
     raise notice '   Bill ID: %', _bill_id;
     raise notice '   Sale ID: %', new.sale_id;
-    raise notice '   Payments: %', array_length(_payment_ids, 1);
-    raise notice '   Total: $%', _total_amount;
-    raise notice '   Products accessible via sale_item (sale_id: %)', new.sale_id;
 
     return new;
     
 exception
     when others then
         raise notice '❌ Error creating bill: %', sqlerrm;
-        raise notice '   SQLSTATE: %', SQLSTATE;
         return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_sale_completed on pos_module.sale;
-create trigger on_sale_completed
+drop trigger if exists on_sale_completed_create_bill on pos_module.sale;
+create trigger on_sale_completed_create_bill
     after update of is_completed on pos_module.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
-    execute function pos_module.create_bill();
+    execute function create_bill();
 
 create or replace function update_on_return()
 returns trigger as $$
@@ -1622,11 +1690,12 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function open_close_cash_register_session(
-_cash_register_id uuid,
-_action varchar(10), 
-_amount numeric(10,2)
-) returns void as $$
+create or replace procedure open_close_cash_register_session(
+    _cash_register_id uuid,
+    _action varchar(10), 
+    _amount numeric(10,2)
+)
+as $$
 declare
     _session_id uuid;
     _session record;
@@ -1694,6 +1763,9 @@ begin
         raise notice '   Closing amount: $%', _session.closing_amount;
         raise notice '   Difference: $%', (_session.closing_amount - _session.opening_amount);
         raise notice '   Duration: %', (_session.closed_at - _session.opened_at);
+        
+    else
+        raise exception 'Invalid action: %. Use "open" or "close"', _action;
     end if;
     
 exception
@@ -2145,3 +2217,5 @@ for each row execute function core.update_timestamp();
 drop trigger if exists update_sale_item_timestamp on pos_module.sale_item;
 create trigger update_sale_item_timestamp before update on pos_module.sale_item
 for each row execute function core.update_timestamp();
+
+
