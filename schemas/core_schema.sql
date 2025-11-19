@@ -32,7 +32,6 @@ create table if not exists document_type(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table document_type restart identity cascade;
 insert into document_type(type_name, description) values
     ('passport', 'International travel document'),
     ('driver_license', 'Official driving permit'),
@@ -46,7 +45,6 @@ create table if not exists customer_segment(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
     );
-truncate table customer_segment restart identity cascade;
 insert into customer_segment(segment_name, segment_hierarchy) values
     ('vip', 1),
     ('loyal', 2),
@@ -62,7 +60,6 @@ create table if not exists customer_segment_margin_type(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table customer_segment_margin_type restart identity cascade;
 insert into customer_segment_margin_type(type_name, description) values
     ('spending_based', 'Discounts based on total spending'),
     ('seniority_based', 'Discounts based on customer seniority'),
@@ -107,7 +104,6 @@ create table if not exists role(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table role restart identity cascade;
 insert into role(role_name, role_hierarchy) values
     ('superuser', 4),
     ('admin', 3),
@@ -134,7 +130,6 @@ create table if not exists currency(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table currency restart identity cascade;
 insert into currency(currency_code, currency_name, symbol) values
 ('CRC', 'Costa Rican Colón', '₡'),
 ('USD', 'US Dollar', '$'),
@@ -150,7 +145,6 @@ create table if not exists tax_rate(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table tax_rate restart identity cascade;
 insert into tax_rate(region, rate_percentage) values
 ('US Federal', 10.00),
 ('EU Standard', 20.00),
@@ -166,7 +160,6 @@ create table if not exists subscription_type (
     subscription_type_cost numeric(5,2)
     -- TODO: corroborar como se gestionarán las suscripciones del SaaS
 );
-truncate table subscription_type restart identity cascade;
 insert into subscription_type (subscription_type_name, subscription_type_detail, duration_months, subscription_type_cost) values
 ('Basic', 'Basic subscription plan', 1, 9.99),
 ('Standard', 'Standard subscription plan', 6, 49.99),
@@ -180,7 +173,6 @@ create table if not exists payment_method(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-truncate table payment_method restart identity cascade;
 insert into payment_method(name, description) values
 ('cash', 'Payment made with cash'),
 ('debit_card', 'Payment made with debit card'),
