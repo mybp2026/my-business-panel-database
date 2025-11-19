@@ -109,15 +109,12 @@ declare
     _currency_id integer;
     _total_amount numeric(10,2);
     _payment_ids uuid[];
-    _products_count integer;
 begin
     raise notice '🧾 Creating bill for sale: %', new.sale_id;
     
     if exists(
-        select 1 
-        from pos_module.bill_payment bp
-        join pos_module.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
-        where cp.sale_id = new.sale_id
+        select 1 from pos_module.bill
+        where sale_id = new.sale_id
     ) then
         raise notice '⚠️  Bill already exists for sale: %', new.sale_id;
         return new;
@@ -142,12 +139,14 @@ begin
     raise notice '   Total: $%', _total_amount;
 
     insert into pos_module.bill (
+        sale_id,              
         tenant_customer_id,
         currency_id,
         subtotal_amount,
         tax_amount,
         total_amount
     ) values (
+        new.sale_id,         
         _tenant_customer_id,
         _currency_id,
         _total_amount,
@@ -157,6 +156,7 @@ begin
     
     raise notice '   ✅ Bill created: %', _bill_id;
     
+    -- Vincular pagos
     select array_agg(customer_payment_id) into _payment_ids
     from pos_module.customer_payment
     where sale_id = new.sale_id
@@ -171,34 +171,15 @@ begin
     where customer_payment_id = any(_payment_ids);
     
     raise notice '   ✅ % payment(s) linked to bill', array_length(_payment_ids, 1);
+
     
-    insert into pos_module.bill_product(
-        bill_id,
-        tenant_id,
-        product_id,
-        quantity,
-        unit_price,
-        total_price
-    )
-    select
-        _bill_id,
-        _tenant_id,
-        si.product_id,
-        si.quantity,
-        si.unit_price,
-        si.total_price
-    from pos_module.sale_item si
-    where si.sale_id = new.sale_id;
-    
-    get diagnostics _products_count = row_count;
-    
-    raise notice '   ✅ % product(s) added to bill', _products_count;
     raise notice '';
     raise notice '🎉 Bill creation completed successfully';
     raise notice '   Bill ID: %', _bill_id;
-    raise notice '   Products: %', _products_count;
+    raise notice '   Sale ID: %', new.sale_id;
     raise notice '   Payments: %', array_length(_payment_ids, 1);
     raise notice '   Total: $%', _total_amount;
+    raise notice '   Products accessible via sale_item (sale_id: %)', new.sale_id;
 
     return new;
     
@@ -220,121 +201,127 @@ create trigger on_sale_completed
 create or replace function update_on_return()
 returns trigger as $$
 declare
-_bill_id uuid;
-_bill_product_record record;
-_total_returned numeric(10,2) := 0;
-_original_subtotal numeric(10,2);
-_original_tax numeric(10,2);
-_original_total numeric(10,2);
-_new_subtotal numeric(10,2);
-_new_tax numeric(10,2);
-_new_total numeric(10,2);
-_tax_rate numeric(5,2);
-_quantity_remaining integer;
+    _bill_id uuid;
+    _sale_item_record record;
+    _total_returned numeric(10,2) := 0;
+    _original_subtotal numeric(10,2);
+    _original_tax numeric(10,2);
+    _original_total numeric(10,2);
+    _new_subtotal numeric(10,2);
+    _new_tax numeric(10,2);
+    _new_total numeric(10,2);
+    _tax_rate numeric(5,2);
+    _quantity_remaining integer;
+    _sale_id uuid;
 begin
-select bp.bill_id into _bill_id
-from pos_module.bill_product bp
-where bp.bill_product_id = new.bill_product_id;
+    select 
+        si.sale_item_id,
+        si.sale_id,
+        si.quantity,
+        si.unit_price,
+        si.total_price
+    into _sale_item_record
+    from pos_module.sale_item si
+    where si.sale_item_id = new.sale_item_id;
+    
+    if not found then
+        raise exception 'Sale item not found: %', new.sale_item_id;
+    end if;
+    
+    _sale_id := _sale_item_record.sale_id;
+    
+    select bill_id into _bill_id
+    from pos_module.bill
+    where sale_id = _sale_id;
+    
+    if _bill_id is null then
+        raise exception 'Bill not found for sale: %', _sale_id;
+    end if;
 
-if _bill_id is null then
-    raise exception 'Bill not found for bill_product_id: %', new.bill_product_id;
-end if;
+    raise notice '📄 Bill ID: %', _bill_id;
+    raise notice '📦 Original sale item:';
+    raise notice '   Quantity: %', _sale_item_record.quantity;
+    raise notice '   Unit price: $%', _sale_item_record.unit_price;
+    raise notice '   Total price: $%', _sale_item_record.total_price;
 
-raise notice '📄 Bill ID: %', _bill_id;
+    if new.quantity > _sale_item_record.quantity then
+        raise exception 'Cannot return more items than purchased. Purchased: %, Attempting to return: %',
+            _sale_item_record.quantity, new.quantity;
+    end if;
 
-select 
-    bp.bill_product_id,
-    bp.quantity,
-    bp.unit_price,
-    bp.total_price
-into _bill_product_record
-from pos_module.bill_product bp
-where bp.bill_product_id = new.bill_product_id;
+    _quantity_remaining := _sale_item_record.quantity - new.quantity;
 
-raise notice '📦 Original product in bill:';
-raise notice '   Quantity: %', _bill_product_record.quantity;
-raise notice '   Unit price: $%', _bill_product_record.unit_price;
-raise notice '   Total price: $%', _bill_product_record.total_price;
+    raise notice '🔢 Return quantity: %', new.quantity;
+    raise notice '🔢 Remaining quantity: %', _quantity_remaining;
 
-if new.quantity > _bill_product_record.quantity then
-    raise exception 'Cannot return more items than purchased. Purchased: %, Attempting to return: %',
-        _bill_product_record.quantity, new.quantity;
-end if;
+    if _quantity_remaining = 0 then
+        delete from pos_module.sale_item
+        where sale_item_id = new.sale_item_id;
 
-_quantity_remaining := _bill_product_record.quantity - new.quantity;
+        raise notice '🗑️  Sale item completely removed (quantity = 0)';
+    else
+        update pos_module.sale_item
+        set quantity = _quantity_remaining,
+            total_price = _quantity_remaining * unit_price,
+            updated_at = current_timestamp
+        where sale_item_id = new.sale_item_id;
 
-raise notice '🔢 Return quantity: %', new.quantity;
-raise notice '🔢 Remaining quantity: %', _quantity_remaining;
+        raise notice '✏️  Sale item quantity updated from % to %', 
+            _sale_item_record.quantity, _quantity_remaining;
+    end if;
 
-if _quantity_remaining = 0 then
-    delete from pos_module.bill_product
-    where bill_product_id = new.bill_product_id;
+    select subtotal_amount, tax_amount, total_amount
+    into _original_subtotal, _original_tax, _original_total
+    from pos_module.bill
+    where bill_id = _bill_id;
 
-    raise notice '🗑️  Product completely removed from bill (quantity = 0)';
-else
-    update pos_module.bill_product
-    set quantity = _quantity_remaining,
-        total_price = _quantity_remaining * unit_price,
+    raise notice '';
+    raise notice '📊 Original bill totals:';
+    raise notice '   Subtotal: $%', _original_subtotal;
+    raise notice '   Tax: $%', _original_tax;
+    raise notice '   Total: $%', _original_total;
+
+    _total_returned := new.quantity * new.unit_price;
+    raise notice '';
+    raise notice '💰 Amount returned: $%', _total_returned;
+
+    _new_subtotal := _original_subtotal - _total_returned;
+
+    if _new_subtotal < 0 then
+        _new_subtotal := 0;
+        raise warning 'Subtotal became negative, setting to 0';
+    end if;
+
+    select rate_percentage into _tax_rate
+    from core.tax_rate
+    where region = 'US Federal'
+    limit 1;
+
+    if _tax_rate is null then
+        _tax_rate := 0;
+        raise warning 'Tax rate not found, using 0%%';
+    end if;
+
+    _new_tax := _new_subtotal * (_tax_rate / 100);
+    _new_total := _new_subtotal + _new_tax;
+
+    raise notice '';
+    raise notice '📊 New bill totals:';
+    raise notice '   Subtotal: $%', _new_subtotal;
+    raise notice '   Tax: $%', _new_tax;
+    raise notice '   Total: $%', _new_total;
+
+    update pos_module.bill
+    set subtotal_amount = _new_subtotal,
+        tax_amount = _new_tax,
+        total_amount = _new_total,
         updated_at = current_timestamp
-    where bill_product_id = new.bill_product_id;
+    where bill_id = _bill_id;
 
-    raise notice '✏️  Product quantity updated from % to %', 
-        _bill_product_record.quantity, _quantity_remaining;
-end if;
+    raise notice '';
+    raise notice '✅ Bill % updated successfully', _bill_id;
 
-select subtotal_amount, tax_amount, total_amount
-into _original_subtotal, _original_tax, _original_total
-from pos_module.bill
-where bill_id = _bill_id;
-
-raise notice '';
-raise notice '📊 Original bill totals:';
-raise notice '   Subtotal: $%', _original_subtotal;
-raise notice '   Tax: $%', _original_tax;
-raise notice '   Total: $%', _original_total;
-
-_total_returned := new.quantity * new.unit_price;
-
-raise notice '';
-raise notice '💰 Amount returned: $%', _total_returned;
-
-_new_subtotal := _original_subtotal - _total_returned;
-
-if _new_subtotal < 0 then
-    _new_subtotal := 0;
-    raise warning 'Subtotal became negative, setting to 0';
-end if;
-
-select rate_percentage into _tax_rate
-from core.tax_rate
-where region = 'US Federal'  -- TODO: Hacer dinámico según tenant
-limit 1;
-
-if _tax_rate is null then
-    _tax_rate := 0;
-    raise warning 'Tax rate not found, using 0%%';
-end if;
-
-_new_tax := _new_subtotal * (_tax_rate / 100);
-_new_total := _new_subtotal + _new_tax;
-
-raise notice '';
-raise notice '📊 New bill totals:';
-raise notice '   Subtotal: $%', _new_subtotal;
-raise notice '   Tax: $%', _new_tax;
-raise notice '   Total: $%', _new_total;
-
-update pos_module.bill
-set subtotal_amount = _new_subtotal,
-    tax_amount = _new_tax,
-    total_amount = _new_total,
-    updated_at = current_timestamp
-where bill_id = _bill_id;
-
-raise notice '';
-raise notice '✅ Bill % updated successfully', _bill_id;
-
-return new;
+    return new;
 end;
 $$ language plpgsql;
 
@@ -343,6 +330,7 @@ create trigger update_on_return_trigger
     after insert on pos_module.return_product
     for each row
     execute function update_on_return();
+
 
 create or replace function auto_toggle_promotions()
 returns table(
@@ -937,7 +925,6 @@ declare
     _cash_payments_total numeric(10,2);
     _points_already_awarded boolean;
 begin
-    -- El trigger ahora recibe NEW de bill_payment
     _bill_id := new.bill_id;
     
     -- ✅ Verificar si ya se otorgaron puntos para esta factura

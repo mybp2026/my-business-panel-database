@@ -186,3 +186,111 @@ create table three_way_matching(
 -- ==========================================================================
 --                          FUNCTIONS AND TRIGGERS
 -- ==========================================================================
+
+
+create or replace function create_supply_order(
+    _supplier_id uuid,
+    _warehouse_id uuid,
+    _expected_delivery_date date
+) returns uuid language plpgsql
+as $$
+declare
+    _supply_order_id uuid;
+begin
+    insert into supplies_module.supply_order(
+        supplier_id,
+        warehouse_id,
+        supply_order_date,
+        expected_delivery_date,
+        supply_order_status_id
+    ) values (
+        _supplier_id,
+        _warehouse_id,
+        current_date,
+        expected_delivery_date,
+        1
+    ) returning supply_order_id into _supply_order_id;
+
+    return _supply_order_id;
+end;
+$$ language plpgsql;
+
+
+create or replace function update_order_status(
+    _new_status_id integer,
+    _supply_order_id uuid
+)
+returns trigger as $$
+begin
+    update supplies_module.supply_order
+    set supply_order_status_id = _new_status_id,
+        updated_at = current_timestamp
+    where supply_order_id = new.supply_order_id;
+    return new;
+
+    insert into supplies_module.supply_order_tracking(
+        supply_order_id,
+        previous_status_id,
+        new_status_id,
+        notes,
+        changed_at
+    ) values (
+        new.supply_order_id,
+        old.supply_order_status_id,
+        _new_status_id,
+        'Status updated via trigger',
+        current_timestamp
+    );
+end;
+$$ language plpgsql;
+
+
+drop trigger if exists update_supplier_timestamp on supplies.supplier;
+create trigger update_supplier_timestamp before update on supplies.supplier
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supply_order_timestamp on supplies.supply_order;
+create trigger update_supply_order_timestamp before update on supplies.supply_order
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supply_order_item_timestamp on supplies.supply_order_item;
+create trigger update_supply_order_item_timestamp before update on supplies.supply_order_item
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supplier_invoice_timestamp on supplies.supplier_invoice;
+create trigger update_supplier_invoice_timestamp before update on supplies.supplier_invoice
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supplier_invoice_item_timestamp on supplies.supplier_invoice_item;
+create trigger update_supplier_invoice_item_timestamp before update on supplies.supplier_invoice_item
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_goods_receipt_timestamp on supplies.goods_receipt;
+create trigger update_goods_receipt_timestamp before update on supplies.goods_receipt
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_goods_receipt_item_timestamp on supplies.goods_receipt_item;
+create trigger update_goods_receipt_item_timestamp before update on supplies.goods_receipt_item
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_account_payable_timestamp on supplies.account_payable;
+create trigger update_account_payable_timestamp before update on supplies.account_payable
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supply_order_payment_timestamp on supplies.supply_order_payment;
+create trigger update_supply_order_payment_timestamp before update on supplies.supply_order_payment
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supply_order_payment_alert_timestamp on supplies.supply_order_payment_alert;
+create trigger update_supply_order_payment_alert_timestamp before update on supplies.supply_order_payment_alert
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_supply_order_payment_alert_config_timestamp on supplies.supply_order_payment_alert_config;
+create trigger update_supply_order_payment_alert_config_timestamp before update on supplies.supply_order_payment_alert_config
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_three_way_matching_timestamp on supplies.three_way_matching;
+create trigger update_three_way_matching_timestamp before update on supplies.three_way_matching
+for each row execute function core.update_timestamp();
+
+

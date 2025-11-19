@@ -1,5 +1,3 @@
--- SCHEMA: pos_module   
-drop schema if exists pos_module cascade;
 create schema if not exists pos_module;
 set search_path to pos_module;
 
@@ -57,6 +55,7 @@ create table customer_payment(
 create table bill(
     bill_id uuid primary key default gen_random_uuid(),
     tenant_customer_id uuid references core.tenant_customer(tenant_customer_id) on delete set null,
+    sale_id uuid not null references pos_module.sale(sale_id) on delete cascade,
     currency_id integer references core.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
@@ -74,22 +73,6 @@ create table bill_payment(
     updated_at timestamp default current_timestamp,
 
     unique (bill_id, customer_payment_id)
-);
-
-create table bill_product(
-    bill_product_id uuid primary key default gen_random_uuid(),
-    bill_id uuid not null references pos_module.bill(bill_id) on delete cascade,
-    tenant_id uuid not null,
-    product_id uuid not null,  
-    quantity integer not null check (quantity > 0),
-    unit_price numeric(10,2) not null check (unit_price >= 0),
-    total_price numeric(10,2) not null,
-    created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp,
-    
-    foreign key (tenant_id, product_id) 
-        references core.product(tenant_id, product_id) 
-        on delete restrict
 );
 
 create table return_reason(
@@ -131,7 +114,7 @@ create table return_transaction(
 create table return_product(
     return_product_id uuid primary key default gen_random_uuid(),
     return_transaction_id uuid not null references pos_module.return_transaction(return_transaction_id) on delete cascade,
-    bill_product_id uuid not null references pos_module.bill_product(bill_product_id) on delete cascade,
+    sale_item_id uuid not null references pos_module.sale_item(sale_item_id) on delete cascade,
     quantity integer not null check (quantity > 0),
     unit_price numeric(10,2) not null check (unit_price >= 0),
     total_price numeric(10,2) not null,
@@ -225,7 +208,6 @@ create type discount_result as (
 create table cash_register(
     cash_register_id uuid primary key default gen_random_uuid(),
     branch_id uuid not null references core.branch(branch_id) on delete cascade,
-    user_id uuid not null references core.users(user_id) on delete set null,
     is_active boolean default true,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
@@ -234,6 +216,7 @@ create table cash_register(
 create table cash_register_session(
     cash_register_session_id uuid primary key default gen_random_uuid(),
     cash_register_id uuid not null references pos_module.cash_register(cash_register_id) on delete cascade,
+    user_id uuid not null references core.users(user_id) on delete set null,
     opened_at timestamp not null default current_timestamp,
     closed_at timestamp,
     opening_amount numeric(10,2) not null check (opening_amount >= 0),
@@ -310,4 +293,3 @@ create table score_transaction(
     bill_id uuid references pos_module.bill(bill_id) on delete set null,
     created_at timestamp default current_timestamp
 );
-

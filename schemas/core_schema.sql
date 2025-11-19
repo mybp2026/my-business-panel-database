@@ -63,6 +63,7 @@ insert into customer_segment_margin_type(type_name, description) values
     ('spending_based', 'Discounts based on total spending'),
     ('seniority_based', 'Discounts based on customer seniority'),
     ('frequency_based', 'Discounts based on a monthly basis purchase frequency');
+    -- TODO: agregar free_selection 
 
 create table customer_segment_margin(
     customer_segment_margin_id uuid primary key not null default gen_random_uuid(),
