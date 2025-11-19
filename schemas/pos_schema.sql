@@ -226,10 +226,10 @@ create table cash_register_session(
     updated_at timestamp default current_timestamp
 );
 
-create table cash_transaction(
-    cash_transaction_id uuid primary key default gen_random_uuid(),
+create table cash_register_transaction(
+    cash_register_transaction_id uuid primary key default gen_random_uuid(),
     cash_register_session_id uuid not null references pos_module.cash_register_session(cash_register_session_id) on delete cascade,
-    transaction_type varchar(50) not null,  
+    payment_method_id integer not null references core.payment_method(payment_method_id) on delete set null,
     amount numeric(10,2) not null,
     transaction_time timestamp not null default current_timestamp,
     created_at timestamp default current_timestamp,
