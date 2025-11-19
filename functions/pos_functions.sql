@@ -86,13 +86,6 @@ begin
 end;
 $$ language plpgsql;
 
--- Trigger for bill_product
-drop trigger if exists calculate_total_price_bill_product_trigger on pos_module.bill_product;
-create trigger calculate_total_price_bill_product_trigger
-    before insert or update on pos_module.bill_product
-    for each row
-    execute function calculate_total_price();
-
 -- Trigger for return_product 
 drop trigger if exists calculate_total_price_return_product_trigger on pos_module.return_product;
 create trigger calculate_total_price_return_product_trigger
@@ -1115,7 +1108,7 @@ begin
     ) values (
         _tenant_id,
         _tenant_customer_id,
-        2,  -- 'redeem'
+        2,  
         -_points_to_redeem,  
         current_timestamp
     );
@@ -1265,10 +1258,6 @@ drop trigger if exists update_bill_timestamp on pos_module.bill;
 create trigger update_bill_timestamp before update on pos_module.bill
 for each row execute function core.update_timestamp();
 
-drop trigger if exists update_bill_product_timestamp on pos_module.bill_product;
-create trigger update_bill_product_timestamp before update on pos_module.bill_product
-for each row execute function core.update_timestamp();
-
 drop trigger if exists update_return_transaction_timestamp on pos_module.return_transaction;
 create trigger update_return_transaction_timestamp before update on pos_module.return_transaction
 for each row execute function core.update_timestamp();
@@ -1289,8 +1278,8 @@ drop trigger if exists update_cash_register_session_timestamp on pos_module.cash
 create trigger update_cash_register_session_timestamp before update on pos_module.cash_register_session
 for each row execute function core.update_timestamp();
 
-drop trigger if exists update_cash_transaction_timestamp on pos_module.cash_transaction;
-create trigger update_cash_transaction_timestamp before update on pos_module.cash_transaction
+drop trigger if exists update_cash_register_sale_timestamp on pos_module.cash_register_sale;
+create trigger update_cash_register_sale_timestamp before update on pos_module.cash_register_sale
 for each row execute function core.update_timestamp();
 
 drop trigger if exists update_tenant_customer_score_timestamp on pos_module.tenant_customer_score;

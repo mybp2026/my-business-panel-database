@@ -1,8 +1,7 @@
--- SCHEMA: core schema for common tables
 create schema if not exists core;
 set search_path to core;
 
-create table tenant(
+create table if not exists tenant(
     tenant_id uuid primary key default gen_random_uuid(),
     tenant_name varchar(100) unique not null,
     contact_email varchar(100) not null,
@@ -12,7 +11,7 @@ create table tenant(
     -- TODO: preguntar si se necesita más info sobre el tenant
 );
 
-create table branch(
+create table if not exists branch(
     branch_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     branch_name varchar(100) not null,
@@ -22,11 +21,11 @@ create table branch(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-create unique index unique_main_branch_per_tenant 
+create unique index if not exists unique_main_branch_per_tenant 
     on core.branch (tenant_id) 
     where is_main_branch = true;
 
-create table document_type(
+create table if not exists document_type(
     document_type_id serial primary key, 
     type_name varchar(50) unique not null,
     description text,
@@ -36,23 +35,26 @@ create table document_type(
 insert into document_type(type_name, description) values
     ('passport', 'International travel document'),
     ('driver_license', 'Official driving permit'),
-    ('national_id', 'Government issued identification card');
+    ('national_id', 'Government issued identification card')
+on conflict do nothing;
 
-    create table customer_segment(
+create table if not exists customer_segment(
     customer_segment_id serial primary key,
     segment_name varchar(100) unique not null,
     segment_hierarchy integer not null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
-);
+    );
+
 insert into customer_segment(segment_name, segment_hierarchy) values
     ('vip', 1),
     ('loyal', 2),
     ('regular', 3),
     ('new', 4),
-    ('inactive', 5);
+    ('inactive', 5)
+on conflict do nothing;
 
-create table customer_segment_margin_type(
+create table if not exists customer_segment_margin_type(
     customer_segment_margin_type_id serial primary key,
     type_name varchar(50) unique not null,
     description text,
@@ -62,10 +64,14 @@ create table customer_segment_margin_type(
 insert into customer_segment_margin_type(type_name, description) values
     ('spending_based', 'Discounts based on total spending'),
     ('seniority_based', 'Discounts based on customer seniority'),
-    ('frequency_based', 'Discounts based on a monthly basis purchase frequency');
+    ('frequency_based', 'Discounts based on a monthly basis purchase frequency')
+on conflict do nothing;
     -- TODO: agregar free_selection 
+--     insert into customer_segment_margin_type(type_name, description) values
+--     ('free_selection', 'Customers can select products for free up to a limit')
+-- on conflict do nothing;
 
-create table customer_segment_margin(
+create table if not exists customer_segment_margin(
     customer_segment_margin_id uuid primary key not null default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     customer_segment_id int not null references core.customer_segment(customer_segment_id) on delete cascade,
@@ -76,7 +82,7 @@ create table customer_segment_margin(
 );
 
 -- n:m table to link customers to tenants
-create table tenant_customer(
+create table if not exists tenant_customer(
     tenant_customer_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,  
     first_name varchar(100) not null,
@@ -96,7 +102,7 @@ create table tenant_customer(
     unique(tenant_id, phone)    
 );
 
-create table role(
+create table if not exists role(
     role_id serial primary key,
     role_name varchar(50) unique not null,
     role_hierarchy integer not null,
@@ -107,9 +113,10 @@ insert into role(role_name, role_hierarchy) values
     ('superuser', 4),
     ('admin', 3),
     ('manager', 2),
-    ('employee', 1);
+    ('employee', 1)
+on conflict do nothing;
 
-create table users( 
+create table if not exists users( 
     user_id uuid primary key default gen_random_uuid(),
     tenant_id uuid references core.tenant(tenant_id) on delete cascade,
     email varchar(100) unique not null,
@@ -119,7 +126,7 @@ create table users(
     updated_at timestamp default current_timestamp
 );
 
-create table currency(
+create table if not exists currency(
     currency_id serial primary key,
     currency_id_code char(3) unique not null,
     currency_name varchar(50) not null,
@@ -132,9 +139,10 @@ insert into currency(currency_id_code, currency_name, symbol, exchange_rate_to_u
 ('USD', 'US Dollar', '$', 1.000000),
 ('EUR', 'Euro', '€', 1.100000),
 ('GBP', 'British Pound', '£', 1.250000),
-('JPY', 'Japanese Yen', '¥', 0.009000);
+('JPY', 'Japanese Yen', '¥', 0.009000)
+on conflict do nothing;
 
-create table tax_rate(
+create table if not exists tax_rate(
     tax_rate_id serial primary key,
     region varchar(100) unique not null,
     rate_percentage numeric(5,2) not null check (rate_percentage >= 0 and rate_percentage <= 100),
@@ -145,9 +153,10 @@ insert into tax_rate(region, rate_percentage) values
 ('US Federal', 10.00),
 ('EU Standard', 20.00),
 ('UK Standard', 20.00),
-('JP Standard', 8.00);
+('JP Standard', 8.00)
+on conflict do nothing;
 
-create table subscription_type ( 
+create table if not exists subscription_type ( 
     subscription_type_id serial primary key,
     subscription_type_name varchar(25) not null,
     subscription_type_detail text not null,
@@ -158,9 +167,10 @@ create table subscription_type (
 insert into subscription_type (subscription_type_name, subscription_type_detail, duration_months, subscription_type_cost) values
 ('Basic', 'Basic subscription plan', 1, 9.99),
 ('Standard', 'Standard subscription plan', 6, 49.99),
-('Premium', 'Premium subscription plan', 12, 89.99);
+('Premium', 'Premium subscription plan', 12, 89.99)
+on conflict do nothing;
 
-create table payment_method(
+create table if not exists payment_method(
     payment_method_id serial primary key,
     name varchar(50) unique not null,
     description text,
@@ -171,9 +181,10 @@ insert into payment_method(name, description) values
 ('cash', 'Payment made with cash'),
 ('debit_card', 'Payment made with debit card'),
 ('credit_card', 'Payment made with credit card'),
-('loyalty_points', 'Payment made via loyalty points');
+('loyalty_points', 'Payment made via loyalty points')
+on conflict do nothing;
 
-create table tenant_payment(
+create table if not exists tenant_payment(
     tenant_payment_id uuid primary key default gen_random_uuid(),
     tenant_id uuid references core.tenant(tenant_id) on delete cascade,
     payment_method_id integer references core.payment_method(payment_method_id) on delete set null,
@@ -185,7 +196,7 @@ create table tenant_payment(
     updated_at timestamp default current_timestamp
 );
 
-create table subscription(
+create table if not exists subscription(
     subscription_id uuid primary key default gen_random_uuid(),
     tenant_id uuid references core.tenant(tenant_id) on delete cascade,
     subscription_type_id integer references core.subscription_type(subscription_type_id) on delete set null,
@@ -199,14 +210,14 @@ create table subscription(
     check (end_date > start_date)
 );
 
-create table product_category(
+create table if not exists product_category(
     product_category_id serial primary key,
     category_name varchar(100) unique not null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
-create table product(
+create table if not exists product(
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     product_id uuid not null default gen_random_uuid(),
     sku varchar(50) not null,
@@ -235,17 +246,17 @@ create unique index if not exists idx_product_tenant_sku on core.product(tenant_
 create index if not exists idx_product_tenant_btree on core.product(tenant_id);
 create index if not exists idx_product_name_fts on core.product using gin ( product_name_tsv );
 
-create table global_attribute (
+create table if not exists global_attribute (
     global_attribute_id serial primary key,
     attribute_name varchar(100) not null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
-create unique index unique_attribute_name 
+create unique index if not exists unique_attribute_name 
     on core.global_attribute (lower(attribute_name));
 
-create table tenant_attribute (
+create table if not exists tenant_attribute (
     tenant_attribute_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     global_attribute_id int references core.global_attribute(global_attribute_id) on delete set null,
@@ -263,7 +274,7 @@ create table tenant_attribute (
 create unique index if not exists unique_tenant_attribute_name 
     on core.tenant_attribute (tenant_id, lower(attribute_name));
 
-create table product_attribute (
+create table if not exists product_attribute (
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     product_id uuid not null,
     tenant_attribute_id uuid not null references core.tenant_attribute(tenant_attribute_id) on delete cascade,

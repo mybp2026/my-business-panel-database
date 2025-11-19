@@ -1,7 +1,7 @@
 create schema if not exists pos_module;
 set search_path to pos_module;
 
-create table sale(
+create table if not exists sale(
     sale_id uuid primary key default gen_random_uuid(),
     branch_id uuid not null references core.branch(branch_id) on delete cascade,  
     sale_date timestamp not null default current_timestamp,
@@ -13,7 +13,7 @@ create table sale(
     updated_at timestamp default current_timestamp
 );
 
-create table sale_item(
+create table if not exists sale_item(
     sale_item_id uuid primary key default gen_random_uuid(),
     sale_id uuid not null references pos_module.sale(sale_id) on delete cascade,
     tenant_id uuid not null, 
@@ -29,7 +29,37 @@ create table sale_item(
         on delete restrict
 );
 
-create table customer_payment(
+create table if not exists cash_register(
+    cash_register_id uuid primary key default gen_random_uuid(),
+    branch_id uuid not null references core.branch(branch_id) on delete cascade,
+    is_active boolean default true,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+);
+
+create table if not exists cash_register_session(
+    cash_register_session_id uuid primary key default gen_random_uuid(),
+    cash_register_id uuid not null references pos_module.cash_register(cash_register_id) on delete cascade,
+    user_id uuid not null references core.users(user_id) on delete set null,
+    opened_at timestamp not null default current_timestamp,
+    closed_at timestamp,
+    opening_amount numeric(10,2) not null check (opening_amount >= 0),
+    closing_amount numeric(10,2) check (closing_amount >= 0),
+    is_active boolean default true,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+);
+
+create table if not exists cash_register_sale(
+    cash_register_sale_id uuid primary key default gen_random_uuid(),
+    cash_register_session_id uuid not null references pos_module.cash_register_session(cash_register_session_id) on delete cascade,
+    sale_id uuid not null unique references pos_module.sale(sale_id) on delete cascade, 
+    transaction_time timestamp not null default current_timestamp,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+);
+
+create table if not exists customer_payment(
     customer_payment_id uuid primary key not null default gen_random_uuid(),
     tenant_customer_id uuid not null references core.tenant_customer(tenant_customer_id) on delete cascade,   
     sale_id uuid not null references pos_module.sale(sale_id) on delete set null,
@@ -51,8 +81,7 @@ create table customer_payment(
     )
 );
 
-
-create table bill(
+create table if not exists bill(
     bill_id uuid primary key default gen_random_uuid(),
     tenant_customer_id uuid references core.tenant_customer(tenant_customer_id) on delete set null,
     sale_id uuid not null references pos_module.sale(sale_id) on delete cascade,
@@ -64,7 +93,7 @@ create table bill(
     updated_at timestamp default current_timestamp
 );
 
-create table bill_payment(
+create table if not exists bill_payment(
     bill_payment_id uuid primary key default gen_random_uuid(),
     bill_id uuid not null references pos_module.bill(bill_id) on delete cascade,
     customer_payment_id uuid not null references pos_module.customer_payment(customer_payment_id) on delete cascade,
@@ -75,7 +104,7 @@ create table bill_payment(
     unique (bill_id, customer_payment_id)
 );
 
-create table return_reason(
+create table if not exists return_reason(
     return_reason_id serial primary key,
     reason_code varchar(50) unique not null,
     reason_name varchar(100) not null,
@@ -92,26 +121,34 @@ insert into return_reason(reason_code, reason_name, description) values
     ('DAMAGED', 'Producto dañado', 'El producto llegó dañado o roto'),
     ('EXPIRED', 'Producto vencido', 'El producto está vencido o caducado'),
     ('CUSTOMER_REGRET', 'Arrepentimiento', 'El cliente cambió de opinión'),
-    ('OTHER', 'Otro motivo', 'Otro motivo no especificado');
+    ('OTHER', 'Otro motivo', 'Otro motivo no especificado')
+on conflict do nothing;
 
-create type return_status as enum (
-    'pending',      
-    'rejected',     
-    'processed'
+create table if not exists return_status(
+    return_status_id serial primary key,
+    status_name varchar(50) unique not null,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
 );
+insert into return_status(status_name) values
+    ('pending'),
+    ('rejected'),
+    ('processed')
+on conflict do nothing;
 
-create table return_transaction(
+drop table if exists return_transaction cascade;
+create table if not exists return_transaction(
     return_transaction_id uuid primary key default gen_random_uuid(),
     bill_id uuid not null references pos_module.bill(bill_id) on delete cascade,
     tenant_customer_id uuid references core.tenant_customer(tenant_customer_id) on delete set null,
     total_refund_amount numeric(10,2) not null check (total_refund_amount >= 0),
     refund_method int references core.payment_method(payment_method_id) on delete set null,
-    return_status return_status default 'pending',
+    return_status_id integer references pos_module.return_status(return_status_id) on delete set null,
     return_date timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
-create table return_product(
+create table if not exists return_product(
     return_product_id uuid primary key default gen_random_uuid(),
     return_transaction_id uuid not null references pos_module.return_transaction(return_transaction_id) on delete cascade,
     sale_item_id uuid not null references pos_module.sale_item(sale_item_id) on delete cascade,
@@ -122,7 +159,7 @@ create table return_product(
     updated_at timestamp default current_timestamp
 );
 
-create table promotion_type(
+create table if not exists promotion_type(
     promotion_type_id serial primary key,
     type_name varchar(50) unique not null,
     created_at timestamp default current_timestamp,
@@ -135,9 +172,10 @@ insert into promotion_type(type_name) values
     ('volume_discount'),
     ('tiered_pricing'),
     ('combo'),
-    ('free_shipping');
+    ('free_shipping')
+on conflict do nothing;
 
-create table promotion(
+create table if not exists promotion(
     promotion_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     promotion_name varchar(100) not null,
@@ -154,7 +192,7 @@ create table promotion(
     check (promotion_end_date > promotion_start_date)
 );
 
-create table promotion_rule(
+create table if not exists promotion_rule(
     promotion_rule_id uuid primary key default gen_random_uuid(),
     promotion_id uuid not null references pos_module.promotion(promotion_id) on delete cascade,
     -- =====================================
@@ -198,6 +236,7 @@ create table promotion_rule(
     updated_at timestamp default current_timestamp
 );
 
+drop type if exists discount_result cascade;
 create type discount_result as (
     discount_amount numeric(10,2),
     discount_percentage numeric(5,2),
@@ -205,38 +244,7 @@ create type discount_result as (
     success boolean
 );
 
-create table cash_register(
-    cash_register_id uuid primary key default gen_random_uuid(),
-    branch_id uuid not null references core.branch(branch_id) on delete cascade,
-    is_active boolean default true,
-    created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
-);
-
-create table cash_register_session(
-    cash_register_session_id uuid primary key default gen_random_uuid(),
-    cash_register_id uuid not null references pos_module.cash_register(cash_register_id) on delete cascade,
-    user_id uuid not null references core.users(user_id) on delete set null,
-    opened_at timestamp not null default current_timestamp,
-    closed_at timestamp,
-    opening_amount numeric(10,2) not null check (opening_amount >= 0),
-    closing_amount numeric(10,2) check (closing_amount >= 0),
-    is_active boolean default true,
-    created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
-);
-
-create table cash_register_transaction(
-    cash_register_transaction_id uuid primary key default gen_random_uuid(),
-    cash_register_session_id uuid not null references pos_module.cash_register_session(cash_register_session_id) on delete cascade,
-    payment_method_id integer not null references core.payment_method(payment_method_id) on delete set null,
-    amount numeric(10,2) not null,
-    transaction_time timestamp not null default current_timestamp,
-    created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
-);
-
-create table loyalty_program(
+create table if not exists loyalty_program(
     loyalty_program_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     points_per_dollar numeric(5,2) not null default 1.00 check (points_per_dollar >= 0),
@@ -247,7 +255,7 @@ create table loyalty_program(
     updated_at timestamp default current_timestamp
 );
 
-create table tenant_customer_score(
+create table if not exists tenant_customer_score(
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     tenant_customer_id uuid not null references core.tenant_customer(tenant_customer_id) on delete cascade,
     score integer not null default 0 check (score >= 0),
@@ -261,7 +269,7 @@ create table tenant_customer_score(
     primary key (tenant_customer_id, tenant_id)
 );
 
-create table score_redemption_status(
+create table if not exists score_redemption_status(
     score_redemption_status_id serial primary key,
     status_name varchar(50) unique not null,
     created_at timestamp default current_timestamp,
@@ -270,9 +278,10 @@ create table score_redemption_status(
 insert into score_redemption_status(status_name) values
     ('pending'),
     ('rejected'),
-    ('processed');
+    ('processed')
+on conflict do nothing;
 
-create table score_transaction_type(
+create table if not exists score_transaction_type(
     score_transaction_type_id serial primary key,
     type_name varchar(50) unique not null,
     description text,
@@ -282,9 +291,10 @@ create table score_transaction_type(
 insert into score_transaction_type(type_name, description) values
     ('earn', 'Points earned from purchases'),
     ('redeem', 'Points redeemed for rewards'),
-    ('adjustment', 'Manual adjustment of points');
+    ('adjustment', 'Manual adjustment of points')
+on conflict do nothing;
 
-create table score_transaction(
+create table if not exists score_transaction(
     score_transaction_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     tenant_customer_id uuid not null references core.tenant_customer(tenant_customer_id) on delete cascade,
