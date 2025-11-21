@@ -13,6 +13,8 @@ create table if not exists sale(
     created_at timestamp not null default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+create index if not exists idx_sale_branch_id ON pos_module.sale(branch_id);
+create index if not exists idx_sale_sale_date ON pos_module.sale(sale_date);
 
 create table if not exists sale_item(
     sale_item_id uuid primary key default gen_random_uuid(),
@@ -29,6 +31,9 @@ create table if not exists sale_item(
         references core.product(tenant_id, product_id) 
         on delete restrict
 );
+create index if not exists idx_sale_item_product_id ON pos_module.sale_item(product_id);
+create index if not exists idx_sale_item_sale_id ON pos_module.sale_item(sale_id);
+create index if not exists idx_sale_item_tenant_product ON pos_module.sale_item(tenant_id, product_id);
 
 create table if not exists cash_register(
     cash_register_id uuid primary key default gen_random_uuid(),
