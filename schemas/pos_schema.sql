@@ -13,8 +13,8 @@ create table if not exists sale(
     created_at timestamp not null default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-create index if not exists idx_sale_branch_id ON pos_module.sale(branch_id);
-create index if not exists idx_sale_sale_date ON pos_module.sale(sale_date);
+create index if not exists idx_sale_branch_id on pos_module.sale(branch_id);
+create index if not exists idx_sale_sale_date on pos_module.sale(sale_date);
 
 create table if not exists sale_item(
     sale_item_id uuid primary key default gen_random_uuid(),
@@ -31,9 +31,9 @@ create table if not exists sale_item(
         references core.product(tenant_id, product_id) 
         on delete restrict
 );
-create index if not exists idx_sale_item_product_id ON pos_module.sale_item(product_id);
-create index if not exists idx_sale_item_sale_id ON pos_module.sale_item(sale_id);
-create index if not exists idx_sale_item_tenant_product ON pos_module.sale_item(tenant_id, product_id);
+create index if not exists idx_sale_item_product_id on pos_module.sale_item(product_id);
+create index if not exists idx_sale_item_sale_id on pos_module.sale_item(sale_id);
+create index if not exists idx_sale_item_tenant_product on pos_module.sale_item(tenant_id, product_id);
 
 create table if not exists cash_register(
     cash_register_id uuid primary key default gen_random_uuid(),
@@ -98,6 +98,7 @@ create table if not exists bill(
     billed_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+create index if not exists idx_bill_sale_id on pos_module.bill(sale_id);
 
 create table if not exists bill_payment(
     bill_payment_id uuid primary key default gen_random_uuid(),
@@ -121,7 +122,7 @@ create table if not exists return_reason(
 insert into return_reason(reason_code, reason_name, description) values
     ('DEFECT', 'Defecto de fábrica', 'El producto tiene un defecto de fabricación'),
     ('SIZE_CHANGE', 'Cambio de talla', 'El cliente requiere una talla diferente'),
-    ('WRONG_PRODUCT', 'Producto equivocado', 'Se entregó un producto diferente al solicitado'),
+    ('WRonG_PRODUCT', 'Producto equivocado', 'Se entregó un producto diferente al solicitado'),
     ('NOT_AS_DESCRIBED', 'No coincide con descripción', 'El producto no coincide con la descripción publicada'),
     ('DAMAGED', 'Producto dañado', 'El producto llegó dañado o roto'),
     ('EXPIRED', 'Producto vencido', 'El producto está vencido o caducado'),
@@ -152,6 +153,8 @@ create table if not exists return_transaction(
     return_date timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+create index if not exists idx_return_transaction_bill_id on pos_module.return_transaction(bill_id);
+create index if not exists idx_return_transaction_date on pos_module.return_transaction(return_date);
 
 create table if not exists return_product(
     return_product_id uuid primary key default gen_random_uuid(),
@@ -163,6 +166,7 @@ create table if not exists return_product(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+create index if not exists idx_return_product_transaction_id on pos_module.return_product(return_transaction_id);
 
 create table if not exists promotion_type(
     promotion_type_id serial primary key,
