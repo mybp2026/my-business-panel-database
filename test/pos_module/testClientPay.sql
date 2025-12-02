@@ -187,7 +187,7 @@ begin
     raise notice '✓ Tenant creado: %', v_tenant_id;
 
     -- 1.2 Crear sucursal
-    insert into core.branch (tenant_id, branch_name, address, is_main_branch)
+    insert into core.branch (tenant_id, branch_name, branch_address, is_main_branch)
     values (v_tenant_id, 'Sucursal Centro', 'Av. Principal #123', true)
     returning branch_id into v_branch_id;
     

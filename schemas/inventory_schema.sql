@@ -1,3 +1,4 @@
+drop schema if exists inventory_module cascade;
 create schema if not exists inventory_module;
 set search_path to inventory_module;
 
@@ -12,11 +13,14 @@ create table warehouse(
 
 create table inventory(
     inventory_id uuid primary key default gen_random_uuid(),
-    product_id uuid not null references core.product(product_id) on delete cascade,
+    tenant_id uuid not null,                                                         -- ✅ AGREGADO
+    product_id uuid not null,
     warehouse_id uuid not null references inventory_module.warehouse(warehouse_id) on delete cascade,
     stock integer not null,
     created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
+    updated_at timestamp default current_timestamp,
+    
+    foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade  -- ✅ FK COMPUESTA
 );
 
 create table inventory_movement_type(
@@ -28,12 +32,13 @@ create table inventory_movement_type(
 );
 insert into inventory_movement_type (inventory_movement_type_name, inventory_movement_type_description) values
 ('IN', 'inventory added to inventory_module'),
-('OUT', 'inventory removed from inventory_module'),
+('OUT', 'inventory removed from inventory_module')
+on conflict do nothing;
 
 create table inventory_movement(
     inventory_movement_id uuid primary key default gen_random_uuid(),
     inventory_movement_type_id integer not null references inventory_module.inventory_movement_type(inventory_movement_type_id) on delete cascade,
-    supply_order_id uuid references supplies.supply_order(supply_order_id) on delete set null,
+    supply_order_id uuid references supplies_module.supply_order(supply_order_id) on delete set null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
@@ -52,10 +57,13 @@ create table inventory_transfer(
 create table inventory_transfer_product(
     inventory_transfer_product_id uuid primary key default gen_random_uuid(),
     inventory_transfer_id uuid not null references inventory_module.inventory_transfer(inventory_transfer_id) on delete cascade,
-    product_id uuid not null references core.product(product_id) on delete cascade,
+    tenant_id uuid not null,                                                         -- ✅ AGREGADO
+    product_id uuid not null,
     quantity integer not null,
     created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
+    updated_at timestamp default current_timestamp,
+    
+    foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade  -- ✅ FK COMPUESTA
 );
 
 
