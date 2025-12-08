@@ -75,12 +75,12 @@ Example: bill creation is triggered automatically — if you need to create it m
 
 ### 6. Loyalty Points (earn & redeem)
 
-- Loyalty configuration lives in `pos_module.loyalty_program` (fields include `points_per_dollar` and `points_per_currency_unit`).
+- Loyalty configuration lives in `pos_module.loyalty_program` (fields include `points_earned_per_currency_unit` and `points_redeemed_per_currency_unit`).
 - Customer points are stored in `pos_module.tenant_customer_score` and transaction history in `pos_module.score_transaction`.
 
 Earning points:
 
-- On verified payment and sale completion, the system calculates points using `points_per_dollar` (or equivalent) and inserts a `score_transaction` and updates `tenant_customer_score.score` and `lifetime_score`.
+- On verified payment and sale completion, the system calculates points using `points_earned_per_currency_unit` (or equivalent) and inserts a `score_transaction` and updates `tenant_customer_score.score` and `lifetime_score`.
 
 Redeeming points:
 

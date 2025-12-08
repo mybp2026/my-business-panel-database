@@ -256,8 +256,8 @@ create type discount_result as (
 create table if not exists loyalty_program(
     loyalty_program_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
-    points_per_dollar numeric(5,2) not null default 1.00 check (points_per_dollar >= 0),
-    points_per_currency_unit numeric(10,2) not null default 100.00 check (points_per_currency_unit > 0),
+    points_earned_per_currency_unit numeric(5,2) not null default 1.00 check (points_earned_per_currency_unit >= 0),
+    points_redeemed_per_currency_unit numeric(10,2) not null default 100.00 check (points_redeemed_per_currency_unit > 0),
     minimum_purchase_for_points numeric(10,2) default 0 check (minimum_purchase_for_points >= 0),
     is_active boolean default true,
     created_at timestamp default current_timestamp,

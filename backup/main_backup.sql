@@ -792,8 +792,8 @@ create type discount_result as (
 create table if not exists loyalty_program(
     loyalty_program_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
-    points_per_dollar numeric(5,2) not null default 1.00 check (points_per_dollar >= 0),
-    points_per_currency_unit numeric(10,2) not null default 100.00 check (points_per_currency_unit > 0),
+    points_earned_per_currency_unit numeric(5,2) not null default 1.00 check (points_earned_per_currency_unit >= 0),
+    points_redeemed_per_currency_unit numeric(10,2) not null default 100.00 check (points_redeemed_per_currency_unit > 0),
     minimum_purchase_for_points numeric(10,2) default 0 check (minimum_purchase_for_points >= 0),
     is_active boolean default true,
     created_at timestamp default current_timestamp,
@@ -1794,7 +1794,7 @@ _purchase_amount numeric(10,2)
 ) returns integer as $$
 declare
     _minimum_purchase numeric(10,2);
-    _points_per_dollar numeric(5,2);
+    _points_earned_per_currency_unit numeric(5,2);
     _score integer;
     _program_exists boolean;
 begin
@@ -1812,19 +1812,19 @@ begin
     
     select 
         minimum_purchase_for_points, 
-        points_per_dollar 
+        points_earned_per_currency_unit 
     into 
         _minimum_purchase, 
-        _points_per_dollar 
+        _points_earned_per_currency_unit 
     from pos_module.loyalty_program 
     where tenant_id = _tenant_id
     and is_active = true
     limit 1;
     
-    _score := floor(_purchase_amount * _points_per_dollar);
+    _score := floor(_purchase_amount * _points_earned_per_currency_unit);
     
     raise notice '✅ Points: $% × % = % pts',
-        _purchase_amount, _points_per_dollar, _score;
+        _purchase_amount, _points_earned_per_currency_unit, _score;
     
     return _score;
     
@@ -1969,7 +1969,7 @@ _points_to_redeem integer
     message text
 ) as $$
 declare
-    _points_per_currency_unit numeric(10,2); 
+    _points_redeemed_per_currency_unit numeric(10,2); 
     _tenant_id uuid;
     _current_points integer;
     _cash_equivalent numeric(10,2);
@@ -1992,13 +1992,13 @@ begin
     where tenant_customer_id = _tenant_customer_id
     and tenant_id = _tenant_id;
 
-    select points_per_currency_unit into _points_per_currency_unit
+    select points_redeemed_per_currency_unit into _points_redeemed_per_currency_unit
     from pos_module.loyalty_program
     where tenant_id = _tenant_id
     and is_active = true
     limit 1;
 
-    if _points_per_currency_unit is null then
+    if _points_redeemed_per_currency_unit is null then
         return query select 
             0.00::numeric(10,2),
             coalesce(_current_points, 0),
@@ -2017,7 +2017,7 @@ begin
         return;
     end if;
 
-    _cash_equivalent := _points_to_redeem / _points_per_currency_unit;
+    _cash_equivalent := _points_to_redeem / _points_redeemed_per_currency_unit;
 
     update pos_module.tenant_customer_score
     set score = score - _points_to_redeem,
@@ -2047,7 +2047,7 @@ begin
         true,
         format('Redeemed %s points at rate %s pts/$1 = $%s', 
             _points_to_redeem, 
-            _points_per_currency_unit, 
+            _points_redeemed_per_currency_unit, 
             round(_cash_equivalent, 2))::text;
 exception
     when others then

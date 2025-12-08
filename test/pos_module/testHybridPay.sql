@@ -283,7 +283,7 @@ begin
     select loyalty_program_id into v_loyalty_program_id from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
     if v_loyalty_program_id is null then
         insert into pos_module.loyalty_program (
-            tenant_id, points_per_dollar, points_per_currency_unit, minimum_purchase_for_points, is_active
+            tenant_id, points_earned_per_currency_unit, points_redeemed_per_currency_unit, minimum_purchase_for_points, is_active
         ) values (v_tenant_id, 10.00, 100.00, 0.00, true)
         returning loyalty_program_id into v_loyalty_program_id;
     end if;
@@ -521,8 +521,8 @@ begin
     raise notice 'Puntos disponibles: %', coalesce(v_score_record.score, 0);
     raise notice 'Puntos totales ganados: %', coalesce(v_score_record.lifetime_score, 0);
     raise notice 'Puntos canjeados: %', coalesce(v_score_record.score_redeemed, 0);
-    raise notice 'Ratio ganancia: % pts/$1', v_loyalty_program.points_per_dollar;
-    raise notice 'Ratio canje: % pts = $1', v_loyalty_program.points_per_currency_unit;
+    raise notice 'Ratio ganancia: % pts/$1', v_loyalty_program.points_earned_per_currency_unit;
+    raise notice 'Ratio canje: % pts = $1', v_loyalty_program.points_redeemed_per_currency_unit;
     raise notice '✅ SECCIÓN 5 COMPLETADA';
 end $$;
 
@@ -566,7 +566,7 @@ begin
     select tenant_customer_id into v_customer_id from core.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
     select product_id into v_product_id from core.product where sku = 'PROD-003' and tenant_id = v_tenant_id limit 1;
 
-    select points_per_currency_unit into v_redeem_rate from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
+    select points_redeemed_per_currency_unit into v_redeem_rate from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
     select coalesce(score, 0) into v_points_before from pos_module.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
     -- Calcular impuestos (13%)
@@ -651,7 +651,7 @@ begin
     select tenant_customer_id into v_customer_id from core.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
     select product_id into v_product_id from core.product where sku = 'PROD-002' and tenant_id = v_tenant_id limit 1;
 
-    select points_per_currency_unit into v_redeem_rate from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
+    select points_redeemed_per_currency_unit into v_redeem_rate from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
     select coalesce(score, 0) into v_points_before from pos_module.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
     -- Calcular puntos necesarios para cubrir la venta
@@ -718,7 +718,7 @@ begin
     select tenant_customer_id into v_customer_id from core.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
     select product_id into v_product_id from core.product where sku = 'PROD-001' and tenant_id = v_tenant_id limit 1;
 
-    select points_per_currency_unit into v_redeem_rate from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
+    select points_redeemed_per_currency_unit into v_redeem_rate from pos_module.loyalty_program where tenant_id = v_tenant_id and is_active = true limit 1;
     select coalesce(score, 0) into v_points_available from pos_module.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
     raise notice '   Puntos disponibles: %', v_points_available;
@@ -802,8 +802,8 @@ begin
     raise notice '   Facturas emitidas: %', v_total_bills;
     raise notice '';
     raise notice '🎯 PROGRAMA DE LEALTAD:';
-    raise notice '   Ratio ganancia: % pts/$1', v_loyalty_program.points_per_dollar;
-    raise notice '   Ratio canje: % pts = $1', v_loyalty_program.points_per_currency_unit;
+    raise notice '   Ratio ganancia: % pts/$1', v_loyalty_program.points_earned_per_currency_unit;
+    raise notice '   Ratio canje: % pts = $1', v_loyalty_program.points_redeemed_per_currency_unit;
     raise notice '';
     raise notice '========================================';
     raise notice '✅ TEST COMPLETADO EXITOSAMENTE';

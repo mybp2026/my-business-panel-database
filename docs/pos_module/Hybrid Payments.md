@@ -152,7 +152,7 @@ SELECT score, lifetime_score, score_redeemed FROM pos_module.tenant_customer_sco
 ## Notes for Integrators / Developers
 
 - Hybrid payments are modeled as multiple `customer_payment` rows. The verification procedure aggregates verified payments — do not attempt to collapse hybrid payments into a single row.
-- For point redemptions, ensure UI shows both points and cash components and that amounts match server-side conversion (`points_per_currency_unit`).
+- For point redemptions, ensure UI shows both points and cash components and that amounts match server-side conversion (`points_redeemed_per_currency_unit`).
 - Maintain consistent tax calculation between frontend and backend. The backend recomputes totals on sale/bill updates.
 - For reporting, use `bill_payment` to determine which portion of a bill was cash/card vs points.
 

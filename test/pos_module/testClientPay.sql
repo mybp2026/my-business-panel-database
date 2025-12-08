@@ -243,8 +243,8 @@ begin
     -- 1.7 Crear programa de lealtad
     insert into pos_module.loyalty_program (
         tenant_id,
-        points_per_dollar,
-        points_per_currency_unit,
+        points_earned_per_currency_unit,
+        points_redeemed_per_currency_unit,
         minimum_purchase_for_points,
         is_active
     )
