@@ -488,8 +488,6 @@ begin
 end;
 $$ language plpgsql;
 
-
--- Function to generate payment alerts based on tenant configuration
 create or replace function generate_payment_alerts()
 returns void as $$
 declare
@@ -499,7 +497,6 @@ declare
     v_alert_type_id integer;
     v_existing_alert_id uuid;
 begin
-    -- Iterate through all active tenants with alert config
     for v_config in 
         select 
             pac.tenant_id,
@@ -507,7 +504,6 @@ begin
             pac.urgent_days_before_due
         from supplies_module.supply_order_payment_alert_config pac
     loop
-        -- Find all pending/partial paid accounts for this tenant
         for v_payable in
             select 
                 ap.account_payable_id,
@@ -521,23 +517,22 @@ begin
             join supplies_module.supplier_branch sb on s.supplier_id = sb.supplier_id
             join core.branch b on sb.branch_id = b.branch_id
             where b.tenant_id = v_config.tenant_id
-            and ap.account_status in (1, 2) -- Pending or Partial Paid
+            and ap.account_status in (1, 2)
             and ap.balance_remaining > 0
         loop
             v_days_until_due := v_payable.due_date - current_date;
             
-            -- Determine alert type based on days until due
+  
             if v_days_until_due < 0 then
-                v_alert_type_id := 3; -- Overdue Payment
+                v_alert_type_id := 3; 
             elsif v_days_until_due <= v_config.urgent_days_before_due then
-                v_alert_type_id := 2; -- Urgent Payment
+                v_alert_type_id := 2; 
             elsif v_days_until_due <= v_config.warning_days_before_due then
-                v_alert_type_id := 1; -- Upcoming Due Date
+                v_alert_type_id := 1; 
             else
-                continue; -- No alert needed yet
+                continue; 
             end if;
             
-            -- Check if alert already exists and is unresolved
             select payment_alert_id into v_existing_alert_id
             from supplies_module.supply_order_payment_alert
             where account_payable_id = v_payable.account_payable_id
@@ -545,7 +540,6 @@ begin
             and is_resolved = false
             limit 1;
             
-            -- Create alert only if it doesn't exist
             if v_existing_alert_id is null then
                 insert into supplies_module.supply_order_payment_alert(
                     account_payable_id,
@@ -564,7 +558,6 @@ begin
 end;
 $$ language plpgsql;
 
--- Function to get pending payment alerts for a tenant
 create or replace function get_pending_payment_alerts(p_tenant_id uuid)
 returns table(
     payment_alert_id uuid,
@@ -616,7 +609,6 @@ begin
 end;
 $$ language plpgsql;
 
--- Function to resolve/dismiss an alert
 create or replace function resolve_payment_alert(p_alert_id uuid)
 returns void as $$
 begin
@@ -627,7 +619,6 @@ begin
 end;
 $$ language plpgsql;
 
--- Function to auto-resolve alerts when account is fully paid
 create or replace function auto_resolve_payment_alerts()
 returns trigger as $$
 begin
@@ -649,7 +640,6 @@ create trigger auto_resolve_payment_alerts_trigger
     for each row
     execute function supplies_module.auto_resolve_payment_alerts();
 
--- Function to initialize alert config for a tenant
 create or replace function initialize_payment_alert_config(
     p_tenant_id uuid,
     p_warning_days integer default 7,
@@ -685,7 +675,6 @@ begin
 end;
 $$ language plpgsql;
 
--- Function to get alert statistics for a tenant
 create or replace function get_payment_alert_stats(p_tenant_id uuid)
 returns table(
     total_alerts integer,
