@@ -488,7 +488,241 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists perform_three_way_matching_trigger on supplies_module.goods_receipt;
+
+-- Function to generate payment alerts based on tenant configuration
+create or replace function generate_payment_alerts()
+returns void as $$
+declare
+    v_config record;
+    v_payable record;
+    v_days_until_due integer;
+    v_alert_type_id integer;
+    v_existing_alert_id uuid;
+begin
+    -- Iterate through all active tenants with alert config
+    for v_config in 
+        select 
+            pac.tenant_id,
+            pac.warning_days_before_due,
+            pac.urgent_days_before_due
+        from supplies_module.supply_order_payment_alert_config pac
+    loop
+        -- Find all pending/partial paid accounts for this tenant
+        for v_payable in
+            select 
+                ap.account_payable_id,
+                ap.due_date,
+                ap.account_status,
+                ap.balance_remaining,
+                so.supply_order_id
+            from supplies_module.account_payable ap
+            join supplies_module.supply_order so on ap.supply_order_id = so.supply_order_id
+            join supplies_module.supplier s on so.supplier_id = s.supplier_id
+            join supplies_module.supplier_branch sb on s.supplier_id = sb.supplier_id
+            join core.branch b on sb.branch_id = b.branch_id
+            where b.tenant_id = v_config.tenant_id
+            and ap.account_status in (1, 2) -- Pending or Partial Paid
+            and ap.balance_remaining > 0
+        loop
+            v_days_until_due := v_payable.due_date - current_date;
+            
+            -- Determine alert type based on days until due
+            if v_days_until_due < 0 then
+                v_alert_type_id := 3; -- Overdue Payment
+            elsif v_days_until_due <= v_config.urgent_days_before_due then
+                v_alert_type_id := 2; -- Urgent Payment
+            elsif v_days_until_due <= v_config.warning_days_before_due then
+                v_alert_type_id := 1; -- Upcoming Due Date
+            else
+                continue; -- No alert needed yet
+            end if;
+            
+            -- Check if alert already exists and is unresolved
+            select payment_alert_id into v_existing_alert_id
+            from supplies_module.supply_order_payment_alert
+            where account_payable_id = v_payable.account_payable_id
+            and payment_alert_type_id = v_alert_type_id
+            and is_resolved = false
+            limit 1;
+            
+            -- Create alert only if it doesn't exist
+            if v_existing_alert_id is null then
+                insert into supplies_module.supply_order_payment_alert(
+                    account_payable_id,
+                    payment_alert_type_id,
+                    alert_date,
+                    is_resolved
+                ) values (
+                    v_payable.account_payable_id,
+                    v_alert_type_id,
+                    current_timestamp,
+                    false
+                );
+            end if;
+        end loop;
+    end loop;
+end;
+$$ language plpgsql;
+
+-- Function to get pending payment alerts for a tenant
+create or replace function get_pending_payment_alerts(p_tenant_id uuid)
+returns table(
+    payment_alert_id uuid,
+    account_payable_id uuid,
+    supply_order_id uuid,
+    supplier_name varchar,
+    invoice_number varchar,
+    alert_type varchar,
+    alert_type_description text,
+    due_date date,
+    days_until_due integer,
+    balance_remaining numeric,
+    alert_date timestamp,
+    created_at timestamp
+) as $$
+begin
+    return query
+    select 
+        spa.payment_alert_id,
+        ap.account_payable_id,
+        so.supply_order_id,
+        s.supplier_name,
+        si.invoice_number,
+        spat.payment_alert_type_name,
+        spat.description,
+        ap.due_date,
+        (ap.due_date - current_date)::integer as days_until_due,
+        ap.balance_remaining,
+        spa.alert_date,
+        spa.created_at
+    from supplies_module.supply_order_payment_alert spa
+    join supplies_module.supply_order_payment_alert_type spat 
+        on spa.payment_alert_type_id = spat.payment_alert_type_id
+    join supplies_module.account_payable ap 
+        on spa.account_payable_id = ap.account_payable_id
+    join supplies_module.supply_order so 
+        on ap.supply_order_id = so.supply_order_id
+    join supplies_module.supplier s 
+        on so.supplier_id = s.supplier_id
+    left join supplies_module.supplier_invoice si 
+        on so.supply_order_id = si.supply_order_id
+    join supplies_module.supplier_branch sb 
+        on s.supplier_id = sb.supplier_id
+    join core.branch b 
+        on sb.branch_id = b.branch_id
+    where b.tenant_id = p_tenant_id
+    and spa.is_resolved = false
+    order by ap.due_date asc, spa.alert_date desc;
+end;
+$$ language plpgsql;
+
+-- Function to resolve/dismiss an alert
+create or replace function resolve_payment_alert(p_alert_id uuid)
+returns void as $$
+begin
+    update supplies_module.supply_order_payment_alert
+    set is_resolved = true,
+        updated_at = current_timestamp
+    where payment_alert_id = p_alert_id;
+end;
+$$ language plpgsql;
+
+-- Function to auto-resolve alerts when account is fully paid
+create or replace function auto_resolve_payment_alerts()
+returns trigger as $$
+begin
+    if new.account_status = 3 and old.account_status is distinct from 3 then
+        update supplies_module.supply_order_payment_alert
+        set is_resolved = true,
+            updated_at = current_timestamp
+        where account_payable_id = new.account_payable_id
+        and is_resolved = false;
+    end if;
+    
+    return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists auto_resolve_payment_alerts_trigger on supplies_module.account_payable;
+create trigger auto_resolve_payment_alerts_trigger
+    after update of account_status on supplies_module.account_payable
+    for each row
+    execute function supplies_module.auto_resolve_payment_alerts();
+
+-- Function to initialize alert config for a tenant
+create or replace function initialize_payment_alert_config(
+    p_tenant_id uuid,
+    p_warning_days integer default 7,
+    p_urgent_days integer default 3,
+    p_email_enabled boolean default true,
+    p_sms_enabled boolean default false
+) returns uuid as $$
+declare
+    v_config_id uuid;
+begin
+    insert into supplies_module.supply_order_payment_alert_config(
+        tenant_id,
+        warning_days_before_due,
+        urgent_days_before_due,
+        email_notifications_enabled,
+        sms_notifications_enabled
+    ) values (
+        p_tenant_id,
+        p_warning_days,
+        p_urgent_days,
+        p_email_enabled,
+        p_sms_enabled
+    )
+    on conflict (tenant_id) do update
+    set warning_days_before_due = excluded.warning_days_before_due,
+        urgent_days_before_due = excluded.urgent_days_before_due,
+        email_notifications_enabled = excluded.email_notifications_enabled,
+        sms_notifications_enabled = excluded.sms_notifications_enabled,
+        updated_at = current_timestamp
+    returning payment_alert_config_id into v_config_id;
+    
+    return v_config_id;
+end;
+$$ language plpgsql;
+
+-- Function to get alert statistics for a tenant
+create or replace function get_payment_alert_stats(p_tenant_id uuid)
+returns table(
+    total_alerts integer,
+    overdue_count integer,
+    urgent_count integer,
+    warning_count integer,
+    total_amount_at_risk numeric
+) as $$
+begin
+    return query
+    select 
+        count(*)::integer as total_alerts,
+        count(*) filter (where spat.payment_alert_type_id = 3)::integer as overdue_count,
+        count(*) filter (where spat.payment_alert_type_id = 2)::integer as urgent_count,
+        count(*) filter (where spat.payment_alert_type_id = 1)::integer as warning_count,
+        coalesce(sum(ap.balance_remaining), 0) as total_amount_at_risk
+    from supplies_module.supply_order_payment_alert spa
+    join supplies_module.supply_order_payment_alert_type spat 
+        on spa.payment_alert_type_id = spat.payment_alert_type_id
+    join supplies_module.account_payable ap 
+        on spa.account_payable_id = ap.account_payable_id
+    join supplies_module.supply_order so 
+        on ap.supply_order_id = so.supply_order_id
+    join supplies_module.supplier s 
+        on so.supplier_id = s.supplier_id
+    join supplies_module.supplier_branch sb 
+        on s.supplier_id = sb.supplier_id
+    join core.branch b 
+        on sb.branch_id = b.branch_id
+    where b.tenant_id = p_tenant_id
+    and spa.is_resolved = false;
+end;
+$$ language plpgsql;
+
+-- drop trigger if exists update_three_way_matching_timestamp on supplies_module.three_way_matching;
+-- create trigger update_three_way_matching_timestamp before update on supplies_module.three_way_matching
+-- for each row execute function core.update_timestamp();
 
 drop trigger if exists update_supplier_timestamp on supplies_module.supplier;
 create trigger update_supplier_timestamp before update on supplies_module.supplier
@@ -533,7 +767,3 @@ for each row execute function core.update_timestamp();
 drop trigger if exists update_supply_order_payment_alert_config_timestamp on supplies_module.supply_order_payment_alert_config;
 create trigger update_supply_order_payment_alert_config_timestamp before update on supplies_module.supply_order_payment_alert_config
 for each row execute function core.update_timestamp();
-
--- drop trigger if exists update_three_way_matching_timestamp on supplies_module.three_way_matching;
--- create trigger update_three_way_matching_timestamp before update on supplies_module.three_way_matching
--- for each row execute function core.update_timestamp();
