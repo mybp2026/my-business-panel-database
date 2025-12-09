@@ -1,5 +1,4 @@
 -- SCHEMA: supplies
-drop schema if exists supplies_module cascade;
 create schema if not exists supplies_module;
 set search_path to supplies_module;
 
