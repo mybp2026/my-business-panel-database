@@ -720,10 +720,6 @@ begin
 end;
 $$ language plpgsql;
 
--- drop trigger if exists update_three_way_matching_timestamp on supplies_module.three_way_matching;
--- create trigger update_three_way_matching_timestamp before update on supplies_module.three_way_matching
--- for each row execute function core.update_timestamp();
-
 drop trigger if exists update_supplier_timestamp on supplies_module.supplier;
 create trigger update_supplier_timestamp before update on supplies_module.supplier
 for each row execute function core.update_timestamp();
@@ -766,4 +762,8 @@ for each row execute function core.update_timestamp();
 
 drop trigger if exists update_supply_order_payment_alert_config_timestamp on supplies_module.supply_order_payment_alert_config;
 create trigger update_supply_order_payment_alert_config_timestamp before update on supplies_module.supply_order_payment_alert_config
+for each row execute function core.update_timestamp();
+
+drop trigger if exists update_three_way_matching_timestamp on supplies_module.three_way_matching;
+create trigger update_three_way_matching_timestamp before update on supplies_module.three_way_matching
 for each row execute function core.update_timestamp();
