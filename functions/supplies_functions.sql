@@ -25,6 +25,7 @@ declare
     v_supply_order_id uuid;
     v_supplier_invoice_id uuid;
     v_item jsonb;
+    v_item_rec record;
     v_tenant_id uuid;
     v_product_id uuid;
     v_qty integer;
@@ -124,13 +125,8 @@ begin
             v_tax_rate
         ) returning supplier_invoice_id into v_supplier_invoice_id;
 
-        for v_item in 
-            select jsonb_build_object(
-                'tenant_id', tenant_id,
-                'product_id', product_id,
-                'quantity_ordered', quantity_ordered,
-                'unit_price', unit_price
-            ) as value
+        for v_item_rec in 
+            select tenant_id, product_id, quantity_ordered, unit_price
             from supplies_module.supply_order_item
             where supply_order_id = v_supply_order_id
         loop
@@ -142,10 +138,10 @@ begin
                 unit_price
             ) values (
                 v_supplier_invoice_id,
-                (v_item ->> 'tenant_id')::uuid,
-                (v_item ->> 'product_id')::uuid,
-                (v_item ->> 'quantity_ordered')::integer,
-                (v_item ->> 'unit_price')::numeric
+                v_item_rec.tenant_id,
+                v_item_rec.product_id,
+                v_item_rec.quantity_ordered,
+                v_item_rec.unit_price
             );
         end loop;
     end if;
@@ -363,6 +359,8 @@ begin
                 v_item.quantity_ordered
             );
         end loop;
+
+        perform supplies_module.execute_three_way_matching(new.supply_order_id, v_goods_receipt_id);
     end if;
 
     return new;
@@ -375,8 +373,10 @@ create trigger create_goods_receipt_trigger
     for each row
     execute function supplies_module.create_goods_receipt();
 
-create or replace function perform_three_way_matching()
-returns trigger as $$
+create or replace function execute_three_way_matching(
+    p_supply_order_id uuid,
+    p_goods_receipt_id uuid
+) returns void as $$
 declare
     v_supplier_invoice_id uuid;
     v_order_subtotal numeric(12,3);
@@ -396,18 +396,18 @@ declare
 begin
     select supplier_invoice_id into v_supplier_invoice_id
     from supplies_module.supplier_invoice
-    where supply_order_id = new.supply_order_id;
+    where supply_order_id = p_supply_order_id;
 
     if v_supplier_invoice_id is null then
-        return new;
+        return;
     end if;
 
     if exists(
         select 1 
         from supplies_module.three_way_matching 
-        where supply_order_id = new.supply_order_id
+        where supply_order_id = p_supply_order_id
     ) then
-        return new;
+        return;
     end if;
 
     select 
@@ -419,7 +419,7 @@ begin
         v_order_tax,
         v_order_total
     from supplies_module.account_payable
-    where supply_order_id = new.supply_order_id;
+    where supply_order_id = p_supply_order_id;
 
     select 
         subtotal_amount,
@@ -432,13 +432,20 @@ begin
     from supplies_module.supplier_invoice
     where supplier_invoice_id = v_supplier_invoice_id;
 
-    v_receipt_subtotal := new.subtotal_amount;
-    v_receipt_tax := new.tax_amount;
-    v_receipt_total := new.total_amount;
+    select 
+        subtotal_amount,
+        tax_amount,
+        total_amount
+    into 
+        v_receipt_subtotal,
+        v_receipt_tax,
+        v_receipt_total
+    from supplies_module.goods_receipt
+    where goods_receipt_id = p_goods_receipt_id;
 
     select coalesce(sum(quantity_ordered), 0) into v_order_qty
     from supplies_module.supply_order_item
-    where supply_order_id = new.supply_order_id;
+    where supply_order_id = p_supply_order_id;
 
     select coalesce(sum(quantity_billed), 0) into v_invoice_qty
     from supplies_module.supplier_invoice_item
@@ -446,7 +453,7 @@ begin
 
     select coalesce(sum(quantity_received), 0) into v_receipt_qty
     from supplies_module.goods_receipt_item
-    where goods_receipt_id = new.goods_receipt_id;
+    where goods_receipt_id = p_goods_receipt_id;
 
     v_amounts_matched := (abs(v_order_subtotal - v_invoice_subtotal) <= 0.01) and 
                          (abs(v_order_subtotal - v_receipt_subtotal) <= 0.01) and
@@ -470,24 +477,18 @@ begin
         is_matched,
         matched_at
     ) values (
-        new.supply_order_id,
-        new.goods_receipt_id,
+        p_supply_order_id,
+        p_goods_receipt_id,
         v_supplier_invoice_id,
         v_amounts_matched,
         v_quantities_matched,
         v_amounts_matched and v_quantities_matched,
         current_timestamp
     );
-
-    return new;
 end;
 $$ language plpgsql;
 
 drop trigger if exists perform_three_way_matching_trigger on supplies_module.goods_receipt;
-create trigger perform_three_way_matching_trigger
-    after insert on supplies_module.goods_receipt
-    for each row
-    execute function supplies_module.perform_three_way_matching();
 
 drop trigger if exists update_supplier_timestamp on supplies_module.supplier;
 create trigger update_supplier_timestamp before update on supplies_module.supplier
