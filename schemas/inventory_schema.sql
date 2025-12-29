@@ -1,8 +1,8 @@
-drop schema if exists inventory_module cascade;
+    drop schema if exists inventory_module cascade;
 create schema if not exists inventory_module;
 set search_path to inventory_module;
 
-create table warehouse(
+create table warehouse (
     warehouse_id uuid primary key default gen_random_uuid(),
     branch_id uuid not null references core.branch(branch_id) on delete cascade,
     warehouse_name varchar(255) not null,
@@ -17,27 +17,31 @@ create table inventory(
     product_id uuid not null,
     warehouse_id uuid not null references inventory_module.warehouse(warehouse_id) on delete cascade,
     stock integer not null,
+    expiration_date timestamp,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp,
-    
+
     foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade  -- ✅ FK COMPUESTA
 );
+ALTER TABLE inventory ADD CONSTRAINT check_expiration_date CHECK (
+    expiration_date IS NULL OR expiration_date > current_timestamp
+);
 
-create table inventory_movement_type(
-    inventory_movement_type_id serial primary key,
-    inventory_movement_type_name varchar(50) not null unique, 
-    inventory_movement_type_description text,
+create table inventory_log_type(
+    inventory_log_type_id serial primary key,
+    inventory_log_type_name varchar(50) not null unique, 
+    inventory_log_type_description text,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-insert into inventory_movement_type (inventory_movement_type_name, inventory_movement_type_description) values
-('IN', 'inventory added to inventory_module'),
-('OUT', 'inventory removed from inventory_module')
+insert into inventory_log_type (inventory_log_type_name, inventory_log_type_description) values
+    ('IN', 'inventory added to inventory_module'),
+    ('OUT', 'inventory removed from inventory_module')
 on conflict do nothing;
 
-create table inventory_movement(
-    inventory_movement_id uuid primary key default gen_random_uuid(),
-    inventory_movement_type_id integer not null references inventory_module.inventory_movement_type(inventory_movement_type_id) on delete cascade,
+create table inventory_log(
+    inventory_log_id uuid primary key default gen_random_uuid(),
+    inventory_log_type_id integer not null references inventory_module.inventory_log_type(inventory_log_type_id) on delete cascade,
     supply_order_id uuid references supplies_module.supply_order(supply_order_id) on delete set null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
@@ -66,7 +70,16 @@ create table inventory_transfer_product(
     foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade  -- ✅ FK COMPUESTA
 );
 
+CREATE TABLE discrepancy_count(
+    discrepancy_count_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
--- ==========================================================================
---                          FUNCTIONS AND TRIGGERS
--- ==========================================================================
+    product_id uuid NOT NULL,
+    warehouse_id uuid NOT NULL REFERENCES inventory_module.warehouse(warehouse_id) ON DELETE CASCADE,
+    stored_quantity integer NOT NULL,
+    physical_quantity integer NOT NULL,
+    discrepancy_reason text,
+    created_at timestamp DEFAULT current_timestamp,
+    updated_at timestamp DEFAULT current_timestamp,
+
+    FOREIGN KEY (tenant_id, product_id) REFERENCES core.product(tenant_id, product_id) ON DELETE CASCADE  -- ✅ FK COMPUESTA
+);
