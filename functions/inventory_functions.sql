@@ -15,7 +15,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trigger_reduce_stock
-    AFTER INSERT ON core.sales
+    AFTER INSERT ON pos_module.sales
 FOR EACH ROW
     EXECUTE FUNCTION reduce_stock_on_sale();
 
