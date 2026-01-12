@@ -27,6 +27,7 @@ create table if not exists inventory_log_type(
     inventory_log_type_id serial primary key,
     inventory_log_type_name varchar(50) not null unique, 
     inventory_log_type_description text,
+    
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
@@ -38,9 +39,15 @@ on conflict do nothing;
 create table if not exists inventory_log(
     inventory_log_id uuid primary key default gen_random_uuid(),
     inventory_log_type_id integer not null references inventory_module.inventory_log_type(inventory_log_type_id) on delete cascade,
-    supply_order_id uuid references supplies_module.supply_order(supply_order_id) on delete set null,
+    warehouse_id uuid not null references inventory_module.warehouse(warehouse_id) on delete cascade,
+    tenant_id uuid not null,                                                         
+    product_id uuid not null,
+    quantity integer not null,
+
     created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
+    updated_at timestamp default current_timestamp,
+
+    foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade  
 );
 
 create table if not exists inventory_transfer(
