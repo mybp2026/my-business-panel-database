@@ -59,39 +59,6 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql; 
 
-CREATE OR REPLACE FUNCTION update_gross_salary()
-RETURNS TRIGGER AS $$
-DECLARE
-	v_detail_id UUID;
-	v_new_gross_salary DECIMAL(10, 2);
-BEGIN
-	IF(TG_OP = 'DELETE') THEN 
-		v_detail_id := OLD.detail_id;
-	ELSE
-		v_detail_id := NEW.detail_id;
-	END IF;
-
-	SELECT COALESCE(SUM(calculated_amount), 0)
-	INTO v_new_gross_salary
-	FROM rrhh_module.income_register
-	WHERE detail_id = v_detail_id;
-
-	UPDATE rrhh_module.paysheet_detail
-	SET gross_salary = v_new_gross_salary,
-  recalc_needed = TRUE
-	WHERE detail_id = v_detail_id;
-
-	RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- FIXME: relation "rrhh_module.income_register" does not exist
--- DROP TRIGGER IF EXISTS update_gross_salary on rrhh_module.income_register;
--- CREATE TRIGGER update_gross_salary
--- 	AFTER INSERT OR UPDATE OR DELETE ON rrhh_module.income_register
--- 	FOR EACH ROW
--- 	EXECUTE FUNCTION update_gross_salary();
-
 CREATE OR REPLACE FUNCTION rrhh_module.update_paysheet_state (
     p_paysheet_id UUID
 )
