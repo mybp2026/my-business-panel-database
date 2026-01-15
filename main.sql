@@ -114,6 +114,9 @@ create table if not exists tenant_customer(
     unique(tenant_id, phone)    
 );
 
+alter table core.tenant_customer
+    add column if not exists is_tenant boolean not null default false;
+
 create table if not exists role(
     role_id serial primary key,
     role_name varchar(50) unique not null,
@@ -177,7 +180,8 @@ create table if not exists subscription_type (
     subscription_type_name varchar(25) not null,
     subscription_type_detail text not null,
     duration_months int not null,
-    subscription_type_cost numeric(5,2) not null
+    subscription_type_cost numeric(5,2)
+    -- TODO: corroborar como se gestionarán las suscripciones del SaaS
 );
 insert into subscription_type (subscription_type_name, subscription_type_detail, duration_months, subscription_type_cost) values
 ('Basic', 'Basic subscription plan', 1, 9.99),
@@ -196,7 +200,8 @@ insert into payment_method(name, description) values
 ('cash', 'Payment made with cash'),
 ('debit_card', 'Payment made with debit card'),
 ('credit_card', 'Payment made with credit card'),
-('loyalty_points', 'Payment made via loyalty points')
+('loyalty_points', 'Payment made via loyalty points'),
+('credit', 'Payment made through a credit account')
 on conflict do nothing;
 
 create table if not exists tenant_payment(
@@ -258,8 +263,8 @@ begin
 end;
 $$ language plpgsql;
 create unique index if not exists idx_product_tenant_sku on core.product(tenant_id, sku);
-create index if not exists idx_product_tenant_btree on core.product(tenant_id);
-create index if not exists idx_product_name_fts on core.product using gin ( product_name_tsv );
+create index IF NOT EXISTS idx_product_tenant_btree on core.product(tenant_id);
+create index IF NOT EXISTS idx_product_name_fts on core.product using gin ( product_name_tsv );
 
 create table if not exists global_attribute (
     global_attribute_id serial primary key,
@@ -302,6 +307,50 @@ create table if not exists product_attribute (
     foreign key (tenant_id, product_id) 
         references core.product(tenant_id, product_id) 
         on delete cascade
+);
+
+create table if not exists account_payable_status(
+    status_id serial primary key,
+    status_name varchar(50) not null,
+    description text,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+);
+insert into account_payable_status(status_name, description) values
+('Pending', 'Payment is pending'),
+('Partial Paid', 'Partial payment has been made'),
+('Paid', 'Payment has been made'),
+('Overdue', 'Payment is overdue')
+on conflict do nothing;
+
+CREATE TABLE IF NOT EXISTS account_payable_type (
+    account_payable_type_id SERIAL PRIMARY KEY,
+    type_name VARCHAR(50) UNIQUE NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO account_payable_type (type_name, description) VALUES
+    ('goods_purchase', 'Purchases from suppliers for goods ordered'),
+    ('utility_bill', 'Monthly utility bills such as electricity, water, internet'),
+    ('rent_payment', 'Monthly rent payments for office or retail space'),
+    ('tax_obligation', 'Taxes owed to government authorities'),
+    ('loan_repayment', 'Repayments on business loans or lines of credit')
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS core.account_payable (
+    account_payable_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_payable_type_id INT REFERENCES core.account_payable_type(account_payable_type_id) ON DELETE SET NULL,
+    account_status integer not null default 1 references core.account_payable_status(status_id),
+    has_invoice BOOLEAN DEFAULT FALSE,
+    has_tax BOOLEAN DEFAULT FALSE,
+    subtotal NUMERIC(12,3) NOT NULL CHECK (subtotal >= 0),
+    amount_paid NUMERIC(12,3) DEFAULT 0 CHECK (amount_paid >= 0),
+    balance_remaining NUMERIC(12,3) GENERATED ALWAYS AS (subtotal - amount_paid) STORED,
+    is_paid BOOLEAN DEFAULT FALSE,
+    due_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================================================
@@ -558,8 +607,8 @@ create table if not exists sale(
     created_at timestamp not null default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-create index if not exists idx_sale_branch_id on pos_module.sale(branch_id);
-create index if not exists idx_sale_sale_date on pos_module.sale(sale_date);
+create index IF NOT EXISTS idx_sale_branch_id on pos_module.sale(branch_id);
+create index IF NOT EXISTS idx_sale_sale_date on pos_module.sale(sale_date);
 
 create table if not exists sale_item(
     sale_item_id uuid primary key default gen_random_uuid(),
@@ -576,9 +625,9 @@ create table if not exists sale_item(
         references core.product(tenant_id, product_id) 
         on delete restrict
 );
-create index if not exists idx_sale_item_product_id on pos_module.sale_item(product_id);
-create index if not exists idx_sale_item_sale_id on pos_module.sale_item(sale_id);
-create index if not exists idx_sale_item_tenant_product on pos_module.sale_item(tenant_id, product_id);
+create index IF NOT EXISTS idx_sale_item_product_id on pos_module.sale_item(product_id);
+create index IF NOT EXISTS idx_sale_item_sale_id on pos_module.sale_item(sale_id);
+create index IF NOT EXISTS idx_sale_item_tenant_product on pos_module.sale_item(tenant_id, product_id);
 
 create table if not exists cash_register(
     cash_register_id uuid primary key default gen_random_uuid(),
@@ -643,7 +692,9 @@ create table if not exists bill(
     billed_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-create index if not exists idx_bill_sale_id on pos_module.bill(sale_id);
+alter table pos_module.bill
+    add column if not exists due_date date;
+create index IF NOT EXISTS idx_bill_sale_id on pos_module.bill(sale_id);
 
 create table if not exists bill_payment(
     bill_payment_id uuid primary key default gen_random_uuid(),
@@ -698,8 +749,8 @@ create table if not exists return_transaction(
     return_date timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-create index if not exists idx_return_transaction_bill_id on pos_module.return_transaction(bill_id);
-create index if not exists idx_return_transaction_date on pos_module.return_transaction(return_date);
+create index IF NOT EXISTS idx_return_transaction_bill_id on pos_module.return_transaction(bill_id);
+create index IF NOT EXISTS idx_return_transaction_date on pos_module.return_transaction(return_date);
 
 create table if not exists return_product(
     return_product_id uuid primary key default gen_random_uuid(),
@@ -711,7 +762,7 @@ create table if not exists return_product(
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-create index if not exists idx_return_product_transaction_id on pos_module.return_product(return_transaction_id);
+create index IF NOT EXISTS idx_return_product_transaction_id on pos_module.return_product(return_transaction_id);
 
 create table if not exists promotion_type(
     promotion_type_id serial primary key,
@@ -857,6 +908,13 @@ create table if not exists score_transaction(
     bill_id uuid references pos_module.bill(bill_id) on delete set null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
+);
+
+create table if not exists debtor (
+    debtor_id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
+    debt numeric(10, 2) not null default 0.00, -- Add check (debt >= 0) ?
+    missed_payments integer not null default 0
 );
 
 -- ==========================================================================
@@ -2103,7 +2161,7 @@ begin
         raise exception 'Payment % has no associated sale', _payment_id;
     end if;
     
-    raise notice 'Verifying payment: %', _payment_id;
+    raise notice '💳 Verifying payment: %', _payment_id;
     raise notice '   Sale: %', _sale_id;
     raise notice '   Customer: %', _tenant_customer_id;
     raise notice '   Amount: $%', _payment_amount;
@@ -2117,7 +2175,7 @@ begin
     raise notice '';
     
     if _is_points_redemption then
-        raise notice 'Processing points redemption...';
+        raise notice '🎁 Processing points redemption...';
         raise notice '   Points to redeem: %', _points_redeemed;
         
         select * into _redeem_result
@@ -2223,6 +2281,7 @@ drop trigger if exists update_sale_item_timestamp on pos_module.sale_item;
 create trigger update_sale_item_timestamp before update on pos_module.sale_item
 for each row execute function core.update_timestamp();
 
+-- SCHEMA: supplies
 -- SCHEMA: supplies
 create schema if not exists supplies_module;
 set search_path to supplies_module;
@@ -2352,47 +2411,56 @@ create table if not exists goods_receipt_item(
     foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade
 );
 
-create table if not exists account_payable_status(
-    status_id serial primary key,
-    status_name varchar(50) not null,
-    description text,
-    created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
-);
-insert into account_payable_status(status_name, description) values
-('Pending', 'Payment is pending'),
-('Partial Paid', 'Partial payment has been made'),
-('Paid', 'Payment has been made'),
-('Overdue', 'Payment is overdue')
-on conflict do nothing;
+-- create table if not exists account_payable_status(
+--     status_id serial primary key,
+--     status_name varchar(50) not null,
+--     description text,
+--     created_at timestamp default current_timestamp,
+--     updated_at timestamp default current_timestamp
+-- );
+-- insert into account_payable_status(status_name, description) values
+-- ('Pending', 'Payment is pending'),
+-- ('Partial Paid', 'Partial payment has been made'),
+-- ('Paid', 'Payment has been made'),
+-- ('Overdue', 'Payment is overdue')
+-- on conflict do nothing;
+-- drop table if exists supplies_module.account_payable_status cascade;
 
-create table if not exists supplies_account_payable(
-    account_payable_id uuid primary key default gen_random_uuid(),
-    supply_order_id uuid not null unique references supplies_module.supply_order(supply_order_id) on delete cascade,
-    has_invoice boolean default true,
-    subtotal_amount numeric(12,3) default 0,  
-    tax_amount numeric(12,3) default 0,       
-    amount_due numeric(12,3) generated always as (subtotal_amount + tax_amount) stored,  -- ✅ Total con tax
-    amount_paid numeric(12,3) default 0,
-    balance_remaining numeric(12,3) generated always as (subtotal_amount + tax_amount - amount_paid) stored,  -- ✅ Incluye tax
-    due_date date not null,
-    account_status integer not null default 1 references supplies_module.account_payable_status(status_id),
+-- drop table if exists supplies_module.account_payable cascade;
+
+CREATE TABLE IF NOT EXISTS supplies_account_payable(
+    supplies_account_payable_id uuid primary key default gen_random_uuid(),
+    account_payable_id uuid NOT NULL UNIQUE REFERENCES core.account_payable(account_payable_id) ON DELETE CASCADE,
+    supply_order_id uuid NOT NULL UNIQUE REFERENCES supplies_module.supply_order(supply_order_id) ON DELETE CASCADE,
+    tax_amount numeric(12,3) default 0,
+    account_payable_status INTEGER REFERENCES core.account_payable_status(status_id),
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
-create table if not exists supply_order_payment(
-    payment_id uuid primary key default gen_random_uuid(),
-    tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
-    account_payable_id uuid not null references supplies_module.supplies_account_payable(account_payable_id) on delete cascade,
-    payment_date timestamp default current_timestamp,
-    amount_paid numeric(12,3) not null,
-    payment_method_id integer not null references core.payment_method(payment_method_id) on delete cascade,
-    payment_reference varchar(100),  
-    verified boolean default false,  
+-- drop table if exists supplies_module.supply_order_payment cascade;
+
+-- ...existing code...
+
+-- Corrección para recrear la tabla de alertas con la estructura correcta
+DROP TABLE IF EXISTS supplies_module.supply_order_payment_alert CASCADE;
+
+CREATE TABLE supplies_module.supply_order_payment_alert(
+    payment_alert_id uuid primary key default gen_random_uuid(),
+    supplies_account_payable_id uuid not null references supplies_module.supplies_account_payable(supplies_account_payable_id) on delete cascade,
+    payment_alert_type_id integer not null references supplies_module.supply_order_payment_alert_type(payment_alert_type_id),
+    alert_date timestamp default current_timestamp,
+    is_resolved boolean default false,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
+
+-- Re-aplicar triggers de timestamp si es necesario
+drop trigger if exists update_supply_order_payment_alert_timestamp on supplies_module.supply_order_payment_alert;
+create trigger update_supply_order_payment_alert_timestamp before update on supplies_module.supply_order_payment_alert
+for each row execute function core.update_timestamp();
+
+-- ...existing code...
 
 create table if not exists supply_order_payment_alert_type(
     payment_alert_type_id serial primary key,
@@ -2402,15 +2470,15 @@ create table if not exists supply_order_payment_alert_type(
     updated_at timestamp default current_timestamp
 );
 insert into supply_order_payment_alert_type(payment_alert_type_name, description) values
-('Upcoming Due Date', 'Alert for upcoming payment due date'),
-('Urgent Payment', 'Alert for urgent payments'),
-('Overdue Payment', 'Alert for overdue payments'),
-('Reconciliation Mismatch', 'Alert for payment reconciliation issues')
+    ('Upcoming Due Date', 'Alert for upcoming payment due date'),
+    ('Urgent Payment', 'Alert for urgent payments'),
+    ('Overdue Payment', 'Alert for overdue payments'),
+    ('Reconciliation Mismatch', 'Alert for payment reconciliation issues')
 on conflict do nothing;
 
 create table if not exists supply_order_payment_alert(
     payment_alert_id uuid primary key default gen_random_uuid(),
-    account_payable_id uuid not null references supplies_module.supplies_account_payable(account_payable_id) on delete cascade,
+    supplies_account_payable_id uuid not null references supplies_module.supplies_account_payable(supplies_account_payable_id) on delete cascade,
     payment_alert_type_id integer not null references supplies_module.supply_order_payment_alert_type(payment_alert_type_id),
     alert_date timestamp default current_timestamp,
     is_resolved boolean default false,
@@ -2473,7 +2541,6 @@ declare
     v_supply_order_id uuid;
     v_supplier_invoice_id uuid;
     v_item jsonb;
-    v_item_rec record;
     v_tenant_id uuid;
     v_product_id uuid;
     v_qty integer;
@@ -2481,7 +2548,11 @@ declare
     v_subtotal numeric(12,3);
     v_tax_rate numeric(5,2);
     v_tax_amount numeric(12,3);
+    v_account_payable_id uuid;
+    v_account_payable_type_id int;
+    v_due_date date;
 begin
+    -- Obtener tenant_id desde la relación supplier -> supplier_branch -> branch
     select b.tenant_id into v_tenant_id
     from supplies_module.supplier s
     join supplies_module.supplier_branch sb on s.supplier_id = sb.supplier_id
@@ -2493,6 +2564,7 @@ begin
         raise exception 'Cannot determine tenant_id for supplier %', p_supplier_id;
     end if;
 
+    -- Crear la orden de compra
     insert into supplies_module.supply_order(
         supplier_id,
         warehouse_id,
@@ -2502,9 +2574,10 @@ begin
         p_supplier_id,
         p_warehouse_id,
         p_expected_delivery_date,
-        1
+        1  -- Pending
     ) returning supply_order_id into v_supply_order_id;
 
+    -- Insertar items si se proporcionaron
     if p_items is not null and jsonb_typeof(p_items) = 'array' and jsonb_array_length(p_items) > 0 then
         for v_item in select value from jsonb_array_elements(p_items)
         loop
@@ -2528,32 +2601,65 @@ begin
         end loop;
     end if;
 
+    -- Calcular subtotal de la orden
     v_subtotal := coalesce(supplies_module.calculate_supply_order_total(v_supply_order_id), 0);
 
+    -- Obtener tasa de impuesto del tenant
     select coalesce(tr.rate_percentage, 13.00) into v_tax_rate
     from core.tenant t
     left join core.tax_rate tr on tr.region_id = t.region_id
     where t.tenant_id = v_tenant_id
     limit 1;
 
+    -- Calcular impuesto
     v_tax_amount := round(v_subtotal * (v_tax_rate / 100.0), 3);
 
-    insert into supplies_module.supplies_account_payable(
-        supply_order_id,
+    -- Calcular fecha de vencimiento (30 días por defecto)
+    v_due_date := (current_date + interval '30 days')::date;
+
+    -- Obtener el ID del tipo de cuenta por pagar 'goods_purchase'
+    select account_payable_type_id into v_account_payable_type_id
+    from core.account_payable_type
+    where type_name = 'goods_purchase'
+    limit 1;
+
+    if v_account_payable_type_id is null then
+        raise exception 'Account payable type "goods_purchase" not found';
+    end if;
+
+    -- ✅ PASO 1: Crear registro en la tabla PADRE (core.account_payable)
+    insert into core.account_payable(
+        account_payable_type_id,
         has_invoice,
-        subtotal_amount,
-        tax_amount,
-        due_date,
-        account_status
+        has_tax,
+        subtotal,
+        amount_paid,
+        is_paid,
+        due_date
     ) values (
-        v_supply_order_id,
+        v_account_payable_type_id,
         p_has_invoice,
+        true,  -- Las órdenes de suministro siempre tienen impuesto
         v_subtotal,
+        0,  -- Inicial
+        false,  -- Inicial
+        v_due_date
+    ) returning account_payable_id into v_account_payable_id;
+
+    -- ✅ PASO 2: Crear registro en la tabla HIJA (supplies_account_payable)
+    insert into supplies_module.supplies_account_payable(
+        account_payable_id,
+        supply_order_id,
+        tax_amount,
+        account_payable_status
+    ) values (
+        v_account_payable_id,
+        v_supply_order_id,
         v_tax_amount,
-        (current_date + interval '30 days')::date,
-        1
+        1  -- Pending
     );
 
+    -- Crear factura si se requiere
     if p_has_invoice then
         insert into supplies_module.supplier_invoice(
             supply_order_id,
@@ -2568,30 +2674,27 @@ begin
             'INV-' || to_char(current_timestamp, 'YYYYMMDD-HH24MISS') || '-' || substring(v_supply_order_id::text, 1, 8),
             current_timestamp,
             p_payment_condition,
-            (current_date + interval '30 days')::date,
+            v_due_date,
             v_subtotal,
             v_tax_rate
         ) returning supplier_invoice_id into v_supplier_invoice_id;
 
-        for v_item_rec in 
-            select tenant_id, product_id, quantity_ordered, unit_price
-            from supplies_module.supply_order_item
-            where supply_order_id = v_supply_order_id
-        loop
-            insert into supplies_module.supplier_invoice_item(
-                supplier_invoice_id,
-                tenant_id,
-                product_id,
-                quantity_billed,
-                unit_price
-            ) values (
-                v_supplier_invoice_id,
-                v_item_rec.tenant_id,
-                v_item_rec.product_id,
-                v_item_rec.quantity_ordered,
-                v_item_rec.unit_price
-            );
-        end loop;
+        -- Crear items de factura desde los items de la orden
+        insert into supplies_module.supplier_invoice_item(
+            supplier_invoice_id,
+            tenant_id,
+            product_id,
+            quantity_billed,
+            unit_price
+        )
+        select 
+            v_supplier_invoice_id,
+            tenant_id,
+            product_id,
+            quantity_ordered,
+            unit_price
+        from supplies_module.supply_order_item
+        where supply_order_id = v_supply_order_id;
     end if;
 
     return v_supply_order_id;
@@ -2624,126 +2727,126 @@ create trigger on_order_status_update
 after update of supply_order_status_id on supplies_module.supply_order
 for each row execute function update_order_status();
 
-create or replace function check_account_payable_completion(
-    _account_payable_id uuid
-) returns boolean as $$
-declare
-    _amount_due numeric(12,3);
-    _payments_total numeric(12,3);
-    _pending_payments int;
-begin
-    select amount_due
-    into _amount_due
-    from supplies_module.supplies_account_payable
-    where account_payable_id = _account_payable_id;
-    
-    if _amount_due is null then
-        raise exception 'Account payable not found: %', _account_payable_id;
-    end if;
-    
-    select count(*) into _pending_payments
-    from supplies_module.supply_order_payment
-    where account_payable_id = _account_payable_id
-    and verified = false;
-    
-    if _pending_payments > 0 then
-        return false;
-    end if;
-    
-    select coalesce(sum(amount_paid), 0) into _payments_total
-    from supplies_module.supply_order_payment
-    where account_payable_id = _account_payable_id
-    and verified = true;
-    
-    if abs(_payments_total - _amount_due) <= 0.01 or _payments_total > _amount_due then
-        update supplies_module.supplies_account_payable
-        set amount_paid = _payments_total,
-            account_status = 3,
-            updated_at = current_timestamp
-        where account_payable_id = _account_payable_id;
-        
-        return true;
-    elsif _payments_total > 0 then
-        update supplies_module.supplies_account_payable
-        set amount_paid = _payments_total,
-            account_status = 2,
-            updated_at = current_timestamp
-        where account_payable_id = _account_payable_id;
-        
-        return false;
-    else
-        return false;
-    end if;
-    
-exception
-    when others then
-        return false;
-end;
-$$ language plpgsql;
+DROP FUNCTION IF EXISTS check_account_payable_completion(UUID);
 
-create or replace procedure supplies_module.verify_supply_order_payment(
-    _payment_id uuid
-) as $$
-declare
-    _exists boolean;
-    _already_verified boolean;
-    _account_payable_id uuid;
-begin
-    select exists(
-        select 1 
-        from supplies_module.supply_order_payment
-        where payment_id = _payment_id
-    ) into _exists;
-    
-    if not _exists then
-        raise exception 'Payment not found: %', _payment_id;
-    end if;
-    
-    select verified, account_payable_id
-    into _already_verified, _account_payable_id
-    from supplies_module.supply_order_payment
-    where payment_id = _payment_id;
-    
-    if _already_verified then
-        return;
-    end if;
-    
-    update supplies_module.supply_order_payment
-    set verified = true,
-        updated_at = current_timestamp
-    where payment_id = _payment_id;
-    
-    perform supplies_module.check_account_payable_completion(_account_payable_id);
-end;
-$$ language plpgsql;
+CREATE OR REPLACE FUNCTION check_account_payable_completion(
+    _account_payable_id UUID
+) RETURNS BOOLEAN AS $$
+DECLARE
+    _subtotal NUMERIC(12,3);
+    _tax_amount NUMERIC(12,3);
+    _amount_due NUMERIC(12,3);
+    _current_amount_paid NUMERIC(12,3);
+    _payments_total NUMERIC(12,3);
+    _balance NUMERIC(12,3);
+    _pending_payments INT;
+    _target_supplies_ap_id UUID;
+BEGIN
+    SELECT 
+        ap.subtotal,
+        sap.tax_amount,
+        (ap.subtotal + COALESCE(sap.tax_amount, 0)) AS amount_due,
+        ap.amount_paid,
+        sap.supplies_account_payable_id
+    INTO 
+        _subtotal,
+        _tax_amount,
+        _amount_due,
+        _current_amount_paid,
+        _target_supplies_ap_id
+    FROM core.account_payable ap
+    JOIN supplies_module.supplies_account_payable sap 
+        ON ap.account_payable_id = sap.account_payable_id
+    WHERE ap.account_payable_id = _account_payable_id;
+
+    IF _amount_due IS NULL THEN
+        RAISE EXCEPTION 'Account payable not found: %', _account_payable_id;
+    END IF;
+
+    SELECT COUNT(*) INTO _pending_payments
+    FROM supplies_module.supply_order_payment sop
+    WHERE sop.supplies_account_payable_id = _target_supplies_ap_id
+    AND sop.verified = FALSE;
+
+    IF _pending_payments > 0 THEN
+        RETURN FALSE;
+    END IF;
+
+    SELECT COALESCE(SUM(sop.amount_paid), 0) INTO _payments_total
+    FROM supplies_module.supply_order_payment sop
+    WHERE sop.supplies_account_payable_id = _target_supplies_ap_id
+    AND sop.verified = TRUE;
+
+    _balance := _amount_due - _payments_total;
+
+    UPDATE core.account_payable
+    SET amount_paid = _payments_total,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE account_payable_id = _account_payable_id;
+
+    IF ABS(_balance) <= 0.01 OR _payments_total >= _amount_due THEN
+        UPDATE core.account_payable
+        SET is_paid = TRUE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE account_payable_id = _account_payable_id;
+
+        UPDATE supplies_module.supplies_account_payable
+        SET account_payable_status = 3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE account_payable_id = _account_payable_id;
+
+        RETURN TRUE;
+
+    ELSIF _payments_total > 0 THEN
+        UPDATE supplies_module.supplies_account_payable
+        SET account_payable_status = 2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE account_payable_id = _account_payable_id;
+
+        RETURN FALSE;
+
+    ELSE
+        RETURN FALSE;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
 
 create or replace function recalc_account_payable_on_payment()
 returns trigger as $$
-declare
-    _account_payable_id uuid;
 begin
-    _account_payable_id := coalesce(new.account_payable_id, old.account_payable_id);
-    
-    perform supplies_module.check_account_payable_completion(_account_payable_id);
-    
-    return coalesce(new, old);
+    if new.verified = true and (old.verified is null or old.verified = false) then
+        perform supplies_module.check_account_payable_completion(
+            (select account_payable_id 
+             from supplies_module.supplies_account_payable 
+             where supplies_account_payable_id = new.supplies_account_payable_id)
+        );
+    end if;
+    return new;
 end;
 $$ language plpgsql;
 
 drop trigger if exists recalc_account_payable_on_payment_trigger on supplies_module.supply_order_payment;
 create trigger recalc_account_payable_on_payment_trigger
-    after insert or update of verified or delete on supplies_module.supply_order_payment
+    after update of verified on supplies_module.supply_order_payment
     for each row
-    execute function supplies_module.recalc_account_payable_on_payment();
+    execute function recalc_account_payable_on_payment();
 
 create or replace function update_invoice_paid_status()
 returns trigger as $$
+declare
+    v_is_paid boolean;
 begin
-    if new.account_status = 3 and old.account_status is distinct from 3 then
-        update supplies_module.supplier_invoice
-        set paid = true,
-            updated_at = current_timestamp
-        where supply_order_id = new.supply_order_id;
+    if new.account_payable_status = 3 and old.account_payable_status is distinct from 3 then
+        select is_paid into v_is_paid
+        from core.account_payable
+        where account_payable_id = new.account_payable_id;
+        
+        if v_is_paid = true then
+            update supplies_module.supplier_invoice
+            set paid = true,
+                updated_at = current_timestamp
+            where supply_order_id = new.supply_order_id;
+        end if;
     end if;
     
     return new;
@@ -2752,7 +2855,7 @@ $$ language plpgsql;
 
 drop trigger if exists update_invoice_paid_status_trigger on supplies_module.supplies_account_payable;
 create trigger update_invoice_paid_status_trigger
-    after update of account_status on supplies_module.supplies_account_payable
+    after update of account_payable_status on supplies_module.supplies_account_payable
     for each row
     execute function supplies_module.update_invoice_paid_status();
 
@@ -2773,10 +2876,14 @@ begin
             return new;
         end if;
 
-        select subtotal_amount, tax_amount 
+        select 
+            ap.subtotal,
+            sap.tax_amount
         into v_subtotal, v_tax_amount
-        from supplies_module.supplies_account_payable
-        where supply_order_id = new.supply_order_id;
+        from core.account_payable ap
+        join supplies_module.supplies_account_payable sap 
+            on ap.account_payable_id = sap.account_payable_id
+        where sap.supply_order_id = new.supply_order_id;
 
         insert into supplies_module.goods_receipt(
             supply_order_id,
@@ -2859,15 +2966,17 @@ begin
     end if;
 
     select 
-        subtotal_amount,
-        tax_amount,
-        amount_due
+        ap.subtotal,
+        sap.tax_amount,
+        (ap.subtotal + sap.tax_amount) AS total_amount
     into 
         v_order_subtotal,
         v_order_tax,
         v_order_total
-    from supplies_module.supplies_account_payable
-    where supply_order_id = p_supply_order_id;
+    from core.account_payable ap
+    join supplies_module.supplies_account_payable sap 
+        on ap.account_payable_id = sap.account_payable_id
+    where sap.supply_order_id = p_supply_order_id;
 
     select 
         subtotal_amount,
@@ -2933,6 +3042,10 @@ begin
         v_amounts_matched and v_quantities_matched,
         current_timestamp
     );
+    
+exception
+    when others then
+        raise exception 'Error executing three-way matching: %', sqlerrm;
 end;
 $$ language plpgsql;
 
@@ -2940,7 +3053,7 @@ create or replace function generate_payment_alerts()
 returns void as $$
 declare
     v_config record;
-    v_payable record;
+    v_account record;
     v_days_until_due integer;
     v_alert_type_id integer;
     v_existing_alert_id uuid;
@@ -2952,23 +3065,33 @@ begin
             pac.urgent_days_before_due
         from supplies_module.supply_order_payment_alert_config pac
     loop
-        for v_payable in
+        for v_account in
             select 
                 ap.account_payable_id,
                 ap.due_date,
-                ap.account_status,
-                ap.balance_remaining,
+                ap.is_paid,
+                ap.amount_paid,
+                ap.subtotal,
+                sap.supplies_account_payable_id,
+                sap.tax_amount,
+                (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) as balance_remaining,
                 so.supply_order_id
-            from supplies_module.supplies_account_payable ap
-            join supplies_module.supply_order so on ap.supply_order_id = so.supply_order_id
-            join supplies_module.supplier s on so.supplier_id = s.supplier_id
-            join supplies_module.supplier_branch sb on s.supplier_id = sb.supplier_id
-            join core.branch b on sb.branch_id = b.branch_id
+            from core.account_payable ap
+            join supplies_module.supplies_account_payable sap 
+                on ap.account_payable_id = sap.account_payable_id
+            join supplies_module.supply_order so 
+                on sap.supply_order_id = so.supply_order_id
+            join supplies_module.supplier s 
+                on so.supplier_id = s.supplier_id
+            join supplies_module.supplier_branch sb 
+                on s.supplier_id = sb.supplier_id
+            join core.branch b 
+                on sb.branch_id = b.branch_id
             where b.tenant_id = v_config.tenant_id
-            and ap.account_status in (1, 2)
-            and ap.balance_remaining > 0
+            and ap.is_paid = false
+            and (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) > 0
         loop
-            v_days_until_due := v_payable.due_date - current_date;
+            v_days_until_due := v_account.due_date - current_date;
             
   
             if v_days_until_due < 0 then
@@ -2983,19 +3106,19 @@ begin
             
             select payment_alert_id into v_existing_alert_id
             from supplies_module.supply_order_payment_alert
-            where account_payable_id = v_payable.account_payable_id
+            where supplies_account_payable_id = v_account.supplies_account_payable_id
             and payment_alert_type_id = v_alert_type_id
             and is_resolved = false
             limit 1;
             
             if v_existing_alert_id is null then
                 insert into supplies_module.supply_order_payment_alert(
-                    account_payable_id,
+                    supplies_account_payable_id,
                     payment_alert_type_id,
                     alert_date,
                     is_resolved
                 ) values (
-                    v_payable.account_payable_id,
+                    v_account.supplies_account_payable_id,
                     v_alert_type_id,
                     current_timestamp,
                     false
@@ -3003,13 +3126,19 @@ begin
             end if;
         end loop;
     end loop;
+    
+exception
+    when others then
+        raise exception 'Error generating payment alerts: %', sqlerrm;
 end;
 $$ language plpgsql;
+
+drop function if exists get_pending_payment_alerts(uuid);
 
 create or replace function get_pending_payment_alerts(p_tenant_id uuid)
 returns table(
     payment_alert_id uuid,
-    account_payable_id uuid,
+    supplies_account_payable_id uuid,
     supply_order_id uuid,
     supplier_name varchar,
     invoice_number varchar,
@@ -3025,7 +3154,7 @@ begin
     return query
     select 
         spa.payment_alert_id,
-        ap.account_payable_id,
+        sap.supplies_account_payable_id,
         so.supply_order_id,
         s.supplier_name,
         si.invoice_number,
@@ -3033,16 +3162,18 @@ begin
         spat.description,
         ap.due_date,
         (ap.due_date - current_date)::integer as days_until_due,
-        ap.balance_remaining,
+        (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) as balance_remaining,
         spa.alert_date,
         spa.created_at
     from supplies_module.supply_order_payment_alert spa
     join supplies_module.supply_order_payment_alert_type spat 
         on spa.payment_alert_type_id = spat.payment_alert_type_id
-    join supplies_module.supplies_account_payable ap 
-        on spa.account_payable_id = ap.account_payable_id
+    join supplies_module.supplies_account_payable sap 
+        on spa.supplies_account_payable_id = sap.supplies_account_payable_id
+    join core.account_payable ap 
+        on sap.account_payable_id = ap.account_payable_id
     join supplies_module.supply_order so 
-        on ap.supply_order_id = so.supply_order_id
+        on sap.supply_order_id = so.supply_order_id
     join supplies_module.supplier s 
         on so.supplier_id = s.supplier_id
     left join supplies_module.supplier_invoice si 
@@ -3054,6 +3185,10 @@ begin
     where b.tenant_id = p_tenant_id
     and spa.is_resolved = false
     order by ap.due_date asc, spa.alert_date desc;
+    
+exception
+    when others then
+        raise exception 'Error fetching pending payment alerts: %', sqlerrm;
 end;
 $$ language plpgsql;
 
@@ -3069,13 +3204,21 @@ $$ language plpgsql;
 
 create or replace function auto_resolve_payment_alerts()
 returns trigger as $$
+declare
+    v_is_paid boolean;
 begin
-    if new.account_status = 3 and old.account_status is distinct from 3 then
-        update supplies_module.supply_order_payment_alert
-        set is_resolved = true,
-            updated_at = current_timestamp
-        where account_payable_id = new.account_payable_id
-        and is_resolved = false;
+    if new.account_payable_status = 3 and old.account_payable_status is distinct from 3 then
+        select is_paid into v_is_paid
+        from core.account_payable
+        where account_payable_id = new.account_payable_id;
+        
+        if v_is_paid = true then
+            update supplies_module.supply_order_payment_alert
+            set is_resolved = true,
+                updated_at = current_timestamp
+            where supplies_account_payable_id = new.supplies_account_payable_id
+            and is_resolved = false;
+        end if;
     end if;
     
     return new;
@@ -3084,7 +3227,7 @@ $$ language plpgsql;
 
 drop trigger if exists auto_resolve_payment_alerts_trigger on supplies_module.supplies_account_payable;
 create trigger auto_resolve_payment_alerts_trigger
-    after update of account_status on supplies_module.supplies_account_payable
+    after update of account_payable_status on supplies_module.supplies_account_payable
     for each row
     execute function supplies_module.auto_resolve_payment_alerts();
 
@@ -3138,14 +3281,16 @@ begin
         count(*) filter (where spat.payment_alert_type_id = 3)::integer as overdue_count,
         count(*) filter (where spat.payment_alert_type_id = 2)::integer as urgent_count,
         count(*) filter (where spat.payment_alert_type_id = 1)::integer as warning_count,
-        coalesce(sum(ap.balance_remaining), 0) as total_amount_at_risk
+        coalesce(sum(ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid), 0) as total_amount_at_risk
     from supplies_module.supply_order_payment_alert spa
     join supplies_module.supply_order_payment_alert_type spat 
         on spa.payment_alert_type_id = spat.payment_alert_type_id
-    join supplies_module.supplies_account_payable ap 
-        on spa.account_payable_id = ap.account_payable_id
+    join supplies_module.supplies_account_payable sap 
+        on spa.supplies_account_payable_id = sap.supplies_account_payable_id
+    join core.account_payable ap 
+        on sap.account_payable_id = ap.account_payable_id
     join supplies_module.supply_order so 
-        on ap.supply_order_id = so.supply_order_id
+        on sap.supply_order_id = so.supply_order_id
     join supplies_module.supplier s 
         on so.supplier_id = s.supplier_id
     join supplies_module.supplier_branch sb 
@@ -3154,8 +3299,12 @@ begin
         on sb.branch_id = b.branch_id
     where b.tenant_id = p_tenant_id
     and spa.is_resolved = false;
-end;
-$$ language plpgsql;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION 'Error calculating payment alert stats: %', SQLERRM;
+END;
+$$ LANGUAGE plpgsql;
 
 drop trigger if exists update_supplier_timestamp on supplies_module.supplier;
 create trigger update_supplier_timestamp before update on supplies_module.supplier
@@ -3205,6 +3354,7 @@ drop trigger if exists update_three_way_matching_timestamp on supplies_module.th
 create trigger update_three_way_matching_timestamp before update on supplies_module.three_way_matching
 for each row execute function core.update_timestamp();
 
+-- SCHEMA: inventory_module
 create schema if not exists inventory_module;
 set search_path to inventory_module;
 
@@ -3234,6 +3384,7 @@ create table if not exists inventory_log_type(
     inventory_log_type_id serial primary key,
     inventory_log_type_name varchar(50) not null unique, 
     inventory_log_type_description text,
+    
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
@@ -3245,9 +3396,15 @@ on conflict do nothing;
 create table if not exists inventory_log(
     inventory_log_id uuid primary key default gen_random_uuid(),
     inventory_log_type_id integer not null references inventory_module.inventory_log_type(inventory_log_type_id) on delete cascade,
-    supply_order_id uuid references supplies_module.supply_order(supply_order_id) on delete set null,
+    warehouse_id uuid not null references inventory_module.warehouse(warehouse_id) on delete cascade,
+    tenant_id uuid not null,                                                         
+    product_id uuid not null,
+    quantity integer not null,
+
     created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
+    updated_at timestamp default current_timestamp,
+
+    foreign key (tenant_id, product_id) references core.product(tenant_id, product_id) on delete cascade  
 );
 
 create table if not exists inventory_transfer(
@@ -3307,6 +3464,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_reduce_stock ON pos_module.sale;
 CREATE TRIGGER trigger_reduce_stock
     AFTER INSERT ON pos_module.sale
 FOR EACH ROW
@@ -3322,6 +3480,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_increase_stock ON pos_module.return_product;
 CREATE TRIGGER trigger_increase_stock
     AFTER INSERT ON pos_module.return_product
 FOR EACH ROW
@@ -3380,7 +3539,8 @@ DROP TRIGGER IF EXISTS update_discrepancy_count_timestamp ON inventory_module.di
 CREATE TRIGGER update_discrepancy_count_timestamp BEFORE UPDATE ON inventory_module.discrepancy_count
 FOR EACH ROW EXECUTE FUNCTION core.update_timestamp();
 
--- SCHEMA: RRHH MODULE
+-- SCHEMA: rrhh_module
+DROP SCHEMA IF EXISTS rrhh_module CASCADE;
 CREATE SCHEMA IF NOT EXISTS rrhh_module;
 SET search_path to rrhh_module;
 
@@ -3395,15 +3555,16 @@ INSERT INTO rrhh_module.payment_schedule(description, daycount) VALUES
 ('Monthly', 30),
 ('Fortnight', 15),
 ('Weekly', 7),
-('daily', 1)
+('Daily', 1)
 ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS contract(
 	contract_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+	tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id),
 	start_date DATE NOT NULL,
 	end_date DATE NOT NULL,
 	hours INTEGER NOT NULL,
-	base_salary NUMERIC(10, 2) NOT NULL,
+	base_salary NUMERIC(19, 4) NOT NULL,
 	duties TEXT
 );
 --Indice para filtracion o busqueda por rango de precios
@@ -3412,6 +3573,7 @@ CREATE INDEX IF NOT EXISTS idx_contract_base_salary ON rrhh_module.contract (bas
 CREATE TABLE IF NOT EXISTS employee(
 	employee_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	user_id UUID NOT NULL REFERENCES core.users(user_id) ON DELETE CASCADE,
+	tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id),
 	first_name VARCHAR(100) NOT NULL,
 	last_name VARCHAR(100) NOT NULL,
 	doc_number VARCHAR(100) NOT NULL UNIQUE,
@@ -3424,11 +3586,14 @@ CREATE TABLE IF NOT EXISTS employee(
 	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE rrhh_module.employee
+	ADD COLUMN IF NOT EXISTS tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id);
+	
 --Indice para que se pueda garantizar que no haya empleados duplicados
-CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_doc_number ON rrhh_module.employee (doc_number);
+CREATE UNIQUE INDEX idx_employee_doc_number ON rrhh_module.employee (doc_number);
 
 --Inidice para la recuperacion de cuentas o autenticacion del empleado
-CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_email ON rrhh_module.employee (email);
+CREATE UNIQUE INDEX idx_employee_email ON rrhh_module.employee (email);
 
 --Indices destinados para la aceleracion de los JOINS
 CREATE INDEX IF NOT EXISTS idx_employee_user_id ON rrhh_module.employee (user_id);
@@ -3444,7 +3609,7 @@ CREATE TABLE IF NOT EXISTS clocking(
 	branch_id UUID NOT NULL REFERENCES core.branch(branch_id),
 	clock_in TIMESTAMP,
 	clock_out TIMESTAMP,
-	turn_hours INTEGER NOT NULL DEFAULT 0
+	turn_hours NUMERIC NOT NULL DEFAULT 0
 );
 
 -- Indice para buscar los turnos de un empleado dentro de un rango de fechas
@@ -3464,51 +3629,48 @@ INSERT INTO rrhh_module.paysheet_status(status_description) VALUES
 ('Canceled')
 ON CONFLICT DO NOTHING;
 
--- Catalogo de deducciones, este catalogo sera consumido unicamente por el backend
-CREATE TABLE IF NOT EXISTS deduction(
-	deduction_id SERIAL PRIMARY KEY NOT NULL,
-	deduction_name VARCHAR(100) NOT NULL,
-	employee_percentage INTEGER NOT NULL,
-	tenant_percentage INTEGER,
-	is_current BOOLEAN DEFAULT true NOT NULL 
+CREATE TABLE IF NOT EXISTS payroll_concept(
+	concept_id SERIAL PRIMARY KEY NOT NULL,
+	tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id),
+	name VARCHAR(100) NOT NULL,
+	type VARCHAR(20) NOT NULL, -- 'earning' o 'deduction'
+	calculation_method VARCHAR(30) NOT NULL, -- 'fixed', 'percentage', 'fromula', 'manual'
+	is_taxable BOOLEAN DEFAULT TRUE,
+	is_active BOOLEAN DEFAULT TRUE
 );
 
--- Catalogo que ayuda a la uniformidad de los calculos
-CREATE TABLE IF NOT EXISTS income_concept(
-	income_id SERIAL PRIMARY KEY NOT NULL,
-	concept_name VARCHAR(100) NOT NULL,
-	calculation_type VARCHAR(50) NOT NULL, -- Fijo, Variable o Acumulable
-	ccss_apply BOOLEAN,
-	tax_apply BOOLEAN
-);
-
---Indice para filtracion por conceptos
-CREATE INDEX IF NOT EXISTS idx_income_concept_apply ON rrhh_module.income_concept(ccss_apply, tax_apply);
+-- Indice para filtracion por conceptos
+-- FIXME: column "ccss_apply" does not exist 
+-- CREATE INDEX IF NOT EXISTS idx_payroll_concept_apply ON rrhh_module.payroll_concept(ccss_apply, tax_apply);
 
 CREATE TABLE IF NOT EXISTS paysheet(
 	paysheet_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+	tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id),
 	branch_id UUID NOT NULL REFERENCES core.branch(branch_id),
-	period_start_date DATE NOT NULL,
-	period_end_date DATE NOT NULL,
-	payment_day TIMESTAMP,
-	payment_amount INTEGER NOT NULL DEFAULT 0,
-	paysheet_status_id INTEGER NOT NULL REFERENCES rrhh_module.paysheet_status(status_id)
+	period_start DATE NOT NULL,
+	period_end DATE NOT NULL,
+	payment_date TIMESTAMP,
+	total_earnings NUMERIC(19, 4) NOT NULL DEFAULT 0,
+	total_deductions NUMERIC(19, 4) NOT NULL DEFAULT 0,
+	net_total NUMERIC(19, 4) NOT NULL DEFAULT 0,
+	paysheet_status_id INTEGER NOT NULL REFERENCES rrhh_module.paysheet_status(status_id),
+	created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 --Indice para la consulta de nominas por periodo de pago
-CREATE INDEX IF NOT EXISTS idx_paysheet_period_dates ON rrhh_module.paysheet (period_start_date, period_end_date);
+CREATE INDEX IF NOT EXISTS idx_paysheet_period_dates ON rrhh_module.paysheet (tenant_id, period_start, period_end);
 
 CREATE TABLE IF NOT EXISTS paysheet_detail(
 	detail_id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
-	paysheet_id UUID NOT NULL REFERENCES rrhh_module.paysheet(paysheet_id),
+	paysheet_id UUID NOT NULL REFERENCES rrhh_module.paysheet(paysheet_id) ON DELETE CASCADE,
 	employee_id UUID NOT NULL REFERENCES rrhh_module.employee(employee_id),
+	contract_id UUID NOT NULL REFERENCES rrhh_module.contract(contract_id),
 	payment_method_id INTEGER NOT NULL REFERENCES core.payment_method(payment_method_id),
-	gross_salary NUMERIC(10, 2) CHECK (gross_salary >= 0) NOT NULL,
-	ccss_employee_deduction NUMERIC(10, 2) DEFAULT 0,
-	ccss_tenant_deduction NUMERIC(10, 2) DEFAULT 0,
-	income_tax_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
-	total_deduction NUMERIC(10, 2) NOT NULL DEFAULT 0,
-	net_salary NUMERIC(12, 3) NOT NULL,
+	gross_salary NUMERIC(19, 4) NOT NULL,
+	total_earnings NUMERIC(19, 4) NOT NULL DEFAULT 0,
+	total_deduction NUMERIC(19, 4) NOT NULL DEFAULT 0,
+	net_salary NUMERIC(19, 4) NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'Pending',
 	pay_date DATE NOT NULL,
   recalc_needed BOOLEAN DEFAULT TRUE NOT NULL
 );
@@ -3518,80 +3680,82 @@ CREATE INDEX IF NOT EXISTS idx_paysheet_detail_paysheet_id ON rrhh_module.payshe
 -- Indice compuesto para la consulta del historial de pagos a un empleado
 CREATE INDEX IF NOT EXISTS idx_paysheet_detail_emp_paydate ON rrhh_module.paysheet_detail (employee_id, pay_date DESC);
 
-CREATE TABLE IF NOT EXISTS income_register(
-	income_register_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
-	detail_id UUID NOT NULL REFERENCES rrhh_module.paysheet_detail(detail_id),
-	concept_id INTEGER NOT NULL REFERENCES rrhh_module.income_concept(income_id),
-	base_quantity NUMERIC(10, 2) NOT NULL,
-	calculated_amount NUMERIC(10, 2) NOT NULL
+CREATE TABLE IF NOT EXISTS payroll_movement (
+	movement_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+	detail_id UUID NOT NULL REFERENCES rrhh_module.paysheet_detail(detail_id) ON DELETE CASCADE,
+	concept_id INTEGER NOT NULL REFERENCES rrhh_module.payroll_concept(concept_id),
+	base_amount NUMERIC(19, 4) NOT NULL,
+	calculated_amount NUMERIC(19, 4) NOT NULL,
+	description TEXT
 );
 
--- Indice para agilizar Joins
-CREATE INDEX IF NOT EXISTS idx_income_register_detail_id ON rrhh_module.income_register(detail_id);
-CREATE INDEX IF NOT EXISTS idx_income_register_concept_id ON rrhh_module.income_register(concept_id);
+-- Indice para agilizar la busqueda de todos los movimientos bajo un detail_id
+CREATE INDEX IF NOT EXISTS idx_payroll_movement_detail_id ON rrhh_module.payroll_movement(detail_id);
 
 -- ==========================================================================
 --                          FUNCTIONS AND TRIGGERS
 -- ==========================================================================
 
 CREATE OR REPLACE FUNCTION rrhh_module.create_new_employee(
-	-- Parametros para la creacion del contrato
-	p_start_date DATE,
-	p_end_date DATE,
-	p_hours INTEGER,
-	p_base_salary DECIMAL(10, 2),
-	p_duties TEXT,
+  -- Parametros para la creacion del contrato
+  p_start_date DATE,
+  p_end_date DATE,
+  p_hours INTEGER,
+  p_base_salary DECIMAL(10, 2),
+  p_duties TEXT,
 
-	-- Parametros para la crecaion del empleado
-	p_user_id UUID,
-	p_first_name VARCHAR(100),
-	p_last_name VARCHAR(100),
-	p_doc_number VARCHAR(100),
-	p_phone VARCHAR(100),
-	p_email VARCHAR(100),
-	p_schedule_id INTEGER
+  -- Parametros para la crecaion del empleado
+  p_user_id UUID,
+  p_tenant_id UUID,
+  p_first_name VARCHAR(100),
+  p_last_name VARCHAR(100),
+  p_doc_number VARCHAR(100),
+  p_phone VARCHAR(100),
+  p_email VARCHAR(100),
+  p_schedule_id INTEGER
 )
 RETURNS UUID AS $$
+
 DECLARE
-	v_new_contract_id UUID;
-	v_new_employee_id UUID;
+  v_new_contract_id UUID;
+  v_new_employee_id UUID;
 BEGIN
-	IF NOT EXISTS (SELECT 1 FROM rrhh_module.payment_schedule WHERE payment_schedule_id = p_schedule_id) THEN
-		RAISE EXCEPTION 'Integrity error: schedule_id (schedule_id: %) doesnt exists', p_schedule_id;
-	END IF;
 
-	v_new_contract_id := gen_random_uuid();
+  IF NOT EXISTS (SELECT 1 FROM rrhh_module.payment_schedule WHERE payment_schedule_id = p_schedule_id) THEN
+    RAISE EXCEPTION 'Integrity error: schedule_id (schedule_id: %) doesnt exists', p_schedule_id;
+  END IF;
 
-	INSERT INTO rrhh_module.contract (contract_id, start_date, end_date, hours, base_salary, duties)
-	VALUES (v_new_contract_id, p_start_date, p_end_date, p_hours, p_base_salary, p_duties);
+  INSERT INTO rrhh_module.contract (start_date, end_date, hours, base_salary, duties)
+  VALUES (p_start_date, p_end_date, p_hours, p_base_salary, p_duties)
+  RETURNING contract_id INTO v_new_contract_id;
 
-	v_new_employee_id := gen_random_uuid();
+  v_new_employee_id := gen_random_uuid();
 
-	INSERT INTO rrhh_module.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id)
-	VALUES (
-		v_new_employee_id,
-		p_user_id,
-		p_first_name,
-		p_last_name,
-		p_doc_number,
-		p_phone,
-		p_email,
-		v_new_contract_id,
-		p_schedule_id
-	);
+  INSERT INTO rrhh_module.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id)
+  VALUES (
+    v_new_employee_id,
+    p_user_id,
+    p_first_name,
+    p_last_name,
+    p_doc_number,
+    p_phone,
+    p_email,
+    v_new_contract_id,
+    p_schedule_id,
+    p_tenant_id
+  );
 
-	RETURN v_new_employee_id;
+  RETURN v_new_employee_id;
 
 EXCEPTION
-	WHEN unique_violation THEN
-		RAISE EXCEPTION 'Data Error: Document Number (%) or Email already exists.', p_doc_number;
-	WHEN foreign_key_violation THEN
-		RAISE EXCEPTION 'Integrity Error: Insert failed, cause of the error a non existent foreign key (user_id or schedule_id).';
-	WHEN others THEN
-		RAISE EXCEPTION 'Error creating employee or contract: %', SQLERRM;
-
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'Data Error: Document Number (%) or Email already exists.', p_doc_number;
+  WHEN foreign_key_violation THEN
+    RAISE EXCEPTION 'Integrity Error: Insert failed, cause of the error a non existent foreign key (user_id or schedule_id).';
+  WHEN others THEN
+    RAISE EXCEPTION 'Error creating employee or contract: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql; 
 
 CREATE OR REPLACE FUNCTION update_gross_salary()
 RETURNS TRIGGER AS $$
@@ -3619,11 +3783,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS update_gross_salary on rrhh_module.income_register;
-CREATE TRIGGER update_gross_salary
-	AFTER INSERT OR UPDATE OR DELETE ON rrhh_module.income_register
-	FOR EACH ROW
-	EXECUTE FUNCTION update_gross_salary();
+-- FIXME: relation "rrhh_module.income_register" does not exist
+-- DROP TRIGGER IF EXISTS update_gross_salary on rrhh_module.income_register;
+-- CREATE TRIGGER update_gross_salary
+-- 	AFTER INSERT OR UPDATE OR DELETE ON rrhh_module.income_register
+-- 	FOR EACH ROW
+-- 	EXECUTE FUNCTION update_gross_salary();
 
 CREATE OR REPLACE FUNCTION rrhh_module.update_paysheet_state (
     p_paysheet_id UUID

@@ -321,4 +321,4 @@ create table if not exists debtor (
     tenant_id uuid not null references core.tenant(tenant_id) on delete cascade,
     debt numeric(10, 2) not null default 0.00, -- Add check (debt >= 0) ?
     missed_payments integer not null default 0
-)
+);

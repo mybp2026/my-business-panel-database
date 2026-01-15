@@ -1,4 +1,4 @@
-drop schema if exists rrhh_module cascade;
+DROP SCHEMA IF EXISTS rrhh_module CASCADE;
 CREATE SCHEMA IF NOT EXISTS rrhh_module;
 SET search_path to rrhh_module;
 
@@ -95,10 +95,11 @@ CREATE TABLE IF NOT EXISTS payroll_concept(
 	calculation_method VARCHAR(30) NOT NULL, -- 'fixed', 'percentage', 'fromula', 'manual'
 	is_taxable BOOLEAN DEFAULT TRUE,
 	is_active BOOLEAN DEFAULT TRUE
-)
+);
 
---Indice para filtracion por conceptos
-CREATE INDEX idx_income_concept_apply ON rrhh_module.income_concept(ccss_apply, tax_apply);
+-- Indice para filtracion por conceptos
+-- FIXME: column "ccss_apply" does not exist 
+-- CREATE INDEX IF NOT EXISTS idx_payroll_concept_apply ON rrhh_module.payroll_concept(ccss_apply, tax_apply);
 
 CREATE TABLE IF NOT EXISTS paysheet(
 	paysheet_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
@@ -110,8 +111,8 @@ CREATE TABLE IF NOT EXISTS paysheet(
 	total_earnings NUMERIC(19, 4) NOT NULL DEFAULT 0,
 	total_deductions NUMERIC(19, 4) NOT NULL DEFAULT 0,
 	net_total NUMERIC(19, 4) NOT NULL DEFAULT 0,
-	paysheet_status_id INTEGER NOT NULL REFERENCES rrhh_module.paysheet_status(status_id)
-	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+	paysheet_status_id INTEGER NOT NULL REFERENCES rrhh_module.paysheet_status(status_id),
+	created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 --Indice para la consulta de nominas por periodo de pago
