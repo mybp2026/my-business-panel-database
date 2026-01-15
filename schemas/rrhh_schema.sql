@@ -97,10 +97,6 @@ CREATE TABLE IF NOT EXISTS payroll_concept(
 	is_active BOOLEAN DEFAULT TRUE
 );
 
--- Indice para filtracion por conceptos
--- FIXME: column "ccss_apply" does not exist 
--- CREATE INDEX IF NOT EXISTS idx_payroll_concept_apply ON rrhh_module.payroll_concept(ccss_apply, tax_apply);
-
 CREATE TABLE IF NOT EXISTS paysheet(
 	paysheet_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id),

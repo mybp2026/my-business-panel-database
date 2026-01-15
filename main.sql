@@ -3639,10 +3639,6 @@ CREATE TABLE IF NOT EXISTS payroll_concept(
 	is_active BOOLEAN DEFAULT TRUE
 );
 
--- Indice para filtracion por conceptos
--- FIXME: column "ccss_apply" does not exist 
--- CREATE INDEX IF NOT EXISTS idx_payroll_concept_apply ON rrhh_module.payroll_concept(ccss_apply, tax_apply);
-
 CREATE TABLE IF NOT EXISTS paysheet(
 	paysheet_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	tenant_id UUID NOT NULL REFERENCES core.tenant(tenant_id),
@@ -3725,8 +3721,8 @@ BEGIN
     RAISE EXCEPTION 'Integrity error: schedule_id (schedule_id: %) doesnt exists', p_schedule_id;
   END IF;
 
-  INSERT INTO rrhh_module.contract (start_date, end_date, hours, base_salary, duties)
-  VALUES (p_start_date, p_end_date, p_hours, p_base_salary, p_duties)
+  INSERT INTO rrhh_module.contract (tenant_id, start_date, end_date, hours, base_salary, duties)
+  VALUES (p_tenant_id, p_start_date, p_end_date, p_hours, p_base_salary, p_duties)
   RETURNING contract_id INTO v_new_contract_id;
 
   v_new_employee_id := gen_random_uuid();
@@ -3756,39 +3752,6 @@ EXCEPTION
     RAISE EXCEPTION 'Error creating employee or contract: %', SQLERRM;
 END;
 $$ LANGUAGE plpgsql; 
-
-CREATE OR REPLACE FUNCTION update_gross_salary()
-RETURNS TRIGGER AS $$
-DECLARE
-	v_detail_id UUID;
-	v_new_gross_salary DECIMAL(10, 2);
-BEGIN
-	IF(TG_OP = 'DELETE') THEN 
-		v_detail_id := OLD.detail_id;
-	ELSE
-		v_detail_id := NEW.detail_id;
-	END IF;
-
-	SELECT COALESCE(SUM(calculated_amount), 0)
-	INTO v_new_gross_salary
-	FROM rrhh_module.income_register
-	WHERE detail_id = v_detail_id;
-
-	UPDATE rrhh_module.paysheet_detail
-	SET gross_salary = v_new_gross_salary,
-  recalc_needed = TRUE
-	WHERE detail_id = v_detail_id;
-
-	RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- FIXME: relation "rrhh_module.income_register" does not exist
--- DROP TRIGGER IF EXISTS update_gross_salary on rrhh_module.income_register;
--- CREATE TRIGGER update_gross_salary
--- 	AFTER INSERT OR UPDATE OR DELETE ON rrhh_module.income_register
--- 	FOR EACH ROW
--- 	EXECUTE FUNCTION update_gross_salary();
 
 CREATE OR REPLACE FUNCTION rrhh_module.update_paysheet_state (
     p_paysheet_id UUID
@@ -3846,43 +3809,43 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Funcion para la generacion de reportes ccss mensuales de periodos especificos
-CREATE OR REPLACE FUNCTION rrhh_module.generate_monthly_ccss(
-	p_year INTEGER,
-	p_month INTEGER
-)
-RETURNS TABLE (
-	total_employee NUMERIC(10, 2),
-	total_tenant NUMERIC(10, 2),
-	total NUMERIC(10, 2)
-) AS $$
-DECLARE
-	v_status_completed_id INTEGER;
-	v_completed_status VARCHAR(15) := 'Completed';
-BEGIN
-	SELECT status_id INTO v_status_completed_id
-	FROM rrhh_module.paysheet_status
-	WHERE status_description = v_completed_status;
+-- CREATE OR REPLACE FUNCTION rrhh_module.generate_monthly_ccss(
+-- 	p_year INTEGER,
+-- 	p_month INTEGER
+-- )
+-- RETURNS TABLE (
+-- 	total_employee NUMERIC(10, 2),
+-- 	total_tenant NUMERIC(10, 2),
+-- 	total NUMERIC(10, 2)
+-- ) AS $$
+-- DECLARE
+-- 	v_status_completed_id INTEGER;
+-- 	v_completed_status VARCHAR(15) := 'Completed';
+-- BEGIN
+-- 	SELECT status_id INTO v_status_completed_id
+-- 	FROM rrhh_module.paysheet_status
+-- 	WHERE status_description = v_completed_status;
 
-	IF v_status_completed_id IS NULL THEN
-		RAISE EXCEPTION 'Status Completed not found in db.';
-	END IF;
+-- 	IF v_status_completed_id IS NULL THEN
+-- 		RAISE EXCEPTION 'Status Completed not found in db.';
+-- 	END IF;
 
-	RETURN QUERY
-	SELECT
-		COALESCE(SUM(pd.ccss_employee_deduction), 0) AS total_employee,
-		COALESCE(SUM(pd.ccss_tenant_deduction), 0) AS total_tenant,
-		COALESCE(SUM(pd.ccss_employee_deduction + ccss_tenant_deduction), 0) AS total
-	FROM
-		rrhh_module.paysheet_detail pd
-	INNER JOIN
-		rrhh_module.paysheet p ON pd.paysheet_id = p.paysheet_id
-	WHERE
-		EXTRACT(YEAR FROM p.payment_day) = p_year
-		AND EXTRACT(MONTH FROM p.payment_day) = p_month
-		AND p.paysheet_status_id = v_status_completed_id;
+-- 	RETURN QUERY
+-- 	SELECT
+-- 		COALESCE(SUM(pd.ccss_employee_deduction), 0) AS total_employee,
+-- 		COALESCE(SUM(pd.ccss_tenant_deduction), 0) AS total_tenant,
+-- 		COALESCE(SUM(pd.ccss_employee_deduction + ccss_tenant_deduction), 0) AS total
+-- 	FROM
+-- 		rrhh_module.paysheet_detail pd
+-- 	INNER JOIN
+-- 		rrhh_module.paysheet p ON pd.paysheet_id = p.paysheet_id
+-- 	WHERE
+-- 		EXTRACT(YEAR FROM p.payment_day) = p_year
+-- 		AND EXTRACT(MONTH FROM p.payment_day) = p_month
+-- 		AND p.paysheet_status_id = v_status_completed_id;
 
-END;
-$$ LANGUAGE plpgsql;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION rrhh_module.validate_contract_dates()
 RETURNS TRIGGER AS $$
