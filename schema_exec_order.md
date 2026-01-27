@@ -1,5 +1,5 @@
-1. core
+1. general
 2. pos
-3. supplies
+3. purchase
 4. inventory
-5. rrhh
+5. hr

@@ -1,0 +1,1 @@
+select purchase_module.create_purchase_order($1, $2, $3);
