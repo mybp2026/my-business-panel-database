@@ -15,7 +15,7 @@
 --  7) Resumen final
 -- =====================================
 
-set local search_path = general, pos_module;
+set local search_path = general, pos;
 
 -- ========================================
 -- SECCIÓN 0: Limpieza inicial (idempotente)

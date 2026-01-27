@@ -19,7 +19,7 @@ SELECT
     p.product_name,
     SUM(i.stock) AS total_stock,
     COUNT(*) AS inventory_rows
-FROM inventory_module.inventory i
+FROM inventory_schema.inventory i
 JOIN general.product p
     ON i.tenant_id = p.tenant_id
     AND i.product_id = p.product_id
@@ -35,7 +35,7 @@ If there is any discrepancy between the product count in the system and the phys
 ### Query flow:
 
 ```sql
-INSERT INTO inventory_module.discrepancy_count (
+INSERT INTO inventory_schema.discrepancy_count (
     warehouse_id,
     product_id,
     stored_quantity,

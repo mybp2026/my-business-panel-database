@@ -11,7 +11,7 @@
 -- 7) Verify invoice and sale zeroed and return_product rows created
 -- =====================================
 
-set local search_path = general, pos_module;
+set local search_path = general, pos;
 
 -- ========================================
 -- SECCIÓN 0: Limpieza inicial (idempotente)
@@ -28,65 +28,65 @@ begin
 
     if v_tenant_id is not null then
 
-        delete from pos_module.return_product where return_transaction_id in (
-            select return_transaction_id from pos_module.return_transaction rt
-            join pos_module.bill b on rt.bill_id = b.bill_id
-            join pos_module.sale s on b.sale_id = s.sale_id
+        delete from pos.return_product where return_transaction_id in (
+            select return_transaction_id from pos.return_transaction rt
+            join pos.bill b on rt.bill_id = b.bill_id
+            join pos.sale s on b.sale_id = s.sale_id
             join general.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.return_transaction where bill_id in (
-            select b.bill_id from pos_module.bill b
-            join pos_module.sale s on b.sale_id = s.sale_id
+        delete from pos.return_transaction where bill_id in (
+            select b.bill_id from pos.bill b
+            join pos.sale s on b.sale_id = s.sale_id
             join general.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.bill_payment where bill_id in (
-            select b.bill_id from pos_module.bill b
-            join pos_module.sale s on b.sale_id = s.sale_id
+        delete from pos.bill_payment where bill_id in (
+            select b.bill_id from pos.bill b
+            join pos.sale s on b.sale_id = s.sale_id
             join general.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.bill where sale_id in (
-            select s.sale_id from pos_module.sale s
+        delete from pos.bill where sale_id in (
+            select s.sale_id from pos.sale s
             join general.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.customer_payment where sale_id in (
-            select s.sale_id from pos_module.sale s
+        delete from pos.customer_payment where sale_id in (
+            select s.sale_id from pos.sale s
             join general.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.sale_item where tenant_id = v_tenant_id;
-        delete from pos_module.sale where branch_id in (
+        delete from pos.sale_item where tenant_id = v_tenant_id;
+        delete from pos.sale where branch_id in (
             select branch_id from general.branch where tenant_id = v_tenant_id
         );
 
-        delete from pos_module.cash_register_sale where cash_register_session_id in (
-            select cash_register_session_id from pos_module.cash_register_session crs
-            join pos_module.cash_register cr on crs.cash_register_id = cr.cash_register_id
+        delete from pos.cash_register_sale where cash_register_session_id in (
+            select cash_register_session_id from pos.cash_register_session crs
+            join pos.cash_register cr on crs.cash_register_id = cr.cash_register_id
             join general.branch br on cr.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.cash_register_session where cash_register_id in (
-            select cash_register_id from pos_module.cash_register cr
+        delete from pos.cash_register_session where cash_register_id in (
+            select cash_register_id from pos.cash_register cr
             join general.branch br on cr.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_module.cash_register where branch_id in (
+        delete from pos.cash_register where branch_id in (
             select branch_id from general.branch where tenant_id = v_tenant_id
         );
 
-        delete from pos_module.score_transaction where tenant_id = v_tenant_id;
-        delete from pos_module.tenant_customer_score where tenant_id = v_tenant_id;
-        delete from pos_module.loyalty_program where tenant_id = v_tenant_id;
+        delete from pos.score_transaction where tenant_id = v_tenant_id;
+        delete from pos.tenant_customer_score where tenant_id = v_tenant_id;
+        delete from pos.loyalty_program where tenant_id = v_tenant_id;
 
         delete from general.product where tenant_id = v_tenant_id;
         delete from general.tenant_customer where tenant_id = v_tenant_id;
@@ -172,14 +172,14 @@ begin
         returning product_id into v_prod_c;
     end if;
 
-    select cash_register_id into v_cash_reg from pos_module.cash_register where branch_id = v_branch_id limit 1;
+    select cash_register_id into v_cash_reg from pos.cash_register where branch_id = v_branch_id limit 1;
     if v_cash_reg is null then
-        INSERT INTO pos_module.cash_register (branch_id, is_active) VALUES (v_branch_id, true) returning cash_register_id into v_cash_reg;
+        INSERT INTO pos.cash_register (branch_id, is_active) VALUES (v_branch_id, true) returning cash_register_id into v_cash_reg;
     end if;
 
-    perform 1 from pos_module.cash_register_session where cash_register_id = v_cash_reg and is_active = true;
+    perform 1 from pos.cash_register_session where cash_register_id = v_cash_reg and is_active = true;
     if not found then
-        INSERT INTO pos_module.cash_register_session (cash_register_id, user_id, opening_amount, is_active)
+        INSERT INTO pos.cash_register_session (cash_register_id, user_id, opening_amount, is_active)
         VALUES (v_cash_reg, v_user_id, 100.00, true);
     end if;
 
@@ -230,11 +230,11 @@ begin
     v_tax := round(v_subtotal * 0.10, 2); -- assume 10% tax rate in test setup
     v_total := v_subtotal + v_tax;
 
-    INSERT INTO pos_module.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
+    INSERT INTO pos.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
     VALUES (v_branch_id, 1, v_subtotal, v_tax, v_total, false)
     returning sale_id into v_sale_id;
 
-    INSERT INTO pos_module.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
+    INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
     VALUES 
         (v_sale_id, v_tenant_id, v_prod_a, 5, 10.00, 50.00),
         (v_sale_id, v_tenant_id, v_prod_b, 3, 20.00, 60.00),
@@ -242,17 +242,17 @@ begin
 
     raise notice '✓ Sale created: % (subtotal $% tax $% total $%)', v_sale_id, v_subtotal, v_tax, v_total;
 
-    INSERT INTO pos_module.customer_payment (tenant_customer_id, sale_id, payment_method_id, payment_amount, currency_id, verified)
+    INSERT INTO pos.customer_payment (tenant_customer_id, sale_id, payment_method_id, payment_amount, currency_id, verified)
     VALUES (v_customer_id, v_sale_id, 1, v_total, 1, false)
     returning customer_payment_id into v_payment_id;
 
     raise notice '✓ Payment created (unverified): % amount $%', v_payment_id, v_total;
 
-    call pos_module.verify_customer_payment(v_payment_id);
+    call pos.verify_customer_payment(v_payment_id);
 
     perform pg_sleep(0.2);
 
-    if not exists (select 1 from pos_module.bill where sale_id = v_sale_id) then
+    if not exists (select 1 from pos.bill where sale_id = v_sale_id) then
         raise exception 'Bill was not created for sale %', v_sale_id;
     end if;
 
@@ -281,7 +281,7 @@ begin
     raise notice '========================================';
 
     select s.sale_id into v_sale_id
-    from pos_module.sale s
+    from pos.sale s
     join general.branch b on s.branch_id = b.branch_id
     join general.tenant t on b.tenant_id = t.tenant_id
     where t.tenant_name = 'Return Test Shop'
@@ -290,13 +290,13 @@ begin
 
     if v_sale_id is null then raise exception 'No sale found for partial return'; end if;
 
-    select bill_id, tenant_customer_id into v_bill_id, v_customer_id from pos_module.bill where sale_id = v_sale_id limit 1;
+    select bill_id, tenant_customer_id into v_bill_id, v_customer_id from pos.bill where sale_id = v_sale_id limit 1;
 
-    select sale_item_id into v_si_a from pos_module.sale_item where sale_id = v_sale_id and product_id = (
+    select sale_item_id into v_si_a from pos.sale_item where sale_id = v_sale_id and product_id = (
         select product_id from general.product where tenant_id = (select tenant_id from general.tenant where tenant_name = 'Return Test Shop' limit 1) and sku = 'RT-A' limit 1
     ) limit 1;
 
-    select sale_item_id into v_si_b from pos_module.sale_item where sale_id = v_sale_id and product_id = (
+    select sale_item_id into v_si_b from pos.sale_item where sale_id = v_sale_id and product_id = (
         select product_id from general.product where tenant_id = (select tenant_id from general.tenant where tenant_name = 'Return Test Shop' limit 1) and sku = 'RT-B' limit 1
     ) limit 1;
 
@@ -304,14 +304,14 @@ begin
         raise exception 'Sale items for A or B not found';
     end if;
 
-    INSERT INTO pos_module.return_transaction (bill_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
-    VALUES (v_bill_id, v_customer_id, 0.00, 1, (select return_status_id from pos_module.return_status where status_name = 'pending' limit 1))
+    INSERT INTO pos.return_transaction (bill_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
+    VALUES (v_bill_id, v_customer_id, 0.00, 1, (select return_status_id from pos.return_status where status_name = 'pending' limit 1))
     returning return_transaction_id into v_return_tx;
 
     raise notice '✓ Return transaction created: %', v_return_tx;
 
     -- insert return lines (trigger will compute total_price and update sale_item/bill)
-    INSERT INTO pos_module.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
+    INSERT INTO pos.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
     VALUES
         (v_return_tx, v_si_a, 2, 10.00),
         (v_return_tx, v_si_b, 1, 20.00);
@@ -319,7 +319,7 @@ begin
     perform pg_sleep(0.1);
 
     -- Verify return_product rows were created
-    select count(*) into v_return_product_count from pos_module.return_product where return_transaction_id = v_return_tx;
+    select count(*) into v_return_product_count from pos.return_product where return_transaction_id = v_return_tx;
     
     if v_return_product_count <> 2 then
         raise exception 'Expected 2 return_product rows, found %', v_return_product_count;
@@ -327,13 +327,13 @@ begin
 
     raise notice '✓ return_product rows created: %', v_return_product_count;
 
-    select coalesce(sum(total_price),0) into v_return_total from pos_module.return_product where return_transaction_id = v_return_tx;
+    select coalesce(sum(total_price),0) into v_return_total from pos.return_product where return_transaction_id = v_return_tx;
 
     if abs(v_return_total - v_expected_return) > 0.01 then
         raise exception 'Partial return recorded amount mismatch. Expected $% got $%', v_expected_return, v_return_total;
     end if;
 
-    update pos_module.return_transaction set total_refund_amount = v_return_total where return_transaction_id = v_return_tx;
+    update pos.return_transaction set total_refund_amount = v_return_total where return_transaction_id = v_return_tx;
 
     raise notice '✓ Partial return recorded: % lines, returned total $%', v_return_product_count, v_return_total;
     raise notice '✅ SECCIÓN 3 COMPLETADA';
@@ -363,16 +363,16 @@ begin
     select tenant_id into v_tenant_id from general.tenant where tenant_name = 'Return Test Shop' limit 1;
 
     select b.subtotal_amount, b.tax_amount, b.total_amount into v_bill
-    from pos_module.bill b
-    join pos_module.sale s on b.sale_id = s.sale_id
+    from pos.bill b
+    join pos.sale s on b.sale_id = s.sale_id
     join general.branch br on s.branch_id = br.branch_id
     where br.tenant_id = v_tenant_id
     order by b.billed_at desc
     limit 1;
 
-    select coalesce(quantity,0) into v_qty_a from pos_module.sale_item si join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id where p.sku = 'RT-A' and si.tenant_id = v_tenant_id limit 1;
-    select coalesce(quantity,0) into v_qty_b from pos_module.sale_item si join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id where p.sku = 'RT-B' and si.tenant_id = v_tenant_id limit 1;
-    select coalesce(quantity,0) into v_qty_c from pos_module.sale_item si join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id where p.sku = 'RT-C' and si.tenant_id = v_tenant_id limit 1;
+    select coalesce(quantity,0) into v_qty_a from pos.sale_item si join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id where p.sku = 'RT-A' and si.tenant_id = v_tenant_id limit 1;
+    select coalesce(quantity,0) into v_qty_b from pos.sale_item si join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id where p.sku = 'RT-B' and si.tenant_id = v_tenant_id limit 1;
+    select coalesce(quantity,0) into v_qty_c from pos.sale_item si join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id where p.sku = 'RT-C' and si.tenant_id = v_tenant_id limit 1;
 
     select rate_percentage into v_tax_rate
     from general.tax_rate tr
@@ -424,28 +424,28 @@ begin
     raise notice '========================================';
 
     select s.sale_id into v_sale_id
-    from pos_module.sale s
+    from pos.sale s
     join general.branch b on s.branch_id = b.branch_id
     join general.tenant t on b.tenant_id = t.tenant_id
     where t.tenant_name = 'Return Test Shop'
     order by s.sale_date desc
     limit 1;
 
-    select bill_id, tenant_customer_id into v_bill_id, v_customer_id from pos_module.bill where sale_id = v_sale_id limit 1;
+    select bill_id, tenant_customer_id into v_bill_id, v_customer_id from pos.bill where sale_id = v_sale_id limit 1;
 
-    INSERT INTO pos_module.return_transaction (bill_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
-    VALUES (v_bill_id, v_customer_id, 0.00, 1, (select return_status_id from pos_module.return_status where status_name = 'pending' limit 1))
+    INSERT INTO pos.return_transaction (bill_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
+    VALUES (v_bill_id, v_customer_id, 0.00, 1, (select return_status_id from pos.return_status where status_name = 'pending' limit 1))
     returning return_transaction_id into v_return_tx;
 
     for v_si in
-        select sale_item_id, quantity, unit_price from pos_module.sale_item where sale_id = v_sale_id
+        select sale_item_id, quantity, unit_price from pos.sale_item where sale_id = v_sale_id
     loop
         v_total_returned := v_total_returned + (v_si.quantity * v_si.unit_price);
-        INSERT INTO pos_module.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
+        INSERT INTO pos.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
         VALUES (v_return_tx, v_si.sale_item_id, v_si.quantity, v_si.unit_price);
     end loop;
 
-    update pos_module.return_transaction set total_refund_amount = v_total_returned where return_transaction_id = v_return_tx;
+    update pos.return_transaction set total_refund_amount = v_total_returned where return_transaction_id = v_return_tx;
 
     perform pg_sleep(0.1);
 
@@ -471,15 +471,15 @@ begin
     select tenant_id into v_tenant_id from general.tenant where tenant_name = 'Return Test Shop' limit 1;
 
     select b.subtotal_amount, b.tax_amount, b.total_amount into v_bill
-    from pos_module.bill b
-    join pos_module.sale s on b.sale_id = s.sale_id
+    from pos.bill b
+    join pos.sale s on b.sale_id = s.sale_id
     join general.branch br on s.branch_id = br.branch_id
     where br.tenant_id = v_tenant_id
     order by b.billed_at desc
     limit 1;
 
-    select count(*) into v_remaining_items from pos_module.sale_item si
-    join pos_module.sale s on si.sale_id = s.sale_id
+    select count(*) into v_remaining_items from pos.sale_item si
+    join pos.sale s on si.sale_id = s.sale_id
     join general.branch br on s.branch_id = br.branch_id
     where br.tenant_id = v_tenant_id;
 
@@ -520,11 +520,11 @@ begin
 
     select count(rp.return_product_id), coalesce(sum(rp.total_price),0)
     into v_return_count, v_return_sum
-    from pos_module.return_product rp
-    join pos_module.return_transaction rt on rp.return_transaction_id = rt.return_transaction_id
-    join pos_module.bill b on rt.bill_id = b.bill_id
+    from pos.return_product rp
+    join pos.return_transaction rt on rp.return_transaction_id = rt.return_transaction_id
+    join pos.bill b on rt.bill_id = b.bill_id
     where b.sale_id in (
-        select s.sale_id from pos_module.sale s
+        select s.sale_id from pos.sale s
         join general.branch br on s.branch_id = br.branch_id
         where br.tenant_id = v_tenant_id
     );
@@ -545,13 +545,13 @@ begin
             rp.total_price,
             p.sku,
             p.product_name
-        from pos_module.return_product rp
-        join pos_module.return_transaction rt on rp.return_transaction_id = rt.return_transaction_id
-        join pos_module.bill b on rt.bill_id = b.bill_id
-        join pos_module.sale_item si on rp.sale_item_id = si.sale_item_id
+        from pos.return_product rp
+        join pos.return_transaction rt on rp.return_transaction_id = rt.return_transaction_id
+        join pos.bill b on rt.bill_id = b.bill_id
+        join pos.sale_item si on rp.sale_item_id = si.sale_item_id
         join general.product p on si.product_id = p.product_id and si.tenant_id = p.tenant_id
         where b.sale_id in (
-            select s.sale_id from pos_module.sale s
+            select s.sale_id from pos.sale s
             join general.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         )

@@ -19,14 +19,14 @@ BEGIN
     RAISE NOTICE '========================================';
 
     SELECT warehouse_id INTO v_wh_id
-    FROM inventory_module.warehouse
+    FROM inventory_schema.warehouse
     WHERE warehouse_name = v_wh_name
     LIMIT 1;
 
     IF v_wh_id IS NOT NULL THEN
-        DELETE FROM inventory_module.discrepancy_count WHERE warehouse_id = v_wh_id;
-        DELETE FROM inventory_module.inventory WHERE warehouse_id = v_wh_id;
-        DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.discrepancy_count WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_wh_id;
         RAISE NOTICE '   ✓ Removed previous test warehouse and related rows: %', v_wh_id;
     ELSE
         RAISE NOTICE '   No prior test warehouse found';
@@ -57,7 +57,7 @@ BEGIN
     END IF;
 
     -- Crear warehouse de prueba
-    INSERT INTO inventory_module.warehouse(branch_id, warehouse_name, warehouse_address)
+    INSERT INTO inventory_schema.warehouse(branch_id, warehouse_name, warehouse_address)
     VALUES (v_branch_id, 'test_warehouse_discrepancy', 'Discrepancy address')
     RETURNING warehouse_id INTO v_wh_id;
 
@@ -66,12 +66,12 @@ BEGIN
     -- Obtener un producto existente
     SELECT product_id INTO v_product_id FROM general.product WHERE tenant_id = v_tenant_id LIMIT 1;
     IF v_product_id IS NULL THEN
-        DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_wh_id;
         RAISE EXCEPTION 'No hay product en general.product. Inserte al menos un registro en general.product';
     END IF;
 
     -- Insertar inventory con stock conocido (sistema)
-    INSERT INTO inventory_module.inventory(tenant_id, product_id, warehouse_id, stock, expiration_date)
+    INSERT INTO inventory_schema.inventory(tenant_id, product_id, warehouse_id, stock, expiration_date)
     VALUES (v_tenant_id, v_product_id, v_wh_id, 42, current_timestamp + interval '90 days')
     RETURNING inventory_id INTO v_inv_id;
 
@@ -85,7 +85,7 @@ END $$ LANGUAGE plpgsql;
 -- ========================================
 DO $$
 DECLARE
-    v_wh_id uuid := (SELECT warehouse_id FROM inventory_module.warehouse WHERE warehouse_name = 'test_warehouse_discrepancy' LIMIT 1);
+    v_wh_id uuid := (SELECT warehouse_id FROM inventory_schema.warehouse WHERE warehouse_name = 'test_warehouse_discrepancy' LIMIT 1);
     v_tenant_id uuid;
     v_product_id uuid;
     v_system_stock integer;
@@ -102,7 +102,7 @@ BEGIN
     END IF;
 
     SELECT tenant_id, product_id, stock INTO v_tenant_id, v_product_id, v_system_stock
-    FROM inventory_module.inventory
+    FROM inventory_schema.inventory
     WHERE warehouse_id = v_wh_id
     LIMIT 1;
 
@@ -125,7 +125,7 @@ END $$ LANGUAGE plpgsql;
 -- ========================================
 DO $$
 DECLARE
-    v_wh_id uuid := (SELECT warehouse_id FROM inventory_module.warehouse WHERE warehouse_name = 'test_warehouse_discrepancy' LIMIT 1);
+    v_wh_id uuid := (SELECT warehouse_id FROM inventory_schema.warehouse WHERE warehouse_name = 'test_warehouse_discrepancy' LIMIT 1);
     v_tenant_id uuid;
     v_product_id uuid;
     v_stored integer;
@@ -138,7 +138,7 @@ BEGIN
     RAISE NOTICE '========================================';
 
     SELECT tenant_id, product_id, stock INTO v_tenant_id, v_product_id, v_stored
-    FROM inventory_module.inventory
+    FROM inventory_schema.inventory
     WHERE warehouse_id = v_wh_id
     LIMIT 1;
 
@@ -146,14 +146,14 @@ BEGIN
         RAISE EXCEPTION 'No inventory para reportar discrepancia';
     END IF;
 
-    INSERT INTO inventory_module.discrepancy_count(tenant_id, product_id, warehouse_id, stored_quantity, physical_quantity, discrepancy_reason)
+    INSERT INTO inventory_schema.discrepancy_count(tenant_id, product_id, warehouse_id, stored_quantity, physical_quantity, discrepancy_reason)
     VALUES (v_tenant_id, v_product_id, v_wh_id, v_stored, v_physical, 'Manual count: found fewer items than system')
     RETURNING discrepancy_count_id INTO v_report_id;
 
     RAISE NOTICE '   ✓ Discrepancy registrado: % (stored=% physical=%)', v_report_id, v_stored, v_physical;
 
     -- Verificar registro
-    PERFORM 1 FROM inventory_module.discrepancy_count WHERE discrepancy_count_id = v_report_id;
+    PERFORM 1 FROM inventory_schema.discrepancy_count WHERE discrepancy_count_id = v_report_id;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'No se pudo verificar el registro de discrepancy';
     END IF;
@@ -167,7 +167,7 @@ END $$ LANGUAGE plpgsql;
 -- ========================================
 DO $$
 DECLARE
-    v_wh_id uuid := (SELECT warehouse_id FROM inventory_module.warehouse WHERE warehouse_name = 'test_warehouse_discrepancy' LIMIT 1);
+    v_wh_id uuid := (SELECT warehouse_id FROM inventory_schema.warehouse WHERE warehouse_name = 'test_warehouse_discrepancy' LIMIT 1);
     v_report_count int;
 BEGIN
     RAISE NOTICE '';
@@ -178,13 +178,13 @@ BEGIN
     IF v_wh_id IS NULL THEN
         RAISE NOTICE 'No hay warehouse de prueba para limpiar';
     ELSE
-        SELECT count(*) INTO v_report_count FROM inventory_module.discrepancy_count WHERE warehouse_id = v_wh_id;
+        SELECT count(*) INTO v_report_count FROM inventory_schema.discrepancy_count WHERE warehouse_id = v_wh_id;
         RAISE NOTICE '   Discrepancy reports for warehouse %: %', v_wh_id, v_report_count;
 
         -- Limpiar registros de prueba
-        DELETE FROM inventory_module.discrepancy_count WHERE warehouse_id = v_wh_id;
-        DELETE FROM inventory_module.inventory WHERE warehouse_id = v_wh_id;
-        DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.discrepancy_count WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_wh_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_wh_id;
         RAISE NOTICE '   ✓ Test rows removed';
     END IF;
 

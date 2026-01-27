@@ -1,4 +1,6 @@
-INSERT INTO hr_module.payment_schedule(description, daycount) VALUES
+SET SEARCH_PATH TO hr_schema;
+
+INSERT INTO hr_schema.payment_schedule(description, daycount) VALUES
 ('Monthly', 30),
 ('Fortnight', 15),
 ('Weekly', 7),

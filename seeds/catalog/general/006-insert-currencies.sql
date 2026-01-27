@@ -1,4 +1,6 @@
-INSERT INTO currency(currency_code, currency_name, symbol) VALUES
+SET SEARCH_PATH TO general_schema;
+
+INSERT INTO general_schema.currency(currency_code, currency_name, symbol) VALUES
 ('CRC', 'Costa Rican Colón', '₡'),
 ('USD', 'US Dollar', '$'),
 ('EUR', 'Euro', '€'),

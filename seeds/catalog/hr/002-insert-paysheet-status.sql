@@ -1,4 +1,6 @@
-INSERT INTO hr_module.paysheet_status(status_description) VALUES
+SET SEARCH_PATH TO hr_schema;
+
+INSERT INTO hr_schema.paysheet_status(status_description) VALUES
 ('Pending'),
 ('Completed'),
 ('Canceled')

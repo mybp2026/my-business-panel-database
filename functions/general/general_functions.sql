@@ -1,4 +1,6 @@
-create or replace procedure general.verify_tenant_payment(_payment_id uuid)
+set search_path = general_schema;
+
+create or replace procedure verify_tenant_payment(_payment_id uuid)
 language plpgsql
 as $$
 declare
@@ -9,7 +11,7 @@ declare
 begin
     select exists(
         select 1 
-        from general.tenant_payment 
+        from general_schema.tenant_payment 
         where tenant_payment_id = _payment_id
     ) into _exists;
     
@@ -20,7 +22,7 @@ begin
 
     select coalesce(verified, false), tenant_id 
     into _already_verified, _tenant_id
-    from general.tenant_payment 
+    from general_schema.tenant_payment 
     where tenant_payment_id = _payment_id;
     
     if _already_verified then
@@ -28,7 +30,7 @@ begin
         return;
     end if;
 
-    update general.tenant_payment
+    update general_schema.tenant_payment
     set verified = true,
         updated_at = current_timestamp
     where tenant_payment_id = _payment_id
@@ -38,7 +40,7 @@ begin
     
     if _rows_updated > 0 then
 
-        raise notice '✅ Payment verified successfully: %', _payment_id;
+        raise notice 'Payment verified successfully: %', _payment_id;
         raise notice 'Tenant: %', _tenant_id;
         raise notice 'Trigger will create subscription automatically';
 
@@ -49,7 +51,7 @@ begin
         
 exception
     when others then
-        raise notice '❌ Payment verification failed: %', sqlerrm;
+        raise notice 'Payment verification failed: %', sqlerrm;
         raise;
 end
 $$;
@@ -57,7 +59,7 @@ $$;
 
 
 
-create or replace function general.create_subscription()
+create or replace function create_subscription()
 returns trigger as $$
 declare
     _subscription_type_id int;
@@ -74,7 +76,7 @@ begin
 
     select exists(
         select 1 
-        from general.subscription 
+        from general_schema.subscription 
         where tenant_payment_id = new.tenant_payment_id  
     ) into _exists;
     
@@ -85,7 +87,7 @@ begin
 
 
     select end_date into _old_end_date
-    from general.subscription
+    from general_schema.subscription
     where tenant_id = _tenant_id
     and is_active = true
     order by end_date desc
@@ -101,7 +103,7 @@ begin
     
 
     select (duration_months || ' months')::interval into _plan_duration
-    from general.subscription_type
+    from general_schema.subscription_type
     where subscription_type_id = _subscription_type_id;
 
     if _old_end_date is not null and _old_end_date > new.payment_date::date then
@@ -114,7 +116,7 @@ begin
         raise notice 'Adding remaining time to new subscription. New end date: %', _new_end_date;
         
     
-        update general.subscription 
+        update general_schema.subscription 
         set is_active = false,
             updated_at = current_timestamp
         where tenant_id = _tenant_id
@@ -125,7 +127,7 @@ begin
     end if;
 
 
-    INSERT INTO general.subscription (
+    INSERT INTO general_schema.subscription (
         tenant_id,
         subscription_type_id,
         tenant_payment_id,  
@@ -148,11 +150,11 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function general.enable_tenant()
+create or replace function enable_tenant()
 returns trigger as $$
 begin
 
-    update general.tenant
+    update general_schema.tenant
     set is_subscribed = true,
         updated_at = current_timestamp
     where tenant_id = new.tenant_id;
@@ -163,20 +165,20 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_payment_verified on general.tenant_payment;
+drop trigger if exists on_payment_verified on general_schema.tenant_payment;
 create trigger on_payment_verified
-    after update of verified on general.tenant_payment  
+    after update of verified on general_schema.tenant_payment  
     for each row
     when (old.verified is false and new.verified is true)
-    execute function general.create_subscription();
+    execute function general_schema.create_subscription();
 
-drop trigger if exists on_subscription_created on general.subscription;
+drop trigger if exists on_subscription_created on general_schema.subscription;
 create trigger on_subscription_created
-    after insert on general.subscription
+    after insert on general_schema.subscription
     for each row
-    execute function general.enable_tenant();
+    execute function general_schema.enable_tenant();
 
-create or replace function general.update_timestamp()
+create or replace function update_timestamp()
 returns trigger as $$
 begin
     new.updated_at = current_timestamp;
@@ -184,7 +186,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function general.update_product_tsv()
+create or replace function update_product_tsv()
 returns trigger as $$
 begin
     new.product_name_tsv = to_tsvector('spanish', new.product_name);
@@ -192,42 +194,42 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists update_branch_timestamp on general.branch;
-create trigger update_branch_timestamp before update on general.branch
-for each row execute function general.update_timestamp();
+drop trigger if exists update_branch_timestamp on general_schema.branch;
+create trigger update_branch_timestamp before update on general_schema.branch
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_product_category_timestamp on general.product_category;
-create trigger update_product_category_timestamp before update on general.product_category
-for each row execute function general.update_timestamp();
+drop trigger if exists update_product_category_timestamp on general_schema.product_category;
+create trigger update_product_category_timestamp before update on general_schema.product_category
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_product_tsv on general.product;
-create trigger update_product_tsv before insert or update on general.product
-for each row execute function general.update_product_tsv();
+drop trigger if exists update_product_tsv on general_schema.product;
+create trigger update_product_tsv before insert or update on general_schema.product
+for each row execute function general_schema.update_product_tsv();
 
-drop trigger if exists update_product_timestamp on general.product;
-create trigger update_product_timestamp before update on general.product
-for each row execute function general.update_timestamp();
+drop trigger if exists update_product_timestamp on general_schema.product;
+create trigger update_product_timestamp before update on general_schema.product
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_product_attribute_timestamp on general.product_attribute;
-create trigger update_product_attribute_timestamp before update on general.product_attribute
-for each row execute function general.update_timestamp();
+drop trigger if exists update_product_attribute_timestamp on general_schema.product_attribute;
+create trigger update_product_attribute_timestamp before update on general_schema.product_attribute
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_tenant_timestamp on general.tenant;
-create trigger update_tenant_timestamp before update on general.tenant
-for each row execute function general.update_timestamp();
+drop trigger if exists update_tenant_timestamp on general_schema.tenant;
+create trigger update_tenant_timestamp before update on general_schema.tenant
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_tenant_customer_timestamp on general.tenant_customer;
-create trigger update_tenant_customer_timestamp before update on general.tenant_customer
-for each row execute function general.update_timestamp();
+drop trigger if exists update_tenant_customer_timestamp on general_schema.tenant_customer;
+create trigger update_tenant_customer_timestamp before update on general_schema.tenant_customer
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_users_timestamp on general.users;
-create trigger update_users_timestamp before update on general.users
-for each row execute function general.update_timestamp();
+drop trigger if exists update_users_timestamp on general_schema.users;
+create trigger update_users_timestamp before update on general_schema.users
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_subscription_timestamp on general.subscription;
-create trigger update_subscription_timestamp before update on general.subscription
-for each row execute function general.update_timestamp();
+drop trigger if exists update_subscription_timestamp on general_schema.subscription;
+create trigger update_subscription_timestamp before update on general_schema.subscription
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_tenant_payment_timestamp on general.tenant_payment;
-create trigger update_tenant_payment_timestamp before update on general.tenant_payment
-for each row execute function general.update_timestamp();
+drop trigger if exists update_tenant_payment_timestamp on general_schema.tenant_payment;
+create trigger update_tenant_payment_timestamp before update on general_schema.tenant_payment
+for each row execute function general_schema.update_timestamp();

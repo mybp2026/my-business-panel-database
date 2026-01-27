@@ -17,14 +17,14 @@ Covers:
 
 ## Prerequisites
 
-- Schemas: `purchase_module`, `general`, `inventory_module`
+- Schemas: `purchase`, `general`, `inventory_schema`
 - general data: tenant, branch, products, payment methods, tax rates
 - Installed functions/triggers:
-  - `purchase_module.create_purchase_order(...)`
-  - `purchase_module.calculate_purchase_order_total(...)`
-  - `purchase_module.verify_purchase_order_payment(...)`
-  - `purchase_module.create_goods_receipt()` (trigger on order status change)
-  - `purchase_module.execute_three_way_matching(...)` (called after items are inserted)
+  - `purchase.create_purchase_order(...)`
+  - `purchase.calculate_purchase_order_total(...)`
+  - `purchase.verify_purchase_order_payment(...)`
+  - `purchase.create_goods_receipt()` (trigger on order status change)
+  - `purchase.execute_three_way_matching(...)` (called after items are inserted)
 
 ## Key entities
 
@@ -58,7 +58,7 @@ Covers:
 1. Create purchase order (application)
    - Provide supplier, warehouse, expected delivery date, items (product_id, quantity_ordered, unit_price)
    - Example:
-     SELECT purchase_module.create_purchase_order(... p_items := jsonb_build_array(...))
+     SELECT purchase.create_purchase_order(... p_items := jsonb_build_array(...))
    - Result: order + items + purchase_account_payable + supplier_invoice + supplier_invoice_item
 
 2. Validate created records
@@ -66,7 +66,7 @@ Covers:
 
 3. Make payments (partial or full)
    - Insert purchase_order_payment rows (verified = false), then call:
-     CALL purchase_module.verify_purchase_order_payment(<payment_id>);
+     CALL purchase.verify_purchase_order_payment(<payment_id>);
    - Account payable updates account_status (Pending / Partial Paid / Paid) and amounts.
    - When Paid, supplier_invoice.paid = true.
 
@@ -93,31 +93,31 @@ Covers:
 - Check invoice and payable:
 
 `````sql
-  SELECT _ FROM purchase_module.supplier_invoice WHERE purchase_order_id = '<order-uuid>';
-  SELECT _ FROM purchase_module.purchase_account_payable WHERE purchase_order_id = '<order-uuid>';
+  SELECT _ FROM purchase.supplier_invoice WHERE purchase_order_id = '<order-uuid>';
+  SELECT _ FROM purchase.purchase_account_payable WHERE purchase_order_id = '<order-uuid>';
 ```
 
 - Check items detail:
 ````sql
-  SELECT p.sku, soi.quantity_ordered FROM purchase_module.purchase_order_item soi JOIN general.product p USING (product_id) WHERE soi.purchase_order_id = '<order-uuid>' ORDER BY p.sku;
-  SELECT p.sku, sii.quantity_billed FROM purchase_module.supplier_invoice_item sii JOIN general.product p USING (product_id) WHERE sii.supplier_invoice_id = '<invoice-uuid>' ORDER BY p.sku;
-  SELECT p.sku, gri.quantity_received FROM purchase_module.goods_receipt_item gri JOIN general.product p USING (product_id) WHERE gri.goods_receipt_id = '<goods-receipt-uuid>' ORDER BY p.sku;
+  SELECT p.sku, soi.quantity_ordered FROM purchase.purchase_order_item soi JOIN general.product p USING (product_id) WHERE soi.purchase_order_id = '<order-uuid>' ORDER BY p.sku;
+  SELECT p.sku, sii.quantity_billed FROM purchase.supplier_invoice_item sii JOIN general.product p USING (product_id) WHERE sii.supplier_invoice_id = '<invoice-uuid>' ORDER BY p.sku;
+  SELECT p.sku, gri.quantity_received FROM purchase.goods_receipt_item gri JOIN general.product p USING (product_id) WHERE gri.goods_receipt_id = '<goods-receipt-uuid>' ORDER BY p.sku;
 `````
 
 - Check three-way matching:
 
   ```sql
-  SELECT \* FROM purchase_module.three_way_matching WHERE purchase_order_id = '<order-uuid>';
+  SELECT \* FROM purchase.three_way_matching WHERE purchase_order_id = '<order-uuid>';
   ```
 
 - Totals and quantities:
 
 ```sql
-  SELECT coalesce(sum(quantity_ordered \* unit_price),0) AS order_subtotal, coalesce(sum(quantity_ordered),0) AS order_qty FROM purchase_module.purchase_order_item WHERE purchase_order_id = '<order-uuid>';
-  SELECT subtotal_amount, tax_amount, total_amount FROM purchase_module.supplier_invoice WHERE purchase_order_id = '<order-uuid>';
-  SELECT subtotal_amount, tax_amount, total_amount FROM purchase_module.goods_receipt WHERE purchase_order_id = '<order-uuid>';
-  SELECT coalesce(sum(quantity_billed),0) AS invoice_qty FROM purchase_module.supplier_invoice_item WHERE supplier_invoice_id = '<invoice-uuid>';
-  SELECT coalesce(sum(quantity_received),0) AS receipt_qty FROM purchase_module.goods_receipt_item WHERE goods_receipt_id = '<goods-receipt-uuid>';
+  SELECT coalesce(sum(quantity_ordered \* unit_price),0) AS order_subtotal, coalesce(sum(quantity_ordered),0) AS order_qty FROM purchase.purchase_order_item WHERE purchase_order_id = '<order-uuid>';
+  SELECT subtotal_amount, tax_amount, total_amount FROM purchase.supplier_invoice WHERE purchase_order_id = '<order-uuid>';
+  SELECT subtotal_amount, tax_amount, total_amount FROM purchase.goods_receipt WHERE purchase_order_id = '<order-uuid>';
+  SELECT coalesce(sum(quantity_billed),0) AS invoice_qty FROM purchase.supplier_invoice_item WHERE supplier_invoice_id = '<invoice-uuid>';
+  SELECT coalesce(sum(quantity_received),0) AS receipt_qty FROM purchase.goods_receipt_item WHERE goods_receipt_id = '<goods-receipt-uuid>';
 ```
 
 ## Common failure modes & troubleshooting
@@ -147,5 +147,5 @@ Covers:
 
 ## REFERENCES
 
-- Schema: purchase_module (purchase_order, supplier_invoice, goods_receipt, three_way_matching)
-- Functions: purchase_module.\* (see repository functions folder)
+- Schema: purchase (purchase_order, supplier_invoice, goods_receipt, three_way_matching)
+- Functions: purchase.\* (see repository functions folder)

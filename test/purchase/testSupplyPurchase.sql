@@ -10,7 +10,7 @@
 --   6. Conciliación automática a tres vías
 --   7. Verificación de resultados
 -- =====================================
-set search_path = purchase_module, general;
+set search_path = purchase, general;
 
 -- ========================================
 -- SECCIÓN 0: Limpieza inicial (idempotente)
@@ -21,73 +21,73 @@ begin
     raise notice '🧹 SECCIÓN 0: Limpieza inicial';
     raise notice '========================================';
 
-    delete from purchase_module.three_way_matching where purchase_order_id in (
-        select so.purchase_order_id from purchase_module.purchase_order so
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.three_way_matching where purchase_order_id in (
+        select so.purchase_order_id from purchase.purchase_order so
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.purchase_order_payment where purchase_account_payable_id in (
-        select sap.purchase_account_payable_id from purchase_module.purchase_account_payable sap
-        join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.purchase_order_payment where purchase_account_payable_id in (
+        select sap.purchase_account_payable_id from purchase.purchase_account_payable sap
+        join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.goods_receipt_item where goods_receipt_id in (
-        select gr.goods_receipt_id from purchase_module.goods_receipt gr
-        join purchase_module.purchase_order so on gr.purchase_order_id = so.purchase_order_id
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.goods_receipt_item where goods_receipt_id in (
+        select gr.goods_receipt_id from purchase.goods_receipt gr
+        join purchase.purchase_order so on gr.purchase_order_id = so.purchase_order_id
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.goods_receipt where purchase_order_id in (
-        select so.purchase_order_id from purchase_module.purchase_order so
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.goods_receipt where purchase_order_id in (
+        select so.purchase_order_id from purchase.purchase_order so
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.supplier_invoice_item where supplier_invoice_id in (
-        select si.supplier_invoice_id from purchase_module.supplier_invoice si
-        join purchase_module.purchase_order so on si.purchase_order_id = so.purchase_order_id
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.supplier_invoice_item where supplier_invoice_id in (
+        select si.supplier_invoice_id from purchase.supplier_invoice si
+        join purchase.purchase_order so on si.purchase_order_id = so.purchase_order_id
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.supplier_invoice where purchase_order_id in (
-        select so.purchase_order_id from purchase_module.purchase_order so
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.supplier_invoice where purchase_order_id in (
+        select so.purchase_order_id from purchase.purchase_order so
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.purchase_order_tracking where purchase_order_id in (
-        select so.purchase_order_id from purchase_module.purchase_order so
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.purchase_order_tracking where purchase_order_id in (
+        select so.purchase_order_id from purchase.purchase_order so
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.purchase_account_payable where purchase_order_id in (
-        select so.purchase_order_id from purchase_module.purchase_order so
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.purchase_account_payable where purchase_order_id in (
+        select so.purchase_order_id from purchase.purchase_order so
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.purchase_order_item where purchase_order_id in (
-        select so.purchase_order_id from purchase_module.purchase_order so
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    delete from purchase.purchase_order_item where purchase_order_id in (
+        select so.purchase_order_id from purchase.purchase_order so
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.purchase_order where supplier_id in (
-        select supplier_id from purchase_module.supplier where supplier_name = 'Full Flow Supplier'
+    delete from purchase.purchase_order where supplier_id in (
+        select supplier_id from purchase.supplier where supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.supplier_branch where supplier_id in (
-        select supplier_id from purchase_module.supplier where supplier_name = 'Full Flow Supplier'
+    delete from purchase.supplier_branch where supplier_id in (
+        select supplier_id from purchase.supplier where supplier_name = 'Full Flow Supplier'
     );
 
-    delete from purchase_module.supplier where supplier_name = 'Full Flow Supplier';
-    delete from inventory_module.warehouse where warehouse_name = 'Full Flow Warehouse';
+    delete from purchase.supplier where supplier_name = 'Full Flow Supplier';
+    delete from inventory_schema.warehouse where warehouse_name = 'Full Flow Warehouse';
     delete from general.product where sku in ('FF-001', 'FF-002', 'FF-003');
     delete from general.branch where branch_name = 'Full Flow Branch';
     delete from general.tenant where tenant_name = 'Full Flow Test Shop';
@@ -131,15 +131,15 @@ begin
     select exists(
         select 1 
         from information_schema.tables 
-        where table_schema = 'inventory_module' 
+        where table_schema = 'inventory_schema' 
         and table_name = 'warehouse'
     ) into v_warehouse_exists;
 
     if not v_warehouse_exists then
-        raise notice '   ⚠️ Creando esquema inventory_module y tabla warehouse...';
-        execute 'create schema if not exists inventory_module';
+        raise notice '   ⚠️ Creando esquema inventory_schema y tabla warehouse...';
+        execute 'CREATE SCHEMA IF NOT EXISTS inventory_schema';
         execute '
-            CREATE TABLE IF NOT EXISTS inventory_module.warehouse(
+            CREATE TABLE IF NOT EXISTS inventory_schema.warehouse(
                 warehouse_id uuid primary key default gen_random_uuid(),
                 branch_id uuid REFERENCES general.branch(branch_id) on delete cascade,
                 warehouse_name varchar(255) not null,
@@ -150,16 +150,16 @@ begin
     end if;
 
     select warehouse_id into v_warehouse_id 
-    from inventory_module.warehouse 
+    from inventory_schema.warehouse 
     where warehouse_name = 'Full Flow Warehouse' 
     limit 1;
     
     if v_warehouse_id is null then
-        INSERT INTO inventory_module.warehouse (warehouse_name, branch_id, warehouse_address)
+        INSERT INTO inventory_schema.warehouse (warehouse_name, branch_id, warehouse_address)
         VALUES ('Full Flow Warehouse', v_branch_id, 'Bodega Full Flow')
         returning warehouse_id into v_warehouse_id;
     else
-        update inventory_module.warehouse
+        update inventory_schema.warehouse
         set branch_id = v_branch_id,
             warehouse_address = 'Bodega Full Flow'
         where warehouse_id = v_warehouse_id;
@@ -171,12 +171,12 @@ begin
     
     raise notice '   ✓ Warehouse creado: %', v_warehouse_id;
 
-    INSERT INTO purchase_module.supplier (supplier_name, supplier_contact_info, supplier_address)
+    INSERT INTO purchase.supplier (supplier_name, supplier_contact_info, supplier_address)
     VALUES ('Full Flow Supplier', 'contact@fullflow.local', 'Proveedor Full Flow')
     on conflict (supplier_name) do nothing;
-    select supplier_id into v_supplier_id from purchase_module.supplier where supplier_name = 'Full Flow Supplier' limit 1;
+    select supplier_id into v_supplier_id from purchase.supplier where supplier_name = 'Full Flow Supplier' limit 1;
 
-    INSERT INTO purchase_module.supplier_branch (supplier_id, branch_id)
+    INSERT INTO purchase.supplier_branch (supplier_id, branch_id)
     VALUES (v_supplier_id, v_branch_id)
     ON CONFLICT DO NOTHING;
     raise notice '   ✓ Supplier creado: %', v_supplier_id;
@@ -219,8 +219,8 @@ begin
     raise notice '📦 SECCIÓN 2: Crear orden de compra';
     raise notice '========================================';
 
-    select supplier_id into v_supplier_id from purchase_module.supplier where supplier_name = 'Full Flow Supplier' limit 1;
-    select warehouse_id into v_warehouse_id from inventory_module.warehouse where warehouse_name = 'Full Flow Warehouse' limit 1;
+    select supplier_id into v_supplier_id from purchase.supplier where supplier_name = 'Full Flow Supplier' limit 1;
+    select warehouse_id into v_warehouse_id from inventory_schema.warehouse where warehouse_name = 'Full Flow Warehouse' limit 1;
     select tenant_id into v_tenant_id from general.tenant where tenant_name = 'Full Flow Test Shop' limit 1;
 
     v_items := jsonb_build_array(
@@ -229,7 +229,7 @@ begin
         jsonb_build_object('product_id', (select product_id::text from general.product where tenant_id = v_tenant_id and sku = 'FF-003'), 'quantity_ordered', 5, 'unit_price', 200.00)
     );
 
-    v_purchase_order_id := purchase_module.create_purchase_order(
+    v_purchase_order_id := purchase.create_purchase_order(
         v_supplier_id,
         v_warehouse_id,
         (current_date + interval '10 days')::date,
@@ -249,12 +249,12 @@ begin
         v_tax_amount,
         v_total_amount
     from general.account_payable ap
-    join purchase_module.purchase_account_payable sap on ap.account_payable_id = sap.account_payable_id
+    join purchase.purchase_account_payable sap on ap.account_payable_id = sap.account_payable_id
     where sap.purchase_order_id = v_purchase_order_id;
 
     select supplier_invoice_id, total_amount 
     into v_supplier_invoice_id, v_invoice_total
-    from purchase_module.supplier_invoice
+    from purchase.supplier_invoice
     where purchase_order_id = v_purchase_order_id;
 
     raise notice '   ✓ purchase Order ID: %', v_purchase_order_id;
@@ -311,11 +311,11 @@ begin
         v_tax_amount,
         v_total_amount,
         v_tenant_id
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
-    join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
-    join purchase_module.supplier_branch sb on s.supplier_id = sb.supplier_id
+    join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
+    join purchase.supplier_branch sb on s.supplier_id = sb.supplier_id
     join general.branch b on sb.branch_id = b.branch_id
     join general.tenant t on b.tenant_id = t.tenant_id
     where s.supplier_name = 'Full Flow Supplier'
@@ -326,7 +326,7 @@ begin
     raise notice '   💰 Total a pagar: $%', v_total_amount;
     raise notice '   💰 Pago 40%%: $%', v_pay;
 
-    INSERT INTO purchase_module.purchase_order_payment (
+    INSERT INTO purchase.purchase_order_payment (
         tenant_id, purchase_account_payable_id, payment_date, amount_paid, payment_method_id, payment_reference, verified
     ) VALUES (
         v_tenant_id, v_purchase_account_payable_id, current_timestamp, v_pay, 1, 'PAY-40PCT-CASH', false
@@ -334,7 +334,7 @@ begin
 
     raise notice '   ✓ Pago registrado: %', v_payment_id;
 
-    call purchase_module.verify_purchase_order_payment(v_payment_id);
+    call purchase.verify_purchase_order_payment(v_payment_id);
     raise notice '   ✓ Pago verificado';
 
     select 
@@ -343,7 +343,7 @@ begin
         ap.amount_paid,
         (ap.subtotal + sap.tax_amount - ap.amount_paid) as balance_remaining
     into v_status, v_status_name, v_paid, v_balance
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
     join general.account_payable_status aps on sap.account_payable_status = aps.status_id
     where sap.purchase_account_payable_id = v_purchase_account_payable_id;
@@ -381,23 +381,23 @@ begin
 
     select so.purchase_order_id, so.purchase_order_status_id, sos.status_name
     into v_purchase_order_id, v_old_status, v_old_status_name
-    from purchase_module.purchase_order so
-    join purchase_module.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    from purchase.purchase_order so
+    join purchase.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
     where s.supplier_name = 'Full Flow Supplier'
     limit 1;
 
     raise notice '   📦 Order ID: %', v_purchase_order_id;
     raise notice '   📊 Status anterior: % (%)', v_old_status_name, v_old_status;
 
-    update purchase_module.purchase_order
+    update purchase.purchase_order
     set purchase_order_status_id = 2
     where purchase_order_id = v_purchase_order_id;
 
     select so.purchase_order_status_id, sos.status_name
     into v_new_status, v_new_status_name
-    from purchase_module.purchase_order so
-    join purchase_module.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
+    from purchase.purchase_order so
+    join purchase.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
     where so.purchase_order_id = v_purchase_order_id;
 
     raise notice '   ✓ Status actualizado: % (%)', v_new_status_name, v_new_status;
@@ -445,11 +445,11 @@ begin
         v_tax_amount,
         v_total_amount,
         v_tenant_id
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
-    join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
-    join purchase_module.supplier_branch sb on s.supplier_id = sb.supplier_id
+    join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
+    join purchase.supplier_branch sb on s.supplier_id = sb.supplier_id
     join general.branch b on sb.branch_id = b.branch_id
     join general.tenant t on b.tenant_id = t.tenant_id
     where s.supplier_name = 'Full Flow Supplier'
@@ -459,7 +459,7 @@ begin
 
     raise notice '   💰 Pago 30%%: $%', v_pay;
 
-    INSERT INTO purchase_module.purchase_order_payment (
+    INSERT INTO purchase.purchase_order_payment (
         tenant_id, purchase_account_payable_id, payment_date, amount_paid, payment_method_id, payment_reference, verified
     ) VALUES (
         v_tenant_id, v_purchase_account_payable_id, current_timestamp, v_pay, 2, 'PAY-30PCT-DEBIT', false
@@ -467,7 +467,7 @@ begin
 
     raise notice '   ✓ Pago registrado: %', v_payment_id;
 
-    call purchase_module.verify_purchase_order_payment(v_payment_id);
+    call purchase.verify_purchase_order_payment(v_payment_id);
     raise notice '   ✓ Pago verificado';
 
     select 
@@ -476,7 +476,7 @@ begin
         ap.amount_paid,
         (ap.subtotal + sap.tax_amount - ap.amount_paid) as balance_remaining
     into v_status, v_status_name, v_paid, v_balance
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
     join general.account_payable_status aps on sap.account_payable_status = aps.status_id
     where sap.purchase_account_payable_id = v_purchase_account_payable_id;
@@ -535,11 +535,11 @@ begin
         v_total_amount,
         v_paid_so_far,
         v_tenant_id
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
-    join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
-    join purchase_module.supplier_branch sb on s.supplier_id = sb.supplier_id
+    join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
+    join purchase.supplier_branch sb on s.supplier_id = sb.supplier_id
     join general.branch b on sb.branch_id = b.branch_id
     join general.tenant t on b.tenant_id = t.tenant_id
     where s.supplier_name = 'Full Flow Supplier'
@@ -551,7 +551,7 @@ begin
     raise notice '   💰 Total pendiente: $%', v_remaining;
     raise notice '   💰 Pago final: $%', v_pay;
 
-    INSERT INTO purchase_module.purchase_order_payment (
+    INSERT INTO purchase.purchase_order_payment (
         tenant_id, purchase_account_payable_id, payment_date, amount_paid, payment_method_id, payment_reference, verified
     ) VALUES (
         v_tenant_id, v_purchase_account_payable_id, current_timestamp, v_pay, 3, 'PAY-FINAL-CREDIT', false
@@ -559,7 +559,7 @@ begin
 
     raise notice '   ✓ Pago registrado: %', v_payment_id;
 
-    call purchase_module.verify_purchase_order_payment(v_payment_id);
+    call purchase.verify_purchase_order_payment(v_payment_id);
     raise notice '   ✓ Pago verificado';
 
     select 
@@ -569,14 +569,14 @@ begin
         ap.is_paid,
         (ap.subtotal + sap.tax_amount - ap.amount_paid) as balance_remaining
     into v_status, v_status_name, v_paid, v_is_paid, v_balance
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
     join general.account_payable_status aps on sap.account_payable_status = aps.status_id
     where sap.purchase_account_payable_id = v_purchase_account_payable_id;
     
     select si.paid into v_invoice_paid
-    from purchase_module.supplier_invoice si
-    join purchase_module.purchase_account_payable sap on si.purchase_order_id = sap.purchase_order_id
+    from purchase.supplier_invoice si
+    join purchase.purchase_account_payable sap on si.purchase_order_id = sap.purchase_order_id
     where sap.purchase_account_payable_id = v_purchase_account_payable_id;
 
     raise notice '';
@@ -629,30 +629,30 @@ begin
 
     select so.purchase_order_id, so.purchase_order_status_id, sos.status_name
     into v_purchase_order_id, v_old_status, v_old_status_name
-    from purchase_module.purchase_order so
-    join purchase_module.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    from purchase.purchase_order so
+    join purchase.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
     where s.supplier_name = 'Full Flow Supplier'
     limit 1;
 
     raise notice '   📦 Order ID: %', v_purchase_order_id;
     raise notice '   📊 Status anterior: % (%)', v_old_status_name, v_old_status;
 
-    update purchase_module.purchase_order
+    update purchase.purchase_order
     set purchase_order_status_id = 3
     where purchase_order_id = v_purchase_order_id;
 
     select so.purchase_order_status_id, sos.status_name
     into v_new_status, v_new_status_name
-    from purchase_module.purchase_order so
-    join purchase_module.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
+    from purchase.purchase_order so
+    join purchase.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
     where so.purchase_order_id = v_purchase_order_id;
 
     raise notice '   ✓ Status actualizado: % (%)', v_new_status_name, v_new_status;
 
     select goods_receipt_id, total_amount 
     into v_goods_receipt_id, v_goods_receipt_total
-    from purchase_module.goods_receipt
+    from purchase.goods_receipt
     where purchase_order_id = v_purchase_order_id;
 
     if v_goods_receipt_id is null then
@@ -660,7 +660,7 @@ begin
     end if;
 
     select count(*) into v_items_count
-    from purchase_module.goods_receipt_item
+    from purchase.goods_receipt_item
     where goods_receipt_id = v_goods_receipt_id;
 
     raise notice '';
@@ -701,8 +701,8 @@ begin
     raise notice '========================================';
 
     select so.purchase_order_id into v_purchase_order_id
-    from purchase_module.purchase_order so
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    from purchase.purchase_order so
+    join purchase.supplier s on so.supplier_id = s.supplier_id
     where s.supplier_name = 'Full Flow Supplier'
     limit 1;
 
@@ -710,7 +710,7 @@ begin
            goods_receipt_id, supplier_invoice_id
     into v_matching_id, v_amounts_matched, v_quantities_matched, v_is_matched, v_matched_at,
          v_goods_receipt_id, v_supplier_invoice_id
-    from purchase_module.three_way_matching
+    from purchase.three_way_matching
     where purchase_order_id = v_purchase_order_id;
 
     if v_matching_id is null then
@@ -718,27 +718,27 @@ begin
     end if;
 
     select coalesce(sum(quantity_ordered * unit_price), 0) into v_order_total
-    from purchase_module.purchase_order_item
+    from purchase.purchase_order_item
     where purchase_order_id = v_purchase_order_id;
 
     select subtotal_amount into v_invoice_total
-    from purchase_module.supplier_invoice
+    from purchase.supplier_invoice
     where supplier_invoice_id = v_supplier_invoice_id;
 
     select subtotal_amount into v_receipt_total
-    from purchase_module.goods_receipt
+    from purchase.goods_receipt
     where goods_receipt_id = v_goods_receipt_id;
 
     select coalesce(sum(quantity_ordered), 0) into v_order_qty
-    from purchase_module.purchase_order_item
+    from purchase.purchase_order_item
     where purchase_order_id = v_purchase_order_id;
 
     select coalesce(sum(quantity_billed), 0) into v_invoice_qty
-    from purchase_module.supplier_invoice_item
+    from purchase.supplier_invoice_item
     where supplier_invoice_id = v_supplier_invoice_id;
 
     select coalesce(sum(quantity_received), 0) into v_receipt_qty
-    from purchase_module.goods_receipt_item
+    from purchase.goods_receipt_item
     where goods_receipt_id = v_goods_receipt_id;
 
     raise notice '   ✅ Conciliación ejecutada automáticamente';
@@ -764,7 +764,7 @@ begin
     raise notice '      --- purchase Order Items ---';
     for v_rec in 
         select p.sku, soi.quantity_ordered
-        from purchase_module.purchase_order_item soi
+        from purchase.purchase_order_item soi
         join general.product p on soi.product_id = p.product_id
         where soi.purchase_order_id = v_purchase_order_id
         order by p.sku
@@ -775,7 +775,7 @@ begin
     raise notice '      --- Supplier Invoice Items ---';
     for v_rec in 
         select p.sku, sii.quantity_billed
-        from purchase_module.supplier_invoice_item sii
+        from purchase.supplier_invoice_item sii
         join general.product p on sii.product_id = p.product_id
         where sii.supplier_invoice_id = v_supplier_invoice_id
         order by p.sku
@@ -786,7 +786,7 @@ begin
     raise notice '      --- Goods Receipt Items ---';
     for v_rec in 
         select p.sku, gri.quantity_received
-        from purchase_module.goods_receipt_item gri
+        from purchase.goods_receipt_item gri
         join general.product p on gri.product_id = p.product_id
         where gri.goods_receipt_id = v_goods_receipt_id
         order by p.sku
@@ -864,36 +864,36 @@ begin
         v_balance,
         v_invoice_total,
         v_receipt_total
-    from purchase_module.purchase_order so
-    join purchase_module.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
-    join purchase_module.purchase_account_payable sap on so.purchase_order_id = sap.purchase_order_id
+    from purchase.purchase_order so
+    join purchase.purchase_order_status sos on so.purchase_order_status_id = sos.status_id
+    join purchase.purchase_account_payable sap on so.purchase_order_id = sap.purchase_order_id
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
     join general.account_payable_status aps on sap.account_payable_status = aps.status_id
-    join purchase_module.supplier_invoice si on so.purchase_order_id = si.purchase_order_id
-    join purchase_module.goods_receipt gr on so.purchase_order_id = gr.purchase_order_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
+    join purchase.supplier_invoice si on so.purchase_order_id = si.purchase_order_id
+    join purchase.goods_receipt gr on so.purchase_order_id = gr.purchase_order_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
     where s.supplier_name = 'Full Flow Supplier'
     limit 1;
 
     select count(*) into v_payments_count
-    from purchase_module.purchase_order_payment sop
-    join purchase_module.purchase_account_payable sap on sop.purchase_account_payable_id = sap.purchase_account_payable_id
+    from purchase.purchase_order_payment sop
+    join purchase.purchase_account_payable sap on sop.purchase_account_payable_id = sap.purchase_account_payable_id
     where sap.purchase_order_id = v_purchase_order_id
     and sop.verified = true;
 
     v_goods_receipt_exists := exists(
-        select 1 from purchase_module.goods_receipt 
+        select 1 from purchase.goods_receipt 
         where purchase_order_id = v_purchase_order_id
     );
     
     v_matching_exists := exists(
-        select 1 from purchase_module.three_way_matching 
+        select 1 from purchase.three_way_matching 
         where purchase_order_id = v_purchase_order_id
     );
 
     if v_matching_exists then
         select is_matched into v_is_matched
-        from purchase_module.three_way_matching
+        from purchase.three_way_matching
         where purchase_order_id = v_purchase_order_id;
     end if;
 

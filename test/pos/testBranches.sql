@@ -6,9 +6,9 @@
 do $$
 begin
     -- Elimina ventas y sus items
-    delete from pos_module.sale_item
+    delete from pos.sale_item
     where sale_id in (
-        select sale_id from pos_module.sale
+        select sale_id from pos.sale
         where branch_id in (
             select branch_id from general.branch
             where tenant_id in (
@@ -18,7 +18,7 @@ begin
         )
     );
 
-    delete from pos_module.sale
+    delete from pos.sale
     where branch_id in (
         select branch_id from general.branch
         where tenant_id in (
@@ -142,26 +142,26 @@ begin
     select product_id into v_prod_c from general.product where tenant_id = v_tenant_id and sku = 'PROD-C';
 
     -- Venta 1 en Centro
-    INSERT INTO pos_module.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
+    INSERT INTO pos.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
     VALUES (v_branch_centro, 1, 200.00, 26.00, 226.00, true)
     returning sale_id into v_sale_id;
-    INSERT INTO pos_module.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
+    INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
     VALUES (v_sale_id, v_tenant_id, v_prod_a, 1, 200.00, 200.00);
 
     -- Venta 2 en Centro
-    INSERT INTO pos_module.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
+    INSERT INTO pos.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
     VALUES (v_branch_centro, 1, 70.00, 9.10, 79.10, true)
     returning sale_id into v_sale_id;
-    INSERT INTO pos_module.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
+    INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
     VALUES (v_sale_id, v_tenant_id, v_prod_b, 2, 20.00, 40.00);
-    INSERT INTO pos_module.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
+    INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
     VALUES (v_sale_id, v_tenant_id, v_prod_c, 1, 50.00, 50.00);
 
     -- Venta 3 en Norte
-    INSERT INTO pos_module.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
+    INSERT INTO pos.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
     VALUES (v_branch_norte, 1, 100.00, 13.00, 113.00, true)
     returning sale_id into v_sale_id;
-    INSERT INTO pos_module.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
+    INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
     VALUES (v_sale_id, v_tenant_id, v_prod_c, 2, 50.00, 100.00);
 
     raise notice '✓ Ventas realizadas en ambas sucursales';
@@ -172,7 +172,7 @@ select
     b.branch_name,
     count(s.sale_id) as ventas,
     sum(s.total_amount) as total_ventas
-from pos_module.sale s
+from pos.sale s
 join general.branch b on s.branch_id = b.branch_id
 join general.tenant t on b.tenant_id = t.tenant_id
 where t.tenant_name = 'Comercio MultiSucursal'
@@ -185,8 +185,8 @@ select
     p.product_name,
     sum(si.quantity) as cantidad_vendida,
     sum(si.total_price) as ingresos
-from pos_module.sale_item si
-join pos_module.sale s on si.sale_id = s.sale_id
+from pos.sale_item si
+join pos.sale s on si.sale_id = s.sale_id
 join general.branch b on s.branch_id = b.branch_id
 join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id
 where b.branch_name in ('Sucursal Centro', 'Sucursal Norte')
@@ -198,7 +198,7 @@ select
     p.product_name,
     sum(si.quantity) as cantidad_vendida,
     sum(si.total_price) as ingresos
-from pos_module.sale_item si
+from pos.sale_item si
 join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id
 group by p.product_name
 order by ingresos desc;
@@ -212,9 +212,9 @@ select
     p.product_name,
     si.quantity,
     si.total_price
-from pos_module.sale s
+from pos.sale s
 join general.branch b on s.branch_id = b.branch_id
-join pos_module.sale_item si on s.sale_id = si.sale_id
+join pos.sale_item si on s.sale_id = si.sale_id
 join general.product p on si.tenant_id = p.tenant_id and si.product_id = p.product_id
 where b.branch_name in ('Sucursal Centro', 'Sucursal Norte')
 order by b.branch_name, s.sale_date desc;

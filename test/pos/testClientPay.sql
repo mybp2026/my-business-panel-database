@@ -26,42 +26,42 @@ begin
     raise notice '';
     
     -- Limpiar en orden inverso a las FOREIGN KEYs
-    delete from pos_module.score_transaction 
+    delete from pos.score_transaction 
     where tenant_customer_id in (
         select tenant_customer_id from general.tenant_customer 
         where email = 'juan.perez@email.com'
     );
     
-    delete from pos_module.tenant_customer_score 
+    delete from pos.tenant_customer_score 
     where tenant_customer_id in (
         select tenant_customer_id from general.tenant_customer 
         where email = 'juan.perez@email.com'
     );
     
-    delete from pos_module.bill_payment 
+    delete from pos.bill_payment 
     where bill_id in (
-        select bill_id from pos_module.bill 
+        select bill_id from pos.bill 
         where tenant_customer_id in (
             select tenant_customer_id from general.tenant_customer 
             where email = 'juan.perez@email.com'
         )
     );
     
-    delete from pos_module.bill 
+    delete from pos.bill 
     where tenant_customer_id in (
         select tenant_customer_id from general.tenant_customer 
         where email = 'juan.perez@email.com'
     );
     
-    delete from pos_module.customer_payment 
+    delete from pos.customer_payment 
     where tenant_customer_id in (
         select tenant_customer_id from general.tenant_customer 
         where email = 'juan.perez@email.com'
     );
     
-    delete from pos_module.cash_register_sale 
+    delete from pos.cash_register_sale 
     where sale_id in (
-        select sale_id from pos_module.sale 
+        select sale_id from pos.sale 
         where branch_id in (
             select branch_id from general.branch 
             where tenant_id in (
@@ -71,9 +71,9 @@ begin
         )
     );
     
-    delete from pos_module.sale_item 
+    delete from pos.sale_item 
     where sale_id in (
-        select sale_id from pos_module.sale 
+        select sale_id from pos.sale 
         where branch_id in (
             select branch_id from general.branch 
             where tenant_id in (
@@ -83,7 +83,7 @@ begin
         )
     );
     
-    delete from pos_module.sale 
+    delete from pos.sale 
     where branch_id in (
         select branch_id from general.branch 
         where tenant_id in (
@@ -92,9 +92,9 @@ begin
         )
     );
     
-    delete from pos_module.cash_register_session 
+    delete from pos.cash_register_session 
     where cash_register_id in (
-        select cash_register_id from pos_module.cash_register 
+        select cash_register_id from pos.cash_register 
         where branch_id in (
             select branch_id from general.branch 
             where tenant_id in (
@@ -104,7 +104,7 @@ begin
         )
     );
     
-    delete from pos_module.cash_register 
+    delete from pos.cash_register 
     where branch_id in (
         select branch_id from general.branch 
         where tenant_id in (
@@ -113,7 +113,7 @@ begin
         )
     );
     
-    delete from pos_module.loyalty_program 
+    delete from pos.loyalty_program 
     where tenant_id in (
         select tenant_id from general.tenant 
         where tenant_name = 'Super Comercio Digital'
@@ -150,8 +150,8 @@ begin
     raise notice '  Tenants: %', (select count(*) from general.tenant);
     raise notice '  Clientes: %', (select count(*) from general.tenant_customer);
     raise notice '  Productos: %', (select count(*) from general.product);
-    raise notice '  Ventas: %', (select count(*) from pos_module.sale);
-    raise notice '  Facturas: %', (select count(*) from pos_module.bill);
+    raise notice '  Ventas: %', (select count(*) from pos.sale);
+    raise notice '  Facturas: %', (select count(*) from pos.bill);
     raise notice '';
     raise notice '✅ SECCIÓN 0 COMPLETADA';
     raise notice '========================================';
@@ -234,14 +234,14 @@ begin
     raise notice '  - Teclado Mecánico: $120.00';
 
     -- 1.6 Crear caja registradora
-    INSERT INTO pos_module.cash_register (branch_id, is_active)
+    INSERT INTO pos.cash_register (branch_id, is_active)
     VALUES (v_branch_id, true)
     returning cash_register_id into v_cash_register_id;
     
     raise notice '✓ Caja registradora creada: %', v_cash_register_id;
 
     -- 1.7 Crear programa de lealtad
-    INSERT INTO pos_module.loyalty_program (
+    INSERT INTO pos.loyalty_program (
         tenant_id,
         points_earned_per_currency_unit,
         points_redeemed_per_currency_unit,
@@ -288,7 +288,7 @@ begin
 
     -- Obtener caja del tenant
     select cash_register_id into v_cash_register_id
-    from pos_module.cash_register cr
+    from pos.cash_register cr
     join general.branch b on cr.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id
     and cr.is_active = true
@@ -299,7 +299,7 @@ begin
     end if;
 
     -- Abrir sesión con $500 de fondo
-    call pos_module.open_close_cash_register_session(
+    call pos.open_close_cash_register_session(
         v_cash_register_id,
         'open',
         500.00
@@ -419,7 +419,7 @@ begin
     raise notice '';
 
     -- ✅ Crear venta CON IMPUESTO
-    INSERT INTO pos_module.sale (
+    INSERT INTO pos.sale (
         branch_id,
         currency_id,
         subtotal_amount,  -- ✅ Subtotal sin impuesto
@@ -445,7 +445,7 @@ begin
     raise notice '';
 
     -- Agregar productos (sin cambios)
-    INSERT INTO pos_module.sale_item (
+    INSERT INTO pos.sale_item (
         sale_id, tenant_id, product_id, quantity, unit_price, total_price
     )
     VALUES (
@@ -454,7 +454,7 @@ begin
     
     raise notice '✓ Producto agregado: Laptop HP × 1 = $850.00';
 
-    INSERT INTO pos_module.sale_item (
+    INSERT INTO pos.sale_item (
         sale_id, tenant_id, product_id, quantity, unit_price, total_price
     )
     VALUES (
@@ -463,7 +463,7 @@ begin
     
     raise notice '✓ Producto agregado: Mouse Logitech × 1 = $25.00';
 
-    INSERT INTO pos_module.sale_item (
+    INSERT INTO pos.sale_item (
         sale_id, tenant_id, product_id, quantity, unit_price, total_price
     )
     VALUES (
@@ -521,7 +521,7 @@ begin
         v_sale_subtotal,
         v_sale_tax,
         v_sale_total
-    from pos_module.sale s
+    from pos.sale s
     join general.branch b on s.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id
     and s.is_completed = false
@@ -540,7 +540,7 @@ begin
     raise notice '';
 
     -- ✅ Registrar pago con el total CORRECTO
-    INSERT INTO pos_module.customer_payment (
+    INSERT INTO pos.customer_payment (
         tenant_customer_id,
         sale_id,
         payment_method_id,
@@ -602,7 +602,7 @@ begin
     -- Obtener pago pendiente del tenant
     select cp.customer_payment_id, cp.sale_id 
     into v_payment_id, v_sale_id
-    from pos_module.customer_payment cp
+    from pos.customer_payment cp
     join general.tenant_customer tc on cp.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id
     and cp.verified = false
@@ -618,7 +618,7 @@ begin
     raise notice '';
 
     -- ✅ VERIFICAR PAGO (esto dispara toda la cascada)
-    call pos_module.verify_customer_payment(v_payment_id);
+    call pos.verify_customer_payment(v_payment_id);
     
     raise notice '';
     raise notice '════════════════════════════════════════';
@@ -628,7 +628,7 @@ begin
 
     -- Verificar que la venta se completó
     select is_completed into v_sale_completed
-    from pos_module.sale
+    from pos.sale
     where sale_id = v_sale_id;
     
     if v_sale_completed then
@@ -639,7 +639,7 @@ begin
 
     -- Verificar que se creó la factura
     select bill_id into v_bill_id
-    from pos_module.bill
+    from pos.bill
     where sale_id = v_sale_id;
     
     if v_bill_id is not null then
@@ -650,7 +650,7 @@ begin
 
     -- Verificar vinculación a sesión de caja
     select cash_register_session_id into v_session_id
-    from pos_module.cash_register_sale
+    from pos.cash_register_sale
     where sale_id = v_sale_id;
     
     if v_session_id is not null then
@@ -661,7 +661,7 @@ begin
 
     -- Verificar puntos ganados
     select score into v_points_earned
-    from pos_module.tenant_customer_score tcs
+    from pos.tenant_customer_score tcs
     join general.tenant_customer tc on tcs.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id
     and tc.email = 'juan.perez@email.com';
@@ -709,7 +709,7 @@ begin
         b.billed_at,
         c.symbol as currency_symbol
     into v_bill
-    from pos_module.bill b
+    from pos.bill b
     join general.tenant_customer tc on b.tenant_customer_id = tc.tenant_customer_id
     join general.currency c on b.currency_id = c.currency_id
     where tc.tenant_id = v_tenant_id
@@ -741,11 +741,11 @@ begin
             si.quantity,
             si.unit_price,
             si.total_price
-        from pos_module.sale_item si
+        from pos.sale_item si
         join general.product p on si.tenant_id = p.tenant_id 
                             and si.product_id = p.product_id
-        join pos_module.sale s on si.sale_id = s.sale_id
-        join pos_module.bill b on s.sale_id = b.sale_id
+        join pos.sale s on si.sale_id = s.sale_id
+        join pos.bill b on s.sale_id = b.sale_id
         where b.bill_id = v_bill.bill_id
         order by p.product_name
     loop
@@ -765,8 +765,8 @@ begin
             pm.name as method_name,
             cp.payment_amount,
             cp.verified
-        from pos_module.bill_payment bp
-        join pos_module.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
+        from pos.bill_payment bp
+        join pos.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
         join general.payment_method pm on cp.payment_method_id = pm.payment_method_id
         where bp.bill_id = v_bill.bill_id
     loop
@@ -804,8 +804,8 @@ begin
 
     -- Obtener caja registradora activa del tenant
     select cr.cash_register_id into v_cash_register_id
-    from pos_module.cash_register_session crs
-    join pos_module.cash_register cr on crs.cash_register_id = cr.cash_register_id
+    from pos.cash_register_session crs
+    join pos.cash_register cr on crs.cash_register_id = cr.cash_register_id
     join general.branch b on cr.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id
     and crs.is_active = true
@@ -820,7 +820,7 @@ begin
     v_closing_amount := 1495.00;
 
     -- Cerrar sesión
-    call pos_module.open_close_cash_register_session(
+    call pos.open_close_cash_register_session(
         v_cash_register_id,
         'close',
         v_closing_amount
@@ -857,30 +857,30 @@ begin
 
     -- Estadísticas del tenant
     select count(*) into v_total_sales
-    from pos_module.sale s
+    from pos.sale s
     join general.branch b on s.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id
     and s.is_completed = true;
 
     select count(*) into v_total_bills
-    from pos_module.bill b
+    from pos.bill b
     join general.tenant_customer tc on b.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id;
 
     select count(*) into v_total_payments
-    from pos_module.customer_payment cp
+    from pos.customer_payment cp
     join general.tenant_customer tc on cp.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id
     and cp.verified = true;
 
     select coalesce(sum(cp.payment_amount), 0) into v_total_revenue
-    from pos_module.customer_payment cp
+    from pos.customer_payment cp
     join general.tenant_customer tc on cp.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id
     and cp.verified = true;
 
     select coalesce(sum(tcs.score), 0) into v_total_points
-    from pos_module.tenant_customer_score tcs
+    from pos.tenant_customer_score tcs
     join general.tenant_customer tc on tcs.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id;
 
@@ -920,11 +920,11 @@ select
     s.total_amount,
     s.is_completed,
     s.sale_date
-from pos_module.sale s
+from pos.sale s
 join general.branch b on s.branch_id = b.branch_id
 join general.tenant t on b.tenant_id = t.tenant_id
-left join pos_module.cash_register_sale crs on s.sale_id = crs.sale_id
-left join pos_module.cash_register_session crss on crs.cash_register_session_id = crss.cash_register_session_id
+left join pos.cash_register_sale crs on s.sale_id = crs.sale_id
+left join pos.cash_register_session crss on crs.cash_register_session_id = crss.cash_register_session_id
 left join general.users u on crss.user_id = u.user_id
 where t.tenant_name = 'Super Comercio Digital'
 order by s.sale_date desc;
@@ -940,11 +940,11 @@ select
     s.total_amount,
     s.is_completed,
     s.sale_date
-from pos_module.sale s
+from pos.sale s
 join general.branch b on s.branch_id = b.branch_id
 join general.tenant t on b.tenant_id = t.tenant_id
-left join pos_module.cash_register_sale crs on s.sale_id = crs.sale_id
-left join pos_module.cash_register_session crss on crs.cash_register_session_id = crss.cash_register_session_id
+left join pos.cash_register_sale crs on s.sale_id = crs.sale_id
+left join pos.cash_register_session crss on crs.cash_register_session_id = crss.cash_register_session_id
 left join general.users u on crss.user_id = u.user_id  -- ✅ user desde sesión
 where t.tenant_name = 'Super Comercio Digital'
 order by s.sale_date desc;
@@ -957,10 +957,10 @@ select
     si.unit_price,
     si.total_price,
     s.sale_date
-from pos_module.sale_item si
+from pos.sale_item si
 join general.product p on si.tenant_id = p.tenant_id 
                     and si.product_id = p.product_id
-join pos_module.sale s on si.sale_id = s.sale_id
+join pos.sale s on si.sale_id = s.sale_id
 join general.branch br on s.branch_id = br.branch_id
 join general.tenant t on br.tenant_id = t.tenant_id
 where t.tenant_name = 'Super Comercio Digital'
@@ -974,7 +974,7 @@ select
     cp.payment_amount,
     cp.verified,
     cp.payment_date
-from pos_module.customer_payment cp
+from pos.customer_payment cp
 join general.tenant_customer tc on cp.tenant_customer_id = tc.tenant_customer_id
 join general.payment_method pm on cp.payment_method_id = pm.payment_method_id
 join general.tenant t on tc.tenant_id = t.tenant_id
@@ -989,7 +989,7 @@ select
     tcs.lifetime_score as puntos_acumulados,
     tcs.score_redeemed as puntos_canjeados,
     tcs.last_earned_at
-from pos_module.tenant_customer_score tcs
+from pos.tenant_customer_score tcs
 join general.tenant_customer tc on tcs.tenant_customer_id = tc.tenant_customer_id
 join general.tenant t on tc.tenant_id = t.tenant_id
 where t.tenant_name = 'Super Comercio Digital'
@@ -1006,8 +1006,8 @@ select
     crs.opened_at,
     crs.closed_at,
     (crs.closed_at - crs.opened_at) as duracion
-from pos_module.cash_register_session crs
-join pos_module.cash_register cr on crs.cash_register_id = cr.cash_register_id
+from pos.cash_register_session crs
+join pos.cash_register cr on crs.cash_register_id = cr.cash_register_id
 join general.branch b on cr.branch_id = b.branch_id
 join general.tenant t on b.tenant_id = t.tenant_id
 where t.tenant_name = 'Super Comercio Digital'

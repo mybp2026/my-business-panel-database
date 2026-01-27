@@ -1,4 +1,4 @@
-set search_path = pos_module;
+set search_path = pos_schema;
 
 create or replace function check_sale_payment_completion(_sale_id uuid)
 returns boolean as $$
@@ -10,7 +10,7 @@ declare
 begin
         select total_amount, is_completed 
         into _sale_total, _is_completed
-        from pos_module.sale
+        from pos_schema.sale
         where sale_id = _sale_id;
         
         if _sale_total is null then
@@ -22,7 +22,7 @@ begin
         end if;
         
         select count(*) into _pending_payments
-        from pos_module.customer_payment
+        from pos_schema.customer_payment
         where sale_id = _sale_id
         and verified = false;
         
@@ -31,21 +31,21 @@ begin
         end if;
         
         select coalesce(sum(payment_amount), 0) into _payments_total
-        from pos_module.customer_payment
+        from pos_schema.customer_payment
         where sale_id = _sale_id
         and verified = true;
         
-        raise notice '   💰 Sale total (with tax): $%', _sale_total;
-        raise notice '   💳 Payments total: $%', _payments_total;
-        raise notice '   📊 Difference: $%', (_sale_total - _payments_total);
+        raise notice '   Sale total (with tax): $%', _sale_total;
+        raise notice '   Payments total: $%', _payments_total;
+        raise notice '   Difference: $%', (_sale_total - _payments_total);
         
         if abs(_payments_total - _sale_total) <= 0.01 then
-            update pos_module.sale
+            update pos_schema.sale
             set is_completed = true,
                 updated_at = current_timestamp
             where sale_id = _sale_id;
             
-            raise notice '   ✅ Sale % marked as COMPLETED', _sale_id;
+            raise notice '   Sale % marked as COMPLETED', _sale_id;
             return true;
             
         elsif _payments_total > _sale_total then
@@ -54,14 +54,14 @@ begin
             return false;
             
         else
-            raise notice '   ⏳ Sale % still pending (shortage: $%)', 
+            raise notice '   Sale % still pending (shortage: $%)', 
                 _sale_id, (_sale_total - _payments_total);
             return false;
         end if;
         
     exception
         when others then
-            raise notice '   ❌ Error checking sale completion: %', sqlerrm;
+            raise notice '   Error checking sale completion: %', sqlerrm;
             return false;
 end;
 $$ language plpgsql;
@@ -72,14 +72,14 @@ declare
     _session_id uuid;
 begin
     select crs.cash_register_session_id into _session_id
-    from pos_module.cash_register_session crs
-    join pos_module.cash_register cr on crs.cash_register_id = cr.cash_register_id
+    from pos_schema.cash_register_session crs
+    join pos_schema.cash_register cr on crs.cash_register_id = cr.cash_register_id
     where cr.branch_id = new.branch_id
     and crs.is_active = true
     limit 1;
     
     if _session_id is not null then
-        INSERT INTO pos_module.cash_register_sale(
+        INSERT INTO pos_schema.cash_register_sale(
             cash_register_session_id,
             sale_id,
             transaction_time
@@ -90,7 +90,7 @@ begin
         )
         on conflict (sale_id) do nothing;
         
-        raise notice '✅ Sale % linked to session %', new.sale_id, _session_id;
+        raise notice 'Sale % linked to session %', new.sale_id, _session_id;
     else
         raise warning 'No active cash register session for branch %', new.branch_id;
     end if;
@@ -99,9 +99,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_sale_completed_link_sale_to_session on pos_module.sale;
+drop trigger if exists on_sale_completed_link_sale_to_session on pos_schema.sale;
 create trigger on_sale_completed_link_sale_to_session
-    after update of is_completed on pos_module.sale
+    after update of is_completed on pos_schema.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
     execute function link_sale_to_session();
@@ -114,9 +114,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists calculate_bill_total_trigger on pos_module.bill;
+drop trigger if exists calculate_bill_total_trigger on pos_schema.bill;
 create trigger calculate_bill_total_trigger
-    before insert or update on pos_module.bill
+    before insert or update on pos_schema.bill
     for each row
     execute function calculate_bill_total();
 
@@ -128,13 +128,13 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists calculate_total_price_return_product_trigger on pos_module.return_product;
+drop trigger if exists calculate_total_price_return_product_trigger on pos_schema.return_product;
 create trigger calculate_total_price_return_product_trigger
-    before insert or update on pos_module.return_product
+    before insert or update on pos_schema.return_product
     for each row
     execute function calculate_total_price();
 
-create or replace function pos_module.get_bill(_sale_id uuid)
+create or replace function pos_schema.get_bill(_sale_id uuid)
 returns table (
     bill_id uuid,
     sale_id uuid,
@@ -158,7 +158,7 @@ begin
         b.total_amount,
         b.created_at,
         b.updated_at
-    from pos_module.bill b
+    from pos_schema.bill b
     where b.sale_id = _sale_id;
 end;
 $$ language plpgsql;
@@ -175,25 +175,25 @@ declare
     _total numeric(10,2);
     _payment_ids uuid[];
 begin
-        raise notice '🧾 Creating bill for sale: %', new.sale_id;
+        raise notice 'Creating bill for sale: %', new.sale_id;
         
         if exists(
-            select 1 from pos_module.bill
+            select 1 from pos_schema.bill
             where sale_id = new.sale_id
         ) then
-            raise notice '⚠️  Bill already exists for sale: %', new.sale_id;
+            raise notice 'Bill already exists for sale: %', new.sale_id;
             return new;
         end if;
         
         _tenant_customer_id := (
             select tenant_customer_id 
-            from pos_module.customer_payment 
+            from pos_schema.customer_payment 
             where sale_id = new.sale_id 
             limit 1
         );
         
         select tenant_id into _tenant_id
-        from general.tenant_customer
+        from general_schema.tenant_customer
         where tenant_customer_id = _tenant_customer_id;
         
         _currency_id := new.currency_id;
@@ -207,7 +207,7 @@ begin
         raise notice '   Tax: $%', _tax;
         raise notice '   Total: $%', _total;
 
-        INSERT INTO pos_module.bill (
+        INSERT INTO pos_schema.bill (
             sale_id,              
             tenant_customer_id,
             currency_id,
@@ -223,24 +223,24 @@ begin
             _total
         ) returning bill_id into _bill_id;
         
-        raise notice '   ✅ Bill created: %', _bill_id;
+        raise notice '   Bill created: %', _bill_id;
         
         select array_agg(customer_payment_id) into _payment_ids
-        from pos_module.customer_payment
+        from pos_schema.customer_payment
         where sale_id = new.sale_id
         and verified = true;
         
-        INSERT INTO pos_module.bill_payment(bill_id, customer_payment_id, payment_amount)
+        INSERT INTO pos_schema.bill_payment(bill_id, customer_payment_id, payment_amount)
         select 
             _bill_id,
             customer_payment_id,
             payment_amount
-        from pos_module.customer_payment
+        from pos_schema.customer_payment
         where customer_payment_id = any(_payment_ids);
         
-        raise notice '   ✅ % payment(s) linked to bill', array_length(_payment_ids, 1);
+        raise notice '   % payment(s) linked to bill', array_length(_payment_ids, 1);
         raise notice '';
-        raise notice '🎉 Bill creation completed successfully';
+        raise notice 'Bill creation completed successfully';
         raise notice '   Bill ID: %', _bill_id;
         raise notice '   Sale ID: %', new.sale_id;
 
@@ -248,14 +248,14 @@ begin
         
     exception
         when others then
-            raise notice '❌ Error creating bill: %', sqlerrm;
+            raise notice 'Error creating bill: %', sqlerrm;
             return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_sale_completed_create_bill on pos_module.sale;
+drop trigger if exists on_sale_completed_create_bill on pos_schema.sale;
 create trigger on_sale_completed_create_bill
-    after update of is_completed on pos_module.sale
+    after update of is_completed on pos_schema.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
     execute function create_bill();
@@ -288,7 +288,7 @@ begin
         si.product_id,
         si.tenant_id
     into _sale_item_record
-    from pos_module.sale_item si
+    from pos_schema.sale_item si
     where si.sale_item_id = new.sale_item_id;
 
     if not found then
@@ -298,13 +298,13 @@ begin
     _sale_id := _sale_item_record.sale_id;
 
     -- get bill for sale
-    select bill_id into _bill_id from pos_module.bill where sale_id = _sale_id limit 1;
+    select bill_id into _bill_id from pos_schema.bill where sale_id = _sale_id limit 1;
     if _bill_id is null then
         raise exception 'Bill not found for sale: %', _sale_id;
     end if;
 
-    raise notice '📄 Bill ID: %', _bill_id;
-    raise notice '📦 Original sale item: qty=% unit=$% total=$%', _sale_item_record.quantity, _sale_item_record.unit_price, _sale_item_record.total_price;
+    raise notice 'Bill ID: %', _bill_id;
+    raise notice 'Original sale item: qty=% unit=$% total=$%', _sale_item_record.quantity, _sale_item_record.unit_price, _sale_item_record.total_price;
 
     if new.quantity > _sale_item_record.quantity then
         raise exception 'Cannot return more items than purchased. Purchased: %, Attempting to return: %',
@@ -312,75 +312,75 @@ begin
     end if;
 
     _quantity_remaining := _sale_item_record.quantity - new.quantity;
-    raise notice '🔢 Return quantity: %  Remaining qty: %', new.quantity, _quantity_remaining;
+    raise notice 'Return quantity: %  Remaining qty: %', new.quantity, _quantity_remaining;
 
     -- Update or remove sale_item to reconcile sale
     if _quantity_remaining = 0 then
-        delete from pos_module.sale_item where sale_item_id = _sale_item_record.sale_item_id;
-        raise notice '🗑️  Sale item removed (quantity = 0)';
+        delete from pos_schema.sale_item where sale_item_id = _sale_item_record.sale_item_id;
+        raise notice 'Sale item removed (quantity = 0)';
     else
-        update pos_module.sale_item
+        update pos_schema.sale_item
         set quantity = _quantity_remaining,
             total_price = _quantity_remaining * unit_price,
             updated_at = current_timestamp
         where sale_item_id = _sale_item_record.sale_item_id;
-        raise notice '✏️  Sale item quantity updated from % to %', _sale_item_record.quantity, _quantity_remaining;
+        raise notice 'Sale item quantity updated from % to %', _sale_item_record.quantity, _quantity_remaining;
     end if;
 
     -- Update bill totals
     select subtotal_amount, tax_amount, total_amount into _original_subtotal, _original_tax, _original_total
-    from pos_module.bill where bill_id = _bill_id;
+    from pos_schema.bill where bill_id = _bill_id;
 
     _total_returned := new.quantity * new.unit_price;
-    raise notice '💰 Amount returned (line): $%', _total_returned;
+    raise notice 'Amount returned (line): $%', _total_returned;
 
     _new_subtotal := _original_subtotal - _total_returned;
     if _new_subtotal < 0 then _new_subtotal := 0; end if;
 
     -- determine tax rate by tenant -> region (fallback to 0 if not found)
     select t.tenant_id, r.region_name into _tenant_id, _region_name
-    from general.tenant t
-    join general.branch b on b.tenant_id = t.tenant_id
-    join pos_module.sale s on s.branch_id = b.branch_id
-    join general.region r on r.region_id = t.region_id
+    from general_schema.tenant t
+    join general_schema.branch b on b.tenant_id = t.tenant_id
+    join pos_schema.sale s on s.branch_id = b.branch_id
+    join general_schema.region r on r.region_id = t.region_id
     where s.sale_id = _sale_id
     limit 1;
 
-    select rate_percentage into _tax_rate from general.tax_rate where region = coalesce(_region_name, 'US Federal') limit 1;
+    select rate_percentage into _tax_rate from general_schema.tax_rate where region = coalesce(_region_name, 'US Federal') limit 1;
     if _tax_rate is null then _tax_rate := 0; end if;
 
     _new_tax := round(_new_subtotal * (_tax_rate / 100), 2);
     _new_total := round(_new_subtotal + _new_tax, 2);
 
-    update pos_module.bill
+    update pos_schema.bill
     set subtotal_amount = _new_subtotal,
         tax_amount = _new_tax,
         total_amount = _new_total,
         updated_at = current_timestamp
     where bill_id = _bill_id;
 
-    raise notice '📊 Bill updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
+    raise notice 'Bill updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
 
-    select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_module.sale_item si where si.sale_id = _sale_id;
+    select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_schema.sale_item si where si.sale_id = _sale_id;
     _new_tax := round(_sale_subtotal_after * (_tax_rate / 100), 2);
     _new_total := round(_sale_subtotal_after + _new_tax, 2);
 
-    update pos_module.sale
+    update pos_schema.sale
     set subtotal_amount = _sale_subtotal_after,
         tax_amount = _new_tax,
         total_amount = _new_total,
         updated_at = current_timestamp
     where sale_id = _sale_id;
 
-    raise notice '🔁 Sale updated: subtotal $% tax $% total $%', _sale_subtotal_after, _new_tax, _new_total;
+    raise notice 'Sale updated: subtotal $% tax $% total $%', _sale_subtotal_after, _new_tax, _new_total;
 
     return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists update_on_return_trigger on pos_module.return_product;
+drop trigger if exists update_on_return_trigger on pos_schema.return_product;
 create trigger update_on_return_trigger
-    after insert on pos_module.return_product
+    after insert on pos_schema.return_product
     for each row
     execute function update_on_return();
 
@@ -396,23 +396,23 @@ declare
     _now timestamp := current_timestamp;
     _promo record;
 begin
-    raise notice '🔄 AUTO-TOGGLE PROMOTIONS';
+    raise notice 'AUTO-TOGGLE PROMOTIONS';
     raise notice 'Timestamp: %', _now;
     raise notice '';
     
     for _promo in
         select p.promotion_id, p.promo_code, p.promo_name, p.promo_start_date
-        from pos_module.promotion p
+        from pos_schema.promotion p
         where p.is_active = false
         and p.promo_start_date <= _now
         and p.promo_end_date > _now
     loop
-        update pos_module.promotion
+        update pos_schema.promotion
         set is_active = true,
             updated_at = _now
         where promotion_id = _promo.promotion_id;
         
-        raise notice '✅ ACTIVATED: % - % (started: %)', 
+        raise notice 'ACTIVATED: % - % (started: %)', 
             _promo.promo_code, _promo.promo_name, _promo.promo_start_date;
         
         action := 'ACTIVATED';
@@ -424,16 +424,16 @@ begin
     
     for _promo in
         select p.promotion_id, p.promo_code, p.promo_name, p.promo_end_date
-        from pos_module.promotion p
+        from pos_schema.promotion p
         where p.is_active = true
         and p.promo_end_date <= _now
     loop
-        update pos_module.promotion
+        update pos_schema.promotion
         set is_active = false,
             updated_at = _now
         where promotion_id = _promo.promotion_id;
         
-        raise notice '❌ DEACTIVATED: % - % (ended: %)', 
+        raise notice 'DEACTIVATED: % - % (ended: %)', 
             _promo.promo_code, _promo.promo_name, _promo.promo_end_date;
         
         action := 'DEACTIVATED';
@@ -444,7 +444,7 @@ begin
     end loop;
     
     raise notice '';
-    raise notice '✅ AUTO-TOGGLE COMPLETED';
+    raise notice 'AUTO-TOGGLE COMPLETED';
 end;
 $$ language plpgsql;
 
@@ -453,31 +453,31 @@ $$ language plpgsql;
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos_schema.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos_schema.promotion_rule
     where promotion_id = _promotion_id
     and discount_percentage is not null
     limit 1;
     
     if not found then
-        raise notice '   ❌ No percentage discount rule found';
+        raise notice '   No percentage discount rule found';
         _result.success := false;
         return _result;
     end if;
     
     if _rule.min_purchase_amount is not null then
         if _total_purchase_amount is null or _total_purchase_amount < _rule.min_purchase_amount then
-            raise notice '   ⚠️  Minimum purchase amount not met: $% required, $% provided',
+            raise notice '   Minimum purchase amount not met: $% required, $% provided',
                 _rule.min_purchase_amount, coalesce(_total_purchase_amount, 0);
             _result.success := false;
             return _result;
@@ -487,7 +487,7 @@ begin
     _discount := _total_price * (_rule.discount_percentage / 100);
     _discount_pct := _rule.discount_percentage;
     
-    raise notice '   ✅ Applied: % percent discount = $%', _rule.discount_percentage, _discount;
+    raise notice '   Applied: % percent discount = $%', _rule.discount_percentage, _discount;
     
     _result.discount_amount := round(_discount, 2);
     _result.discount_percentage := round(_discount_pct, 2);
@@ -503,31 +503,31 @@ create or replace function calculate_fixed_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos_schema.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos_schema.promotion_rule
     where promotion_id = _promotion_id
     and discount_amount is not null
     limit 1;
     
     if not found then
-        raise notice '   ❌ No fixed discount rule found';
+        raise notice '   No fixed discount rule found';
         _result.success := false;
         return _result;
     end if;
     
     if _rule.min_purchase_amount is not null then
         if _total_purchase_amount is null or _total_purchase_amount < _rule.min_purchase_amount then
-            raise notice '   ⚠️  Minimum purchase amount not met: $% required',
+            raise notice '   Minimum purchase amount not met: $% required',
                 _rule.min_purchase_amount;
             _result.success := false;
             return _result;
@@ -537,7 +537,7 @@ begin
     _discount := least(_rule.discount_amount, _total_price);
     _discount_pct := (_discount / _total_price) * 100;
     
-    raise notice '   ✅ Applied: $% discount (max: $%)', _discount, _rule.discount_amount;
+    raise notice '   Applied: $% discount (max: $%)', _discount, _rule.discount_amount;
     
     _result.discount_amount := round(_discount, 2);
     _result.discount_percentage := round(_discount_pct, 2);
@@ -553,32 +553,32 @@ create or replace function calculate_buy_x_get_y_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos_schema.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
     _free_items integer;
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos_schema.promotion_rule
     where promotion_id = _promotion_id
     and buy_quantity is not null
     and get_quantity is not null
     limit 1;
     
     if not found then
-        raise notice '   ❌ No buy_x_get_y rule found';
+        raise notice '   No buy_x_get_y rule found';
         _result.success := false;
         return _result;
     end if;
     
     if _quantity < _rule.buy_quantity then
-        raise notice '   ⚠️  Minimum quantity not met: % required, % provided',
+        raise notice '   Minimum quantity not met: % required, % provided',
             _rule.buy_quantity, _quantity;
         _result.success := false;
         return _result;
@@ -589,7 +589,7 @@ begin
     _discount := _free_items * _unit_price * (_rule.get_discount_percentage / 100);
     _discount_pct := (_discount / _total_price) * 100;
     
-    raise notice '   ✅ Applied: Buy % get % = % free items × $% = $%',
+    raise notice '   Applied: Buy % get % = % free items × $% = $%',
         _rule.buy_quantity, _rule.get_quantity, _free_items, _unit_price, _discount;
     
     _result.discount_amount := round(_discount, 2);
@@ -609,18 +609,18 @@ create or replace function calculate_volume_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos_schema.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos_schema.promotion_rule
     where promotion_id = _promotion_id
     and min_quantity is not null
     and discount_percentage is not null
@@ -630,7 +630,7 @@ begin
     limit 1;
     
     if not found then
-        raise notice '   ⚠️  Quantity % does not match any volume tier', _quantity;
+        raise notice '   Quantity % does not match any volume tier', _quantity;
         _result.success := false;
         return _result;
     end if;
@@ -638,7 +638,7 @@ begin
     _discount := _total_price * (_rule.discount_percentage / 100);
     _discount_pct := _rule.discount_percentage;
     
-    raise notice '   ✅ Applied: Volume discount % percent (min: %, max: %) = $%',
+    raise notice '   Applied: Volume discount % percent (min: %, max: %) = $%',
         _rule.discount_percentage, _rule.min_quantity, 
         coalesce(_rule.max_quantity::text, 'unlimited'), _discount;
     
@@ -658,18 +658,18 @@ create or replace function calculate_tiered_pricing_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos_schema.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos_schema.promotion_rule
     where promotion_id = _promotion_id
     and tier_level is not null
     and tier_min_quantity <= _quantity
@@ -678,7 +678,7 @@ begin
     limit 1;
     
     if not found then
-        raise notice '   ⚠️  Quantity % does not match any tier', _quantity;
+        raise notice '   Quantity % does not match any tier', _quantity;
         _result.success := false;
         return _result;
     end if;
@@ -687,7 +687,7 @@ begin
         _discount := (_unit_price - _rule.tier_price) * _quantity;
         _discount_pct := ((_unit_price - _rule.tier_price) / _unit_price) * 100;
         
-        raise notice '   ✅ Applied: Tier % - Fixed price $% per unit = $% discount',
+        raise notice '   Applied: Tier % - Fixed price $% per unit = $% discount',
             _rule.tier_level, _rule.tier_price, _discount;
         
         _result.rule_description := format('Tier %s: $%s per unit',
@@ -698,14 +698,14 @@ begin
         _discount := _total_price * (_rule.tier_discount_percentage / 100);
         _discount_pct := _rule.tier_discount_percentage;
         
-        raise notice '   ✅ Applied: Tier % - % percent discount = $%',
+        raise notice '   Applied: Tier % - % percent discount = $%',
             _rule.tier_level, _rule.tier_discount_percentage, _discount;
         
         _result.rule_description := format('Tier %s: %s%% off',
             _rule.tier_level,
             _rule.tier_discount_percentage);
     else
-        raise notice '   ❌ Tier found but no price or discount defined';
+        raise notice '   Tier found but no price or discount defined';
         _result.success := false;
         return _result;
     end if;
@@ -723,11 +723,11 @@ create or replace function calculate_combo_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos_schema.discount_result as $$
 declare
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
-    raise notice '   ℹ️  Combo discounts require multiple products and should be calculated at cart level';
+    raise notice '   Combo discounts require multiple products and should be calculated at cart level';
     _result.success := false;
     return _result;
 end;
@@ -749,7 +749,7 @@ create or replace function calculate_promotion_discount(
 declare
     _promo record;
     _type_name varchar(50);
-    _result pos_module.discount_result;
+    _result pos_schema.discount_result;
 begin
     select 
         p.promotion_id,
@@ -760,68 +760,68 @@ begin
         p.promotion_end_date,
         pt.type_name
     into _promo
-    from pos_module.promotion p
-    join pos_module.promotion_type pt on p.promotion_type_id = pt.promotion_type_id
+    from pos_schema.promotion p
+    join pos_schema.promotion_type pt on p.promotion_type_id = pt.promotion_type_id
     where p.promotion_id = _promotion_id
     and p.tenant_id = _tenant_id;
     
     if not found then
-        raise notice '❌ Promotion not found: %', _promotion_id;
+        raise notice 'Promotion not found: %', _promotion_id;
         return;
     end if;
     
     if not _promo.is_active then
-        raise notice '❌ Promotion % is not active', _promo.promotion_code;
+        raise notice 'Promotion % is not active', _promo.promotion_code;
         return;
     end if;
     
     if current_timestamp not between _promo.promotion_start_date and _promo.promotion_end_date then
-        raise notice '❌ Promotion % is not in valid date range', _promo.promotion_code;
+        raise notice 'Promotion % is not in valid date range', _promo.promotion_code;
         return;
     end if;
     
     _type_name := _promo.type_name;
     
-    raise notice '🎯 Calculating discount for promotion: % (%)', _promo.promotion_name, _type_name;
+    raise notice 'Calculating discount for promotion: % (%)', _promo.promotion_name, _type_name;
     raise notice '   Product: %, Quantity: %, Unit Price: $%', _product_id, _quantity, _unit_price;
     
     case _type_name
         when 'percentage_discount' then
-            _result := pos_module.calculate_percentage_discount(
+            _result := pos_schema.calculate_percentage_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'fixed_amount_discount' then
-            _result := pos_module.calculate_fixed_discount(
+            _result := pos_schema.calculate_fixed_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'buy_x_get_y' then
-            _result := pos_module.calculate_buy_x_get_y_discount(
+            _result := pos_schema.calculate_buy_x_get_y_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'volume_discount' then
-            _result := pos_module.calculate_volume_discount(
+            _result := pos_schema.calculate_volume_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'tiered_pricing' then
-            _result := pos_module.calculate_tiered_pricing_discount(
+            _result := pos_schema.calculate_tiered_pricing_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'combo' then
-            _result := pos_module.calculate_combo_discount(
+            _result := pos_schema.calculate_combo_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'free_shipping' then
-            raise notice '   ℹ️  Free shipping discount (not implemented for products)';
+            raise notice '   Free shipping discount (not implemented for products)';
             return;
             
         else
-            raise notice '   ❌ Unknown promotion type: %', _type_name;
+            raise notice '   Unknown promotion type: %', _type_name;
             return;
     end case;
     
@@ -851,7 +851,7 @@ declare
 begin
         if _action = 'open' then
             select cash_register_session_id into _session_id
-            from pos_module.cash_register_session
+            from pos_schema.cash_register_session
             where cash_register_id = _cash_register_id
             and is_active = true
             limit 1;
@@ -861,7 +861,7 @@ begin
                     _cash_register_id, _session_id;
             end if;
             
-            INSERT INTO pos_module.cash_register_session (
+            INSERT INTO pos_schema.cash_register_session (
                 cash_register_id,
                 opened_at,
                 opening_amount,
@@ -877,13 +877,13 @@ begin
                 current_timestamp
             ) returning cash_register_session_id into _session_id;
             
-            raise notice '✅ Cash register % opened', _cash_register_id;
+            raise notice 'Cash register % opened', _cash_register_id;
             raise notice '   Session ID: %', _session_id;
             raise notice '   Opening amount: $%', _amount;
             raise notice '   Opened at: %', current_timestamp;
             
         elsif _action = 'close' then
-            update pos_module.cash_register_session
+            update pos_schema.cash_register_session
             set closed_at = current_timestamp,
                 closing_amount = _amount,
                 is_active = false,
@@ -905,7 +905,7 @@ begin
                     _cash_register_id;
             end if;
             
-            raise notice '✅ Cash register % closed', _cash_register_id;
+            raise notice 'Cash register % closed', _cash_register_id;
             raise notice '   Session ID: %', _session.cash_register_session_id;
             raise notice '   Opening amount: $%', _session.opening_amount;
             raise notice '   Closing amount: $%', _session.closing_amount;
@@ -918,7 +918,7 @@ begin
         
     exception
         when others then
-            raise notice '❌ Error in cash register session: %', sqlerrm;
+            raise notice 'Error in cash register session: %', sqlerrm;
             raise;
 end;
 $$ language plpgsql;
@@ -936,13 +936,13 @@ declare
 begin
         select exists(
             select 1 
-            from pos_module.loyalty_program 
+            from pos_schema.loyalty_program 
             where tenant_id = _tenant_id 
             and is_active = true
         ) into _program_exists;
         
         if not _program_exists then
-            raise notice '⚠️  No active loyalty program for tenant %', _tenant_id;
+            raise notice 'No active loyalty program for tenant %', _tenant_id;
             return 0;
         end if;
         
@@ -952,21 +952,21 @@ begin
         into 
             _minimum_purchase, 
             _points_earned_per_currency_unit 
-        from pos_module.loyalty_program 
+        from pos_schema.loyalty_program 
         where tenant_id = _tenant_id
         and is_active = true
         limit 1;
         
         _score := floor(_purchase_amount * _points_earned_per_currency_unit);
         
-        raise notice '✅ Points: $% × % = % pts',
+        raise notice 'Points: $% × % = % pts',
             _purchase_amount, _points_earned_per_currency_unit, _score;
         
         return _score;
         
     exception
         when others then
-            raise notice '❌ Error calculating points: %', sqlerrm;
+            raise notice 'Error calculating points: %', sqlerrm;
             return 0;
 end;
 $$ language plpgsql;
@@ -986,54 +986,54 @@ begin
         
         select exists(
             select 1 
-            from pos_module.score_transaction 
+            from pos_schema.score_transaction 
             where bill_id = _bill_id 
             and transaction_type_id = 1  
         ) into _points_already_awarded;
         
         if _points_already_awarded then
-            raise notice '   ℹ️  Points already awarded for bill %', _bill_id;
+            raise notice 'Points already awarded for bill %', _bill_id;
             return new;
         end if;
         
         select tenant_customer_id into _tenant_customer_id
-        from pos_module.bill
+        from pos_schema.bill
         where bill_id = _bill_id;
         
         if _tenant_customer_id is null then
-            raise notice '   ⚠️  No customer found for bill %', _bill_id;
+            raise notice 'No customer found for bill %', _bill_id;
             return new;
         end if;
         
         select tenant_id into _tenant_id
-        from general.tenant_customer
+        from general_schema.tenant_customer
         where tenant_customer_id = _tenant_customer_id;
         
         if _tenant_id is null then
-            raise notice '   ⚠️  Tenant not found for customer %', _tenant_customer_id;
+            raise notice 'Tenant not found for customer %', _tenant_customer_id;
             return new;
         end if;
         
         select coalesce(sum(cp.payment_amount), 0) into _cash_payments_total
-        from pos_module.bill_payment bp
-        join pos_module.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
+        from pos_schema.bill_payment bp
+        join pos_schema.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
         where bp.bill_id = _bill_id
         and cp.is_points_redemption = false;
         
-        raise notice '💵 Cash/card payments total: $%', _cash_payments_total;
+        raise notice 'Cash/card payments total: $%', _cash_payments_total;
         
-        _points_earned := pos_module.calculate_purchase_score(
+        _points_earned := pos_schema.calculate_purchase_score(
             _tenant_id,
             _tenant_customer_id,
             _cash_payments_total
         );
         
         if _points_earned <= 0 then
-            raise notice '   ℹ️  No points earned for this purchase (Bill: %)', _bill_id;
+            raise notice 'No points earned for this purchase (Bill: %)', _bill_id;
             return new;
         end if;
         
-        INSERT INTO pos_module.tenant_customer_score(
+        INSERT INTO pos_schema.tenant_customer_score(
             tenant_id,
             tenant_customer_id,
             score,
@@ -1053,7 +1053,7 @@ begin
             last_earned_at = current_timestamp
         returning score into _current_balance;
         
-        INSERT INTO pos_module.score_transaction(
+        INSERT INTO pos_schema.score_transaction(
             tenant_id,
             tenant_customer_id,
             transaction_type_id,
@@ -1069,24 +1069,24 @@ begin
             current_timestamp
         );
         
-        raise notice '   ✅ Awarded % points to customer %', _points_earned, _tenant_customer_id;
-        raise notice '   Bill: %', _bill_id;
-        raise notice '   New balance: % points', _current_balance;
+        raise notice 'Awarded % points to customer %', _points_earned, _tenant_customer_id;
+        raise notice 'Bill: %', _bill_id;
+        raise notice 'New balance: % points', _current_balance;
         
         return new;
         
     exception
         when others then
-            raise notice '   ❌ Error awarding points: %', sqlerrm;
+            raise notice 'Error awarding points: %', sqlerrm;
             return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_purchase_billed on pos_module.bill_payment;
+drop trigger if exists on_purchase_billed on pos_schema.bill_payment;
 create trigger on_purchase_billed
-    after insert on pos_module.bill_payment
+    after insert on pos_schema.bill_payment
     for each row
-    execute function pos_module.award_points();
+    execute function pos_schema.award_points();
 
 create or replace function redeem_points(
 _tenant_customer_id uuid,
@@ -1104,7 +1104,7 @@ declare
     _cash_equivalent numeric(10,2);
 begin   
     select tenant_id into _tenant_id
-    from general.tenant_customer
+    from general_schema.tenant_customer
     where tenant_customer_id = _tenant_customer_id;
 
     if _tenant_id is null then
@@ -1117,12 +1117,12 @@ begin
     end if; 
 
     select score into _current_points
-    from pos_module.tenant_customer_score
+    from pos_schema.tenant_customer_score
     where tenant_customer_id = _tenant_customer_id
     and tenant_id = _tenant_id;
 
     select points_redeemed_per_currency_unit into _points_redeemed_per_currency_unit
-    from pos_module.loyalty_program
+    from pos_schema.loyalty_program
     where tenant_id = _tenant_id
     and is_active = true
     limit 1;
@@ -1148,7 +1148,7 @@ begin
 
     _cash_equivalent := _points_to_redeem / _points_redeemed_per_currency_unit;
 
-    update pos_module.tenant_customer_score
+    update pos_schema.tenant_customer_score
     set score = score - _points_to_redeem,
         score_redeemed = score_redeemed + _points_to_redeem,
         last_redeemed_at = current_timestamp,
@@ -1156,7 +1156,7 @@ begin
     where tenant_customer_id = _tenant_customer_id
     and tenant_id = _tenant_id;
 
-    INSERT INTO pos_module.score_transaction(
+    INSERT INTO pos_schema.score_transaction(
         tenant_id,
         tenant_customer_id,
         transaction_type_id,
@@ -1180,7 +1180,7 @@ begin
             round(_cash_equivalent, 2))::text;
     exception
         when others then
-            raise notice '❌ Error redeeming points: %', sqlerrm;
+            raise notice 'Error redeeming points: %', sqlerrm;
             return query select 
                 0.00::numeric(10,2),
                 coalesce(_current_points, 0),
@@ -1205,7 +1205,7 @@ declare
 begin
     select exists(
         select 1 
-        from pos_module.customer_payment 
+        from pos_schema.customer_payment 
         where customer_payment_id = _payment_id
     ) into _exists;
     
@@ -1227,11 +1227,11 @@ begin
         _payment_amount,
         _is_points_redemption,
         _points_redeemed
-    from pos_module.customer_payment 
+    from pos_schema.customer_payment 
     where customer_payment_id = _payment_id;
     
     if _already_verified then
-        raise notice '⚠️  Payment % is already verified', _payment_id;
+        raise notice 'Payment % is already verified', _payment_id;
         return;
     end if;
     
@@ -1239,25 +1239,25 @@ begin
         raise exception 'Payment % has no associated sale', _payment_id;
     end if;
     
-    raise notice '💳 Verifying payment: %', _payment_id;
+    raise notice 'Verifying payment: %', _payment_id;
     raise notice '   Sale: %', _sale_id;
     raise notice '   Customer: %', _tenant_customer_id;
     raise notice '   Amount: $%', _payment_amount;
     
     select name into _payment_method
-    from general.payment_method pm
-    join pos_module.customer_payment cp on pm.payment_method_id = cp.payment_method_id
+    from general_schema.payment_method pm
+    join pos_schema.customer_payment cp on pm.payment_method_id = cp.payment_method_id
     where cp.customer_payment_id = _payment_id;
     
     raise notice '   Method: %', _payment_method;
     raise notice '';
     
     if _is_points_redemption then
-        raise notice '🎁 Processing points redemption...';
+        raise notice 'Processing points redemption...';
         raise notice '   Points to redeem: %', _points_redeemed;
         
         select * into _redeem_result
-        from pos_module.redeem_points(
+        from pos_schema.redeem_points(
             _tenant_customer_id,
             _points_redeemed
         );
@@ -1271,34 +1271,34 @@ begin
                 _redeem_result.cash_value, _payment_amount;
         end if;
         
-        raise notice '   ✅ Redeemed % points = $%', _points_redeemed, _payment_amount;
+        raise notice '   Redeemed % points = $%', _points_redeemed, _payment_amount;
         raise notice '   %', _redeem_result.message;
         raise notice '   Remaining points: %', _redeem_result.points_available;
         raise notice '';
     end if;
 
-    update pos_module.customer_payment
+    update pos_schema.customer_payment
     set verified = true,
         updated_at = current_timestamp
     where customer_payment_id = _payment_id;
     
-    raise notice '✅ Payment verified successfully';
+    raise notice 'Payment verified successfully';
     raise notice '';
     
-    raise notice '🔍 Checking if sale is fully paid...';
-    _sale_completed := pos_module.check_sale_payment_completion(_sale_id);
+    raise notice 'Checking if sale is fully paid...';
+    _sale_completed := pos_schema.check_sale_payment_completion(_sale_id);
     
     if _sale_completed then
         raise notice '';
-        raise notice '🎉 Sale % is COMPLETED - Trigger will create bill', _sale_id;
+        raise notice 'Sale % is COMPLETED - Trigger will create bill', _sale_id;
     else
         raise notice '';
-        raise notice '⏳ Sale % is PENDING - Waiting for more payments', _sale_id;
+        raise notice 'Sale % is PENDING - Waiting for more payments', _sale_id;
     end if;
     
     exception
         when others then
-            raise notice '❌ Payment verification failed: %', sqlerrm;
+            raise notice '  Payment verification failed: %', sqlerrm;
             raise;
 end;
 $$ language plpgsql;      
@@ -1307,56 +1307,56 @@ $$ language plpgsql;
 -- UPDATE TIMESTAMP TRIGGERS
 -- ==========================
 
-drop trigger if exists update_customer_payment_timestamp on pos_module.customer_payment;
-create trigger update_customer_payment_timestamp before update on pos_module.customer_payment
-for each row execute function general.update_timestamp();
+drop trigger if exists update_customer_payment_timestamp on pos_schema.customer_payment;
+create trigger update_customer_payment_timestamp before update on pos_schema.customer_payment
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_timestamp on pos_module.bill;
-create trigger update_bill_timestamp before update on pos_module.bill
-for each row execute function general.update_timestamp();
+drop trigger if exists update_bill_timestamp on pos_schema.bill;
+create trigger update_bill_timestamp before update on pos_schema.bill
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_return_transaction_timestamp on pos_module.return_transaction;
-create trigger update_return_transaction_timestamp before update on pos_module.return_transaction
-for each row execute function general.update_timestamp();
+drop trigger if exists update_return_transaction_timestamp on pos_schema.return_transaction;
+create trigger update_return_transaction_timestamp before update on pos_schema.return_transaction
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_return_product_timestamp on pos_module.return_product;
-create trigger update_return_product_timestamp before update on pos_module.return_product
-for each row execute function general.update_timestamp();
+drop trigger if exists update_return_product_timestamp on pos_schema.return_product;
+create trigger update_return_product_timestamp before update on pos_schema.return_product
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_promotion_timestamp on pos_module.promotion;
-create trigger update_promotion_timestamp before update on pos_module.promotion
-for each row execute function general.update_timestamp();
+drop trigger if exists update_promotion_timestamp on pos_schema.promotion;
+create trigger update_promotion_timestamp before update on pos_schema.promotion
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_promotion_rule_timestamp on pos_module.promotion_rule;
-create trigger update_promotion_rule_timestamp before update on pos_module.promotion_rule
-for each row execute function general.update_timestamp();
+drop trigger if exists update_promotion_rule_timestamp on pos_schema.promotion_rule;
+create trigger update_promotion_rule_timestamp before update on pos_schema.promotion_rule
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_cash_register_session_timestamp on pos_module.cash_register_session;
-create trigger update_cash_register_session_timestamp before update on pos_module.cash_register_session
-for each row execute function general.update_timestamp();
+drop trigger if exists update_cash_register_session_timestamp on pos_schema.cash_register_session;
+create trigger update_cash_register_session_timestamp before update on pos_schema.cash_register_session
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_cash_register_sale_timestamp on pos_module.cash_register_sale;
-create trigger update_cash_register_sale_timestamp before update on pos_module.cash_register_sale
-for each row execute function general.update_timestamp();
+drop trigger if exists update_cash_register_sale_timestamp on pos_schema.cash_register_sale;
+create trigger update_cash_register_sale_timestamp before update on pos_schema.cash_register_sale
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_tenant_customer_score_timestamp on pos_module.tenant_customer_score;
-create trigger update_tenant_customer_score_timestamp before update on pos_module.tenant_customer_score
-for each row execute function general.update_timestamp();
+drop trigger if exists update_tenant_customer_score_timestamp on pos_schema.tenant_customer_score;
+create trigger update_tenant_customer_score_timestamp before update on pos_schema.tenant_customer_score
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_score_transaction_timestamp on pos_module.score_transaction;
-create trigger update_score_transaction_timestamp before update on pos_module.score_transaction
-for each row execute function general.update_timestamp();
+drop trigger if exists update_score_transaction_timestamp on pos_schema.score_transaction;
+create trigger update_score_transaction_timestamp before update on pos_schema.score_transaction
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_payment_timestamp on pos_module.bill_payment;
-create trigger update_bill_payment_timestamp before update on pos_module.bill_payment
-for each row execute function general.update_timestamp();
+drop trigger if exists update_bill_payment_timestamp on pos_schema.bill_payment;
+create trigger update_bill_payment_timestamp before update on pos_schema.bill_payment
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_sale_timestamp on pos_module.sale;
-create trigger update_sale_timestamp before update on pos_module.sale
-for each row execute function general.update_timestamp();
+drop trigger if exists update_sale_timestamp on pos_schema.sale;
+create trigger update_sale_timestamp before update on pos_schema.sale
+for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_sale_item_timestamp on pos_module.sale_item;
-create trigger update_sale_item_timestamp before update on pos_module.sale_item
-for each row execute function general.update_timestamp();
+drop trigger if exists update_sale_item_timestamp on pos_schema.sale_item;
+create trigger update_sale_item_timestamp before update on pos_schema.sale_item
+for each row execute function general_schema.update_timestamp();
 
 

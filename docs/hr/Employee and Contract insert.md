@@ -1,14 +1,14 @@
 # Employee & Contract Insert — End-to-End Flow
 
-This document describes how to create an employee together with its contract in the HR (HR) module. It covers the database entities involved, the server-side function used for the operation, validations and constraints, and example SQL snippets. The flow is based on `hr_module.create_new_employee` and constraints defined in the schema and triggers.
+This document describes how to create an employee together with its contract in the HR (HR) module. It covers the database entities involved, the server-side function used for the operation, validations and constraints, and example SQL snippets. The flow is based on `hr_schema.create_new_employee` and constraints defined in the schema and triggers.
 
 Scope: insert a new contract and its linked employee in one atomic operation, ensuring referential integrity and business rules (date validation, schedule existence, uniqueness of identifiers).
 
 ## Prerequisites
 
 - general user: a `general.users.user_id` for the employee must already exist (FK on `employee.user_id`).
-- Payment schedule: a valid schedule in `hr_module.payment_schedule` (e.g., Monthly, Fortnight, Weekly, Daily). Use an existing `payment_schedule_id`.
-- HR tables & functions deployed: `hr_module.contract`, `hr_module.employee`, `hr_module.payment_schedule`, trigger `hr_module.validate_contract_dates`, and function `hr_module.create_new_employee`.
+- Payment schedule: a valid schedule in `hr_schema.payment_schedule` (e.g., Monthly, Fortnight, Weekly, Daily). Use an existing `payment_schedule_id`.
+- HR tables & functions deployed: `hr_schema.contract`, `hr_schema.employee`, `hr_schema.payment_schedule`, trigger `hr_schema.validate_contract_dates`, and function `hr_schema.create_new_employee`.
 
 ## High-level Flow
 
@@ -21,7 +21,7 @@ Scope: insert a new contract and its linked employee in one atomic operation, en
 
 ### 1) Create Employee + Contract in one call
 
-Use the server-side function `hr_module.create_new_employee` which encapsulates validations and inserts.
+Use the server-side function `hr_schema.create_new_employee` which encapsulates validations and inserts.
 
 Parameters
 
@@ -35,7 +35,7 @@ Example
 WITH any_user AS (
 	SELECT user_id FROM general.users LIMIT 1
 )
-SELECT hr_module.create_new_employee(
+SELECT hr_schema.create_new_employee(
 	p_start_date => DATE '2025-10-01',
 	p_end_date   => DATE '2026-10-01',
 	p_hours      => 45,
@@ -55,20 +55,20 @@ SELECT hr_module.create_new_employee(
 On success, returns the `employee_id` (UUID). Internally the function:
 
 - Verifies the `payment_schedule` exists.
-- Inserts into `hr_module.contract` and obtains `contract_id`.
-- Inserts into `hr_module.employee` referencing the `contract_id` and the provided `schedule_id` and `user_id`.
+- Inserts into `hr_schema.contract` and obtains `contract_id`.
+- Inserts into `hr_schema.employee` referencing the `contract_id` and the provided `schedule_id` and `user_id`.
 
 ### 2) Validations & Constraints enforced
 
-- Contract date logic: trigger `hr_module.validate_contract_dates` on `hr_module.contract` prevents `end_date < start_date`.
-- FOREIGN KEYs: `employee.user_id` → `general.users(user_id)`; `employee.schedule_id` → `hr_module.payment_schedule(payment_schedule_id)`; `employee.contract_id` → `hr_module.contract(contract_id)`.
+- Contract date logic: trigger `hr_schema.validate_contract_dates` on `hr_schema.contract` prevents `end_date < start_date`.
+- FOREIGN KEYs: `employee.user_id` → `general.users(user_id)`; `employee.schedule_id` → `hr_schema.payment_schedule(payment_schedule_id)`; `employee.contract_id` → `hr_schema.contract(contract_id)`.
 - Uniqueness: `employee.doc_number` and `employee.email` are unique. Duplicate VALUES raise a unique violation.
 - Cascading: `employee.contract_id` REFERENCES `contract` with `ON DELETE CASCADE` (deleting a contract deletes the employee record referencing it). Use with care in administrative operations.
 - Indexing: indexes exist for filtering and joins (e.g., `idx_contract_base_salary`, `idx_employee_user_id`, `idx_employee_is_active`).
 
 ### 3) Error handling surfaced by the function
 
-`hr_module.create_new_employee` converts database errors into descriptive exceptions:
+`hr_schema.create_new_employee` converts database errors into descriptive exceptions:
 
 - Schedule does not exist: `Integrity error: schedule_id (schedule_id: <id>) doesnt exists`.
 - Duplicate `doc_number` or `email`: `Data Error: Document Number (<doc_number>) or Email already exists.`
@@ -81,7 +81,7 @@ On success, returns the `employee_id` (UUID). Internally the function:
 
 ```sql
 SELECT e.*
-FROM hr_module.employee e
+FROM hr_schema.employee e
 WHERE e.doc_number = '701230456' OR e.email = 'juan.perez@test.com';
 ```
 
@@ -89,22 +89,22 @@ WHERE e.doc_number = '701230456' OR e.email = 'juan.perez@test.com';
 
 ```sql
 SELECT c.*
-FROM hr_module.contract c
-JOIN hr_module.employee e ON e.contract_id = c.contract_id
+FROM hr_schema.contract c
+JOIN hr_schema.employee e ON e.contract_id = c.contract_id
 WHERE e.doc_number = '701230456';
 ```
 
 - Check schedule existence
 
 ```sql
-SELECT * FROM hr_module.payment_schedule WHERE payment_schedule_id = 1;
+SELECT * FROM hr_schema.payment_schedule WHERE payment_schedule_id = 1;
 ```
 
 - Validate contract date rule (trigger prevents invalid updates)
 
 ```sql
 -- This should raise an exception due to end_date < start_date
-UPDATE hr_module.contract
+UPDATE hr_schema.contract
 SET end_date = DATE '2025-01-01'
 WHERE contract_id = '<contract_id>'
 	AND start_date > DATE '2025-01-01';
@@ -119,14 +119,14 @@ WHERE contract_id = '<contract_id>'
 
 ## Common Troubleshooting
 
-- Error: schedule_id doesn’t exist → Confirm the `payment_schedule_id` in `hr_module.payment_schedule`.
+- Error: schedule_id doesn’t exist → Confirm the `payment_schedule_id` in `hr_schema.payment_schedule`.
 - Unique violation (document/email) → Search for existing employee by `doc_number`/`email` and adjust input.
 - FK violation (user or schedule) → Create or correct the referenced `general.users` row or schedule.
 - Contract date error → Ensure `p_end_date` is on or after `p_start_date`.
 
 ## Reference Tests
 
-- Contract and employee creation, and contract date trigger: see test script [test/hr_module/testContracts.sql](test/hr_module/testContracts.sql).
+- Contract and employee creation, and contract date trigger: see test script [test/hr_schema/testContracts.sql](test/hr_schema/testContracts.sql).
 
 ## Notes for Integrators / Developers
 

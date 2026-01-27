@@ -1,4 +1,6 @@
-INSERT INTO promotion_type(type_name) VALUES
+SET SEARCH_PATH TO pos_schema;
+
+INSERT INTO pos_schema.promotion_type(type_name) VALUES
     ('percentage_discount'),
     ('fixed_amount_discount'),
     ('buy_x_get_y'),

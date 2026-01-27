@@ -1,4 +1,6 @@
-INSERT INTO account_payable_type (type_name, description) VALUES
+SET SEARCH_PATH TO general_schema;
+
+INSERT INTO general_schema.account_payable_type (type_name, description) VALUES
     ('goods_purchase', 'Purchases from suppliers for goods ordered'),
     ('utility_bill', 'Monthly utility bills such as electricity, water, internet'),
     ('rent_payment', 'Monthly rent payments for office or retail space'),

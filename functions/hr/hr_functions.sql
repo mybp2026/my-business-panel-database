@@ -1,4 +1,6 @@
-CREATE OR REPLACE FUNCTION hr_module.create_new_employee(
+SET SEARCH_PATH = hr_schema;
+
+CREATE OR REPLACE FUNCTION hr_schema.create_new_employee(
   -- Parametros para la creacion del contrato
   p_start_date DATE,
   p_end_date DATE,
@@ -23,17 +25,17 @@ DECLARE
   v_new_employee_id UUID;
 BEGIN
 
-  IF NOT EXISTS (SELECT 1 FROM hr_module.payment_schedule WHERE payment_schedule_id = p_schedule_id) THEN
+  IF NOT EXISTS (SELECT 1 FROM hr_schema.payment_schedule WHERE payment_schedule_id = p_schedule_id) THEN
     RAISE EXCEPTION 'Integrity error: schedule_id (schedule_id: %) doesnt exists', p_schedule_id;
   END IF;
 
-  INSERT INTO hr_module.contract (start_date, end_date, hours, base_salary, duties)
+  INSERT INTO hr_schema.contract (start_date, end_date, hours, base_salary, duties)
   VALUES (p_start_date, p_end_date, p_hours, p_base_salary, p_duties)
   RETURNING contract_id INTO v_new_contract_id;
 
   v_new_employee_id := gen_random_uuid();
 
-  INSERT INTO hr_module.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id)
+  INSERT INTO hr_schema.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id)
   VALUES (
     v_new_employee_id,
     p_user_id,
@@ -73,10 +75,10 @@ BEGIN
 
 	SELECT COALESCE(SUM(calculated_amount), 0)
 	INTO v_new_gross_salary
-	FROM hr_module.income_register
+	FROM hr_schema.income_register
 	WHERE detail_id = v_detail_id;
 
-	UPDATE hr_module.paysheet_detail
+	UPDATE hr_schema.paysheet_detail
 	SET gross_salary = v_new_gross_salary,
   recalc_needed = TRUE
 	WHERE detail_id = v_detail_id;
@@ -85,14 +87,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- FIXME: relation "hr_module.income_register" does not exist
--- DROP TRIGGER IF EXISTS update_gross_salary on hr_module.income_register;
+-- FIXME: relation "hr_schema.income_register" does not exist
+-- DROP TRIGGER IF EXISTS update_gross_salary on hr_schema.income_register;
 -- CREATE TRIGGER update_gross_salary
--- 	AFTER INSERT OR UPDATE OR DELETE ON hr_module.income_register
+-- 	AFTER INSERT OR UPDATE OR DELETE ON hr_schema.income_register
 -- 	FOR EACH ROW
 -- 	EXECUTE FUNCTION update_gross_salary();
 
-CREATE OR REPLACE FUNCTION hr_module.update_paysheet_state (
+CREATE OR REPLACE FUNCTION hr_schema.update_paysheet_state (
     p_paysheet_id UUID
 )
 RETURNS VARCHAR AS $$
@@ -104,7 +106,7 @@ DECLARE
 BEGIN
     -- Obtenemos el id del estado completado del catálogo
     SELECT status_id INTO v_completed_status_id
-    FROM hr_module.paysheet_status
+    FROM hr_schema.paysheet_status
     WHERE status_description = v_completed_status_name;
 
     IF v_completed_status_id IS NULL THEN
@@ -113,7 +115,7 @@ BEGIN
 
     -- Obtenemos el id de estado actual de la nómina
     SELECT paysheet_status_id INTO v_current_status_id
-    FROM hr_module.paysheet
+    FROM hr_schema.paysheet
     WHERE paysheet_id = p_paysheet_id;
 
     IF NOT FOUND THEN
@@ -128,7 +130,7 @@ BEGIN
     -- Revisamos si quedan calculos pendientes
     SELECT COUNT(*)
     INTO v_pending_recalculations
-    FROM hr_module.paysheet_detail
+    FROM hr_schema.paysheet_detail
     WHERE paysheet_id = p_paysheet_id
       AND recalc_needed = TRUE;
 
@@ -138,7 +140,7 @@ BEGIN
     END IF;
 
     --Si no hay pendientes, actualizamos el estado a 'Completed'
-    UPDATE hr_module.paysheet
+    UPDATE hr_schema.paysheet
     SET
         paysheet_status_id = v_completed_status_id
     WHERE paysheet_id = p_paysheet_id;
@@ -148,7 +150,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Funcion para la generacion de reportes ccss mensuales de periodos especificos
-CREATE OR REPLACE FUNCTION hr_module.generate_monthly_ccss(
+CREATE OR REPLACE FUNCTION hr_schema.generate_monthly_ccss(
 	p_year INTEGER,
 	p_month INTEGER
 )
@@ -162,7 +164,7 @@ DECLARE
 	v_completed_status VARCHAR(15) := 'Completed';
 BEGIN
 	SELECT status_id INTO v_status_completed_id
-	FROM hr_module.paysheet_status
+	FROM hr_schema.paysheet_status
 	WHERE status_description = v_completed_status;
 
 	IF v_status_completed_id IS NULL THEN
@@ -175,9 +177,9 @@ BEGIN
 		COALESCE(SUM(pd.ccss_tenant_deduction), 0) AS total_tenant,
 		COALESCE(SUM(pd.ccss_employee_deduction + ccss_tenant_deduction), 0) AS total
 	FROM
-		hr_module.paysheet_detail pd
+		hr_schema.paysheet_detail pd
 	INNER JOIN
-		hr_module.paysheet p ON pd.paysheet_id = p.paysheet_id
+		hr_schema.paysheet p ON pd.paysheet_id = p.paysheet_id
 	WHERE
 		EXTRACT(YEAR FROM p.payment_day) = p_year
 		AND EXTRACT(MONTH FROM p.payment_day) = p_month
@@ -186,7 +188,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION hr_module.validate_contract_dates()
+CREATE OR REPLACE FUNCTION hr_schema.validate_contract_dates()
 RETURNS TRIGGER AS $$
 BEGIN
 	IF NEW.end_date IS NOT NULL AND NEW.end_date < NEW.start_date THEN
@@ -197,18 +199,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS validate_contract_dates ON hr_module.contract;
+DROP TRIGGER IF EXISTS validate_contract_dates ON hr_schema.contract;
 CREATE TRIGGER validate_contract_dates
-BEFORE INSERT OR UPDATE ON hr_module.contract
+BEFORE INSERT OR UPDATE ON hr_schema.contract
 FOR EACH ROW
-EXECUTE FUNCTION hr_module.validate_contract_dates();
+EXECUTE FUNCTION hr_schema.validate_contract_dates();
 
-CREATE OR REPLACE FUNCTION hr_module.protect_net_salary()
+CREATE OR REPLACE FUNCTION hr_schema.protect_net_salary()
 RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.net_salary IS DISTINCT FROM NEW.net_salary THEN
-        PERFORM 1 FROM hr_module.paysheet p
-        	INNER JOIN hr_module.paysheet_status ps ON p.paysheet_status_id = ps.status_id
+        PERFORM 1 FROM hr_schema.paysheet p
+        	INNER JOIN hr_schema.paysheet_status ps ON p.paysheet_status_id = ps.status_id
         	WHERE p.paysheet_id = NEW.paysheet_id AND ps.status_description = 'Completed';
         
         IF FOUND THEN
@@ -220,8 +222,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS protect_net_salary ON hr_module.paysheet_detail;
+DROP TRIGGER IF EXISTS protect_net_salary ON hr_schema.paysheet_detail;
 CREATE TRIGGER protect_net_salary
-BEFORE INSERT OR UPDATE ON hr_module.paysheet_detail
+BEFORE INSERT OR UPDATE ON hr_schema.paysheet_detail
 FOR EACH ROW
-EXECUTE FUNCTION hr_module.protect_net_salary();
+EXECUTE FUNCTION hr_schema.protect_net_salary();

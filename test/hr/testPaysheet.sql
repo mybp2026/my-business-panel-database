@@ -22,28 +22,28 @@ BEGIN
 
     -- Buscar y eliminar paysheet_detail, paysheet, income_register, income_concept, employee y user de prueba
     SELECT employee_id INTO v_employee_id
-    FROM hr_module.employee
+    FROM hr_schema.employee
     WHERE email = v_email OR doc_number = v_doc_number
     LIMIT 1;
 
     IF v_employee_id IS NOT NULL THEN
         -- Eliminar income_register relacionados
-        DELETE FROM hr_module.income_register
+        DELETE FROM hr_schema.income_register
         WHERE detail_id IN (
-            SELECT detail_id FROM hr_module.paysheet_detail WHERE employee_id = v_employee_id
+            SELECT detail_id FROM hr_schema.paysheet_detail WHERE employee_id = v_employee_id
         );
 
         -- Eliminar paysheet_detail relacionados
-        DELETE FROM hr_module.paysheet_detail WHERE employee_id = v_employee_id;
+        DELETE FROM hr_schema.paysheet_detail WHERE employee_id = v_employee_id;
 
         -- Eliminar paysheet relacionados
-        DELETE FROM hr_module.paysheet
+        DELETE FROM hr_schema.paysheet
         WHERE paysheet_id IN (
-            SELECT paysheet_id FROM hr_module.paysheet_detail WHERE employee_id = v_employee_id
+            SELECT paysheet_id FROM hr_schema.paysheet_detail WHERE employee_id = v_employee_id
         );
 
         -- Eliminar empleado
-        DELETE FROM hr_module.employee WHERE employee_id = v_employee_id;
+        DELETE FROM hr_schema.employee WHERE employee_id = v_employee_id;
         RAISE NOTICE '   ✓ Empleado de prueba eliminado: %', v_employee_id;
     END IF;
 
@@ -52,7 +52,7 @@ BEGIN
     RAISE NOTICE '   ✓ Usuario de prueba eliminado: %', v_email;
 
     -- Eliminar conceptos de ingreso de prueba
-    DELETE FROM hr_module.income_concept WHERE concept_name IN ('Salario De prueba 1', 'Salario de Prueba 2');
+    DELETE FROM hr_schema.income_concept WHERE concept_name IN ('Salario De prueba 1', 'Salario de Prueba 2');
     RAISE NOTICE '   ✓ Conceptos de ingreso de prueba eliminados';
 
     RAISE NOTICE '✅ Limpieza completada';
@@ -80,7 +80,7 @@ BEGIN
     RETURNING user_id INTO v_user_id;
 
     -- Crear empleado de prueba
-    v_employee_id := hr_module.create_new_employee(
+    v_employee_id := hr_schema.create_new_employee(
         p_start_date => '2025-01-01',
         p_end_date => '2026-01-01',
         p_hours => 40,
@@ -96,10 +96,10 @@ BEGIN
     );
 
     -- Crear conceptos de ingreso de prueba
-    INSERT INTO hr_module.income_concept(income_id, concept_name, calculation_type, ccss_apply, tax_apply)
+    INSERT INTO hr_schema.income_concept(income_id, concept_name, calculation_type, ccss_apply, tax_apply)
     VALUES (1001, 'Salario De prueba 1', 'Fijo', FALSE, FALSE)
     ON CONFLICT (income_id) DO NOTHING;
-    INSERT INTO hr_module.income_concept(income_id, concept_name, calculation_type, ccss_apply, tax_apply)
+    INSERT INTO hr_schema.income_concept(income_id, concept_name, calculation_type, ccss_apply, tax_apply)
     VALUES (1002, 'Salario de Prueba 2', 'Variable', FALSE, FALSE)
     ON CONFLICT (income_id) DO NOTHING;
 
@@ -115,7 +115,7 @@ END $$;
 -- ========================================
 DO $$
 DECLARE
-    v_employee_id UUID := (SELECT employee_id FROM hr_module.employee WHERE email = 'flow.test@test.com' LIMIT 1);
+    v_employee_id UUID := (SELECT employee_id FROM hr_schema.employee WHERE email = 'flow.test@test.com' LIMIT 1);
     v_paysheet_id UUID := gen_random_uuid();
     v_detail_id UUID := gen_random_uuid();
     v_branch_id UUID := (SELECT branch_id FROM general.branch LIMIT 1);
@@ -128,7 +128,7 @@ BEGIN
 
     -- Obtener status 'Pending'
     SELECT status_id INTO v_pending_status
-    FROM hr_module.paysheet_status 
+    FROM hr_schema.paysheet_status 
     WHERE status_description = 'Pending' 
     LIMIT 1;
 
@@ -137,11 +137,11 @@ BEGIN
     END IF;
 
     -- Crear nómina de prueba
-    INSERT INTO hr_module.paysheet (paysheet_id, branch_id, period_start_date, period_end_date, payment_day, payment_amount, paysheet_status_id)
+    INSERT INTO hr_schema.paysheet (paysheet_id, branch_id, period_start_date, period_end_date, payment_day, payment_amount, paysheet_status_id)
     VALUES (v_paysheet_id, v_branch_id, '2025-12-01', '2025-12-31', '2025-12-31'::DATE, 0.00, v_pending_status);
 
     -- Crear detalle de nómina
-    INSERT INTO hr_module.paysheet_detail (
+    INSERT INTO hr_schema.paysheet_detail (
         detail_id,
         paysheet_id,
         employee_id,
@@ -194,15 +194,15 @@ BEGIN
     RAISE NOTICE '========================================';
 
     -- Inserción válida de ingreso
-    INSERT INTO hr_module.income_register (detail_id, concept_id, base_quantity, calculated_amount)
+    INSERT INTO hr_schema.income_register (detail_id, concept_id, base_quantity, calculated_amount)
     VALUES(v_detail_id, 1001, 1 ,v_gross_salary_expected);
 
     SELECT gross_salary INTO v_calculated_gross_salary
-    FROM hr_module.paysheet_detail
+    FROM hr_schema.paysheet_detail
     WHERE detail_id = v_detail_id;
 
     IF v_calculated_gross_salary = v_gross_salary_expected AND (
-        SELECT recalc_needed FROM hr_module.paysheet_detail
+        SELECT recalc_needed FROM hr_schema.paysheet_detail
         WHERE detail_id = v_detail_id
     ) = TRUE THEN
         RAISE NOTICE '   ✓ Salario bruto actualizado y recalc_needed marcado como TRUE';
@@ -212,7 +212,7 @@ BEGIN
 	
     -- Prueba con salario negativo (debe fallar)
     BEGIN
-        INSERT INTO hr_module.income_register (detail_id, concept_id, base_quantity, calculated_amount)
+        INSERT INTO hr_schema.income_register (detail_id, concept_id, base_quantity, calculated_amount)
         VALUES (v_detail_id, 1002, 1.00, -3000.00);
 
         RAISE EXCEPTION 'Se permitió la creación de un salario bruto negativo';
@@ -247,7 +247,7 @@ BEGIN
 
     -- Intentar cerrar nómina con recalc_needed = TRUE (debe fallar)
     BEGIN
-        PERFORM hr_module.update_paysheet_state(v_paysheet_id);
+        PERFORM hr_schema.update_paysheet_state(v_paysheet_id);
         RAISE EXCEPTION 'Cierre de nómina permitido, revisar función.';
     EXCEPTION
         WHEN SQLSTATE 'P0001' THEN
@@ -257,7 +257,7 @@ BEGIN
     END;
 
     -- Simular motor de cálculo: corregir recalc_needed y deducciones
-    UPDATE hr_module.paysheet_detail
+    UPDATE hr_schema.paysheet_detail
     SET recalc_needed = FALSE,
         ccss_employee_deduction = v_ccss_employee_deduction,
         ccss_tenant_deduction = v_ccss_tenant_deduction,
@@ -265,13 +265,13 @@ BEGIN
     WHERE detail_id = v_detail_id;
 
     -- Intentar cierre exitoso
-    PERFORM hr_module.update_paysheet_state(v_paysheet_id);
+    PERFORM hr_schema.update_paysheet_state(v_paysheet_id);
 
     -- Verificar estado
     IF NOT EXISTS (
-        SELECT 1 FROM hr_module.paysheet
+        SELECT 1 FROM hr_schema.paysheet
         WHERE paysheet_id = v_paysheet_id AND paysheet_status_id = (
-            SELECT status_id FROM hr_module.paysheet_status WHERE status_description = 'Completed' LIMIT 1
+            SELECT status_id FROM hr_schema.paysheet_status WHERE status_description = 'Completed' LIMIT 1
         )
     ) THEN
         RAISE EXCEPTION 'El estado de la nómina no se actualizó a COMPLETED';
@@ -302,7 +302,7 @@ BEGIN
 
     -- Reporte generado para Diciembre 2025
     SELECT total INTO v_report_total_ccss
-    FROM hr_module.generate_monthly_ccss(2025, 12);
+    FROM hr_schema.generate_monthly_ccss(2025, 12);
 
     IF v_report_total_ccss = v_expected_total THEN
         RAISE NOTICE '   ✓ Reporte CCSS incluye la nómina. Total Reportado: %', v_report_total_ccss;

@@ -7,17 +7,17 @@ This document explains the full customer payment flow in a POS (point-of-sale) e
 ## Prerequisites
 
 - **Tenant, Branch, Products, and Customer**: these must exist in `general.tenant`, `general.branch`, `general.product`, and `general.tenant_customer`.
-- **POS tables & functions**: `pos_module.sale`, `pos_module.sale_item`, `pos_module.customer_payment`, `pos_module.bill`, `pos_module.tenant_customer_score`, and functions such as `pos_module.verify_customer_payment`, `pos_module.create_bill`, and `pos_module.link_sale_to_session` must be present and deployed.
+- **POS tables & functions**: `pos.sale`, `pos.sale_item`, `pos.customer_payment`, `pos.bill`, `pos.tenant_customer_score`, and functions such as `pos.verify_customer_payment`, `pos.create_bill`, and `pos.link_sale_to_session` must be present and deployed.
 
 ## High-level Flow
 
 1. Customer selects products → cashier creates a `sale` and `sale_item` rows.
 2. Cashier registers payments (single or multiple `customer_payment` rows) — payments can be cash, card, or hybrid.
-3. Each `customer_payment` is verified via `pos_module.verify_customer_payment(payment_id)` (or automatically by a verification process). Verified payments update the sale's paid amount.
+3. Each `customer_payment` is verified via `pos.verify_customer_payment(payment_id)` (or automatically by a verification process). Verified payments update the sale's paid amount.
 4. When paid amount >= sale total, `sale.is_completed` becomes true. Triggers run to:
-   - create a `bill`/invoice (`pos_module.create_bill`)
-   - link the sale to the active `cash_register_session` (`pos_module.link_sale_to_session`)
-   - award loyalty points (via `pos_module.tenant_customer_score` and `pos_module.score_transaction`)
+   - create a `bill`/invoice (`pos.create_bill`)
+   - link the sale to the active `cash_register_session` (`pos.link_sale_to_session`)
+   - award loyalty points (via `pos.tenant_customer_score` and `pos.score_transaction`)
 
 ## Detailed Steps & SQL snippets
 
@@ -25,28 +25,28 @@ This document explains the full customer payment flow in a POS (point-of-sale) e
 
 ```sql
 -- create sale (subtotal/tax/total computed as needed)
-INSERT INTO pos_module.sale (branch_id, user_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
+INSERT INTO pos.sale (branch_id, user_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
 VALUES (<branch_id>, <user_id>, <currency_id>, 100.00, 0.00, 100.00, false)
 RETURNING sale_id;
 
 -- add items
-INSERT INTO pos_module.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
+INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
 VALUES (<sale_id>, <tenant_id>, <product_id>, 1, 100.00, 100.00);
 ```
 
 Notes:
 
-- `subtotal_amount`, `tax_amount`, and `total_amount` may be calculated client-side or via triggers (see `pos_module.calculate_total_price`/`calculate_bill_total`).
+- `subtotal_amount`, `tax_amount`, and `total_amount` may be calculated client-side or via triggers (see `pos.calculate_total_price`/`calculate_bill_total`).
 
 ### 2. Register Payment(s)
 
 ```sql
-INSERT INTO pos_module.customer_payment (tenant_customer_id, sale_id, payment_method_id, payment_amount, currency_id, verified)
+INSERT INTO pos.customer_payment (tenant_customer_id, sale_id, payment_method_id, payment_amount, currency_id, verified)
 VALUES (<tenant_customer_id>, <sale_id>, <payment_method_id>, 100.00, <currency_id>, false)
 RETURNING customer_payment_id;
 
 -- Verify the payment (this calls server logic which updates payment verified flag and recalculates sale status)
-CALL pos_module.verify_customer_payment(<customer_payment_id>);
+CALL pos.verify_customer_payment(<customer_payment_id>);
 ```
 
 Notes:
@@ -64,10 +64,10 @@ Notes:
 
 - The system creates a `bill` when `sale.is_completed` transitions to true. The `create_bill` trigger/function:
   - collects sale and payment data;
-  - inserts a `pos_module.bill` record and `pos_module.bill_payment` rows referencing the `customer_payment` entries used for the sale;
+  - inserts a `pos.bill` record and `pos.bill_payment` rows referencing the `customer_payment` entries used for the sale;
   - totals and taxes are copied into the bill for accounting.
 
-Example: bill creation is triggered automatically — if you need to create it manually, use the `pos_module.get_bill(<sale_id>)` function or mimic the trigger behavior.
+Example: bill creation is triggered automatically — if you need to create it manually, use the `pos.get_bill(<sale_id>)` function or mimic the trigger behavior.
 
 ### 5. Linking to Cash Register Session
 
@@ -75,8 +75,8 @@ Example: bill creation is triggered automatically — if you need to create it m
 
 ### 6. Loyalty Points (earn & redeem)
 
-- Loyalty configuration lives in `pos_module.loyalty_program` (fields include `points_earned_per_currency_unit` and `points_redeemed_per_currency_unit`).
-- Customer points are stored in `pos_module.tenant_customer_score` and transaction history in `pos_module.score_transaction`.
+- Loyalty configuration lives in `pos.loyalty_program` (fields include `points_earned_per_currency_unit` and `points_redeemed_per_currency_unit`).
+- Customer points are stored in `pos.tenant_customer_score` and transaction history in `pos.score_transaction`.
 
 Earning points:
 
@@ -90,9 +90,9 @@ Example (redeem partial points + cash):
 
 ```sql
 -- redeem points
-INSERT INTO pos_module.customer_payment(..., is_points_redemption, points_redeemed, payment_amount, verified)
+INSERT INTO pos.customer_payment(..., is_points_redemption, points_redeemed, payment_amount, verified)
 VALUES (..., true, 500, 5.00, false) RETURNING customer_payment_id;
-CALL pos_module.verify_customer_payment(<customer_payment_id>);
+CALL pos.verify_customer_payment(<customer_payment_id>);
 
 -- remaining amount paid as normal customer_payment record
 ```
@@ -104,39 +104,39 @@ CALL pos_module.verify_customer_payment(<customer_payment_id>);
 
 ## Common Troubleshooting
 
-- If no bill is created after payment, confirm `pos_module.verify_customer_payment` updated `sale.is_completed` and that the `create_bill` trigger exists on `pos_module.sale`.
-- If points are not awarded, check `pos_module.loyalty_program` and `pos_module.tenant_customer_score` existence and that `verify_customer_payment` calls the points logic.
+- If no bill is created after payment, confirm `pos.verify_customer_payment` updated `sale.is_completed` and that the `create_bill` trigger exists on `pos.sale`.
+- If points are not awarded, check `pos.loyalty_program` and `pos.tenant_customer_score` existence and that `verify_customer_payment` calls the points logic.
 
 ## Quick Debugging Queries
 
 - Check sale and completion status:
 
 ```sql
-SELECT sale_id, total_amount, is_completed FROM pos_module.sale WHERE sale_id = '<sale_id>';
+SELECT sale_id, total_amount, is_completed FROM pos.sale WHERE sale_id = '<sale_id>';
 ```
 
 - List payments for a sale:
 
 ```sql
-SELECT * FROM pos_module.customer_payment WHERE sale_id = '<sale_id>' ORDER BY payment_date;
+SELECT * FROM pos.customer_payment WHERE sale_id = '<sale_id>' ORDER BY payment_date;
 ```
 
 - Verify bill created:
 
 ```sql
-SELECT * FROM pos_module.bill WHERE sale_id = '<sale_id>';
+SELECT * FROM pos.bill WHERE sale_id = '<sale_id>';
 ```
 
 - Check customer points:
 
 ```sql
-SELECT * FROM pos_module.tenant_customer_score WHERE tenant_customer_id = '<tenant_customer_id>' AND tenant_id = '<tenant_id>';
+SELECT * FROM pos.tenant_customer_score WHERE tenant_customer_id = '<tenant_customer_id>' AND tenant_id = '<tenant_id>';
 ```
 
 ## Notes for Integrators / Developers
 
 - Keep client code to compute prices consistent with server-side triggers. Server-side functions (`calculate_total_price`, `calculate_bill_total`) will enforce totals if used.
 - When modifying payment flows (e.g., new payment methods), ensure that `verify_customer_payment` still recognizes and correctly aggregates verified payments.
-- Tests shipped under `test/pos_module/` in the repository demonstrate idempotent scenarios and can be used as REFERENCES.
+- Tests shipped under `test/pos/` in the repository demonstrate idempotent scenarios and can be used as REFERENCES.
 
 If you want, I can also add a step-by-step runnable test script (idempotent) that exercises the entire flow in your local DB environment and prints the key verification points.

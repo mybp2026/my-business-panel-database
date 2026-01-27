@@ -18,13 +18,13 @@ BEGIN
     RAISE NOTICE '========================================';
 
     SELECT warehouse_id INTO v_warehouse_id
-    FROM inventory_module.warehouse
+    FROM inventory_schema.warehouse
     WHERE warehouse_name = v_warehouse_name
     LIMIT 1;
 
     IF v_warehouse_id IS NOT NULL THEN
-        DELETE FROM inventory_module.inventory WHERE warehouse_id = v_warehouse_id;
-        DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_warehouse_id;
+        DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_warehouse_id;
         RAISE NOTICE '   ✓ Warehouse and related inventory removed: %', v_warehouse_id;
     ELSE
         RAISE NOTICE '   No existing test warehouse found';
@@ -55,7 +55,7 @@ BEGIN
     END IF;
 
     -- Crear warehouse
-    INSERT INTO inventory_module.warehouse(branch_id, warehouse_name, warehouse_address)
+    INSERT INTO inventory_schema.warehouse(branch_id, warehouse_name, warehouse_address)
     VALUES (v_branch_id, 'test_warehouse_mvp', 'Address 123')
     RETURNING warehouse_id INTO v_warehouse_id;
 
@@ -68,13 +68,13 @@ BEGIN
     SELECT tenant_id, product_id INTO v_tenant_id, v_product_id FROM general.product LIMIT 1;
     IF v_product_id IS NULL THEN
         -- Si no hay product, limpiamos y abortamos test
-        DELETE FROM inventory_module.inventory WHERE warehouse_id = v_warehouse_id;
-        DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_warehouse_id;
+        DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_warehouse_id;
         RAISE EXCEPTION 'No hay registros en general.product. Inserte al menos un product en general.product';
     END IF;
 
     -- Insertar inventory válido
-    INSERT INTO inventory_module.inventory(tenant_id, product_id, warehouse_id, stock, expiration_date)
+    INSERT INTO inventory_schema.inventory(tenant_id, product_id, warehouse_id, stock, expiration_date)
     VALUES (v_tenant_id, v_product_id, v_warehouse_id, 100, current_timestamp + interval '30 days')
     RETURNING inventory_id INTO v_inventory_id;
 
@@ -100,12 +100,12 @@ BEGIN
     RAISE NOTICE '🔍 SECCIÓN 2: Lectura y validaciones';
     RAISE NOTICE '========================================';
 
-    SELECT warehouse_id INTO v_warehouse_id FROM inventory_module.warehouse WHERE warehouse_name = 'test_warehouse_mvp' LIMIT 1;
+    SELECT warehouse_id INTO v_warehouse_id FROM inventory_schema.warehouse WHERE warehouse_name = 'test_warehouse_mvp' LIMIT 1;
     IF v_warehouse_id IS NULL THEN
         RAISE EXCEPTION 'No se encontró el warehouse de prueba';
     END IF;
 
-    SELECT count(*) INTO v_inventory_count FROM inventory_module.inventory WHERE warehouse_id = v_warehouse_id;
+    SELECT count(*) INTO v_inventory_count FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id;
     RAISE NOTICE '   Inventories found for warehouse %: %', v_warehouse_id, v_inventory_count;
 
     IF v_inventory_count = 0 THEN
@@ -130,19 +130,19 @@ BEGIN
     RAISE NOTICE '✏️ SECCIÓN 3: Actualización';
     RAISE NOTICE '========================================';
 
-    SELECT warehouse_id INTO v_warehouse_id FROM inventory_module.warehouse WHERE warehouse_name = 'test_warehouse_mvp' LIMIT 1;
-    SELECT inventory_id, stock INTO v_inventory_id, v_old_stock FROM inventory_module.inventory WHERE warehouse_id = v_warehouse_id LIMIT 1;
+    SELECT warehouse_id INTO v_warehouse_id FROM inventory_schema.warehouse WHERE warehouse_name = 'test_warehouse_mvp' LIMIT 1;
+    SELECT inventory_id, stock INTO v_inventory_id, v_old_stock FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id LIMIT 1;
 
     IF v_inventory_id IS NULL THEN
         RAISE EXCEPTION 'No hay inventory para actualizar';
     END IF;
 
     -- Actualizar stock
-    UPDATE inventory_module.inventory SET stock = stock + 50 WHERE inventory_id = v_inventory_id;
+    UPDATE inventory_schema.inventory SET stock = stock + 50 WHERE inventory_id = v_inventory_id;
     RAISE NOTICE '   ✓ Stock actualizado de % a %', v_old_stock, v_old_stock + 50;
 
     -- Actualizar warehouse_name
-    UPDATE inventory_module.warehouse SET warehouse_name = 'test_warehouse_mvp_updated', updated_at = current_timestamp WHERE warehouse_id = v_warehouse_id;
+    UPDATE inventory_schema.warehouse SET warehouse_name = 'test_warehouse_mvp_updated', updated_at = current_timestamp WHERE warehouse_id = v_warehouse_id;
     RAISE NOTICE '   ✓ Warehouse name actualizado: %', v_warehouse_id;
 
     RAISE NOTICE '✅ SECCIÓN 3 COMPLETADA';
@@ -162,15 +162,15 @@ BEGIN
     RAISE NOTICE '🗑️ SECCIÓN 4: Borrado y validación de cascada';
     RAISE NOTICE '========================================';
 
-    SELECT warehouse_id INTO v_warehouse_id FROM inventory_module.warehouse WHERE warehouse_name = 'test_warehouse_mvp_updated' LIMIT 1;
+    SELECT warehouse_id INTO v_warehouse_id FROM inventory_schema.warehouse WHERE warehouse_name = 'test_warehouse_mvp_updated' LIMIT 1;
     IF v_warehouse_id IS NULL THEN
         RAISE EXCEPTION 'No se encontró el warehouse actualizado para borrar';
     END IF;
 
-    DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_warehouse_id;
+    DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_warehouse_id;
     RAISE NOTICE '   ✓ Warehouse eliminado: %', v_warehouse_id;
 
-    SELECT count(*) INTO v_inventory_count FROM inventory_module.inventory WHERE warehouse_id = v_warehouse_id;
+    SELECT count(*) INTO v_inventory_count FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id;
     IF v_inventory_count = 0 THEN
         RAISE NOTICE '   ✅ Cascade delete confirmado: no hay inventory para %', v_warehouse_id;
     ELSE
@@ -197,19 +197,19 @@ BEGIN
     RAISE NOTICE '========================================';
 
     -- Recrear warehouse temporal para probar constraint
-    INSERT INTO inventory_module.warehouse(branch_id, warehouse_name, warehouse_address)
+    INSERT INTO inventory_schema.warehouse(branch_id, warehouse_name, warehouse_address)
     VALUES (v_branch_id, 'test_warehouse_mvp_tmp', 'Address tmp')
     RETURNING warehouse_id INTO v_warehouse_id;
 
     SELECT tenant_id, product_id INTO v_tenant_id, v_product_id FROM general.product LIMIT 1;
     IF v_product_id IS NULL THEN
-        DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_warehouse_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_warehouse_id;
         RAISE EXCEPTION 'No hay registros en general.product. Inserte al menos un product en general.product';
     END IF;
 
     RAISE NOTICE '   Forzando inserción inválida (expiration_date en el pasado)';
     BEGIN
-        INSERT INTO inventory_module.inventory(tenant_id, product_id, warehouse_id, stock, expiration_date)
+        INSERT INTO inventory_schema.inventory(tenant_id, product_id, warehouse_id, stock, expiration_date)
         VALUES (v_tenant_id, v_product_id, v_warehouse_id, 1, current_timestamp - interval '1 day');
 
         RAISE EXCEPTION '❌ Fallo de prueba: Se permitió la inserción inválida de inventory';
@@ -223,8 +223,8 @@ BEGIN
     END;
 
     -- Limpieza del warehouse temporal
-    DELETE FROM inventory_module.inventory WHERE warehouse_id = v_warehouse_id;
-    DELETE FROM inventory_module.warehouse WHERE warehouse_id = v_warehouse_id;
+    DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id;
+    DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_warehouse_id;
 
     RAISE NOTICE '✅ SECCIÓN 5 COMPLETADA';
     RAISE NOTICE '========================================';

@@ -1,15 +1,15 @@
 # Paysheet (Payroll) — End-to-End Flow
 
-This document explains the paysheet (payroll) flow in the HR module: how a paysheet and its details are created, how income entries update gross salary via triggers, how recalculation states are enforced, how the paysheet is closed, and how to generate a monthly CCSS report. The flow REFERENCES `hr_module` tables, triggers, and functions defined in the project.
+This document explains the paysheet (payroll) flow in the HR module: how a paysheet and its details are created, how income entries update gross salary via triggers, how recalculation states are enforced, how the paysheet is closed, and how to generate a monthly CCSS report. The flow REFERENCES `hr_schema` tables, triggers, and functions defined in the project.
 
 Scope: create and manage paysheets for employees, aggregate income concepts into gross salary, validate readiness for closure, finalize the paysheet, and compute CCSS totals by month.
 
 ## Prerequisites
 
 - general data: a `general.branch` to attribute the paysheet, and valid `general.payment_method` IDs for employee payments in `paysheet_detail`.
-- Employees: existing employees in `hr_module.employee` (can be created via `hr_module.create_new_employee`).
-- HR objects: deployed `hr_module.paysheet`, `hr_module.paysheet_detail`, `hr_module.income_concept`, `hr_module.income_register`, and status catalog `hr_module.paysheet_status` with at least `Pending`, `Completed`, `Canceled`.
-- Triggers & functions: trigger `update_gross_salary` over `income_register`; trigger `protect_net_salary` over `paysheet_detail`; functions `hr_module.update_paysheet_state` and `hr_module.generate_monthly_ccss`.
+- Employees: existing employees in `hr_schema.employee` (can be created via `hr_schema.create_new_employee`).
+- HR objects: deployed `hr_schema.paysheet`, `hr_schema.paysheet_detail`, `hr_schema.income_concept`, `hr_schema.income_register`, and status catalog `hr_schema.paysheet_status` with at least `Pending`, `Completed`, `Canceled`.
+- Triggers & functions: trigger `update_gross_salary` over `income_register`; trigger `protect_net_salary` over `paysheet_detail`; functions `hr_schema.update_paysheet_state` and `hr_schema.generate_monthly_ccss`.
 
 ## High-level Flow
 
@@ -17,8 +17,8 @@ Scope: create and manage paysheets for employees, aggregate income concepts into
 2. Insert one or more `paysheet_detail` rows (one per employee) with an initial `gross_salary` (often 0), `recalc_needed = TRUE`.
 3. Insert `income_concept` catalog entries (if needed) and then `income_register` rows per detail to represent salary components. A trigger sums them into `paysheet_detail.gross_salary` and sets `recalc_needed = TRUE`.
 4. Run the calculation engine (in the backend) to compute deductions and `net_salary`, then update `paysheet_detail` with final amounts and set `recalc_needed = FALSE`.
-5. Close the paysheet by calling `hr_module.update_paysheet_state(p_paysheet_id)`. It verifies no detail requires recalculation and sets status to `Completed`.
-6. Generate the monthly CCSS report via `hr_module.generate_monthly_ccss(p_year, p_month)
+5. Close the paysheet by calling `hr_schema.update_paysheet_state(p_paysheet_id)`. It verifies no detail requires recalculation and sets status to `Completed`.
+6. Generate the monthly CCSS report via `hr_schema.generate_monthly_ccss(p_year, p_month)
 (Functionality for the phase 2)
 `.
 
@@ -29,11 +29,11 @@ Scope: create and manage paysheets for employees, aggregate income concepts into
 ```sql
 -- Status lookup (recommended, or store it in app config)
 SELECT status_id
-FROM hr_module.paysheet_status
+FROM hr_schema.paysheet_status
 WHERE status_description = 'Pending';
 
 -- Minimal paysheet (example dates)
-INSERT INTO hr_module.paysheet (
+INSERT INTO hr_schema.paysheet (
 	branch_id, period_start_date, period_end_date, payment_day, payment_amount, paysheet_status_id
 )
 VALUES (
@@ -47,7 +47,7 @@ VALUES (
 RETURNING paysheet_id;
 
 -- For each employee (one detail per employee)
-INSERT INTO hr_module.paysheet_detail (
+INSERT INTO hr_schema.paysheet_detail (
 	paysheet_id, employee_id, payment_method_id,
 	gross_salary, ccss_employee_deduction, ccss_tenant_deduction,
 	income_tax_amount, total_deduction, net_salary, pay_date, recalc_needed
@@ -72,7 +72,7 @@ Notes
 ### 2) Define income concepts (catalog)
 
 ```sql
-INSERT INTO hr_module.income_concept (concept_name, calculation_type, ccss_apply, tax_apply)
+INSERT INTO hr_schema.income_concept (concept_name, calculation_type, ccss_apply, tax_apply)
 VALUES ('Base Salary', 'Fixed', FALSE, FALSE)
 ON CONFLICT DO NOTHING;
 ```
@@ -81,7 +81,7 @@ ON CONFLICT DO NOTHING;
 
 ```sql
 -- Add/modify income components for the employee detail
-INSERT INTO hr_module.income_register (detail_id, concept_id, base_quantity, calculated_amount)
+INSERT INTO hr_schema.income_register (detail_id, concept_id, base_quantity, calculated_amount)
 VALUES (<detail_id>, <concept_id>, 1.00, 2500.00);
 
 -- The trigger `update_gross_salary` runs AFTER insert/update/delete on income_register:
@@ -90,7 +90,7 @@ VALUES (<detail_id>, <concept_id>, 1.00, 2500.00);
 
 -- Quick check
 SELECT gross_salary, recalc_needed
-FROM hr_module.paysheet_detail
+FROM hr_schema.paysheet_detail
 WHERE detail_id = <detail_id>;
 ```
 
@@ -104,7 +104,7 @@ The calculation engine should compute and update:
 - Set `recalc_needed = FALSE`
 
 ```sql
-UPDATE hr_module.paysheet_detail
+UPDATE hr_schema.paysheet_detail
 SET
 	ccss_employee_deduction = 150.00,
 	ccss_tenant_deduction   = 300.00,
@@ -119,12 +119,12 @@ WHERE detail_id = <detail_id>;
 
 ```sql
 -- Will raise an exception if any detail has recalc_needed = TRUE
-SELECT hr_module.update_paysheet_state(<paysheet_id>);
+SELECT hr_schema.update_paysheet_state(<paysheet_id>);
 
 -- Verify closure
 SELECT p.paysheet_id, ps.status_description
-FROM hr_module.paysheet p
-JOIN hr_module.paysheet_status ps ON ps.status_id = p.paysheet_status_id
+FROM hr_schema.paysheet p
+JOIN hr_schema.paysheet_status ps ON ps.status_id = p.paysheet_status_id
 WHERE p.paysheet_id = <paysheet_id>;
 ```
 
@@ -132,7 +132,7 @@ WHERE p.paysheet_id = <paysheet_id>;
 
 ```sql
 SELECT *
-FROM hr_module.generate_monthly_ccss(2025, 12);
+FROM hr_schema.generate_monthly_ccss(2025, 12);
 -- Returns columns: total_employee, total_tenant, total
 ```
 
@@ -144,10 +144,10 @@ FROM hr_module.generate_monthly_ccss(2025, 12);
 - Trigger `protect_net_salary` (BEFORE I/U on `paysheet_detail`):
   - Blocks modifications to `net_salary` when the parent paysheet status is `Completed`.
 - Check constraint on `paysheet_detail.gross_salary >= 0` prevents negative gross salary.
-- Function `hr_module.update_paysheet_state(p_paysheet_id)`:
+- Function `hr_schema.update_paysheet_state(p_paysheet_id)`:
   - Fails if any `paysheet_detail.recalc_needed = TRUE`.
   - Sets `paysheet.paysheet_status_id` to `Completed` otherwise.
-- Function `hr_module.generate_monthly_ccss(year, month)` aggregates CCSS totals from completed paysheets.
+- Function `hr_schema.generate_monthly_ccss(year, month)` aggregates CCSS totals from completed paysheets.
 
 ## Idempotency & Safety
 
@@ -169,8 +169,8 @@ FROM hr_module.generate_monthly_ccss(2025, 12);
 ```sql
 SELECT p.paysheet_id, p.period_start_date, p.period_end_date, p.payment_day,
 			 ps.status_description
-FROM hr_module.paysheet p
-JOIN hr_module.paysheet_status ps ON ps.status_id = p.paysheet_status_id
+FROM hr_schema.paysheet p
+JOIN hr_schema.paysheet_status ps ON ps.status_id = p.paysheet_status_id
 WHERE p.paysheet_id = <paysheet_id>;
 ```
 
@@ -178,7 +178,7 @@ WHERE p.paysheet_id = <paysheet_id>;
 
 ```sql
 SELECT detail_id, employee_id, gross_salary, net_salary, recalc_needed
-FROM hr_module.paysheet_detail
+FROM hr_schema.paysheet_detail
 WHERE paysheet_id = <paysheet_id> AND recalc_needed = TRUE;
 ```
 
@@ -186,8 +186,8 @@ WHERE paysheet_id = <paysheet_id> AND recalc_needed = TRUE;
 
 ```sql
 SELECT ir.*, ic.concept_name
-FROM hr_module.income_register ir
-JOIN hr_module.income_concept ic ON ic.income_id = ir.concept_id
+FROM hr_schema.income_register ir
+JOIN hr_schema.income_concept ic ON ic.income_id = ir.concept_id
 WHERE ir.detail_id = <detail_id>;
 ```
 

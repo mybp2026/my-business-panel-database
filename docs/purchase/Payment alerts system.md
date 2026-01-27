@@ -18,15 +18,15 @@ Covers:
 
 ## Prerequisites
 
-- Schemas: `purchase_module`, `general`, `inventory_module`
+- Schemas: `purchase`, `general`, `inventory_schema`
 - general data: tenant, branch, supplier, products, payment methods
 - Installed functions/triggers:
-  - `purchase_module.initialize_payment_alert_config(...)` - Sets up alert configuration per tenant
-  - `purchase_module.generate_payment_alerts()` - Generates alerts based on due dates
-  - `purchase_module.get_pending_payment_alerts(tenant_id)` - Retrieves active alerts
-  - `purchase_module.get_payment_alert_stats(tenant_id)` - Provides alert statistics
-  - `purchase_module.resolve_payment_alert(alert_id)` - Manually resolves an alert
-  - `purchase_module.auto_resolve_payment_alerts()` - Trigger that auto-resolves alerts on payment completion
+  - `purchase.initialize_payment_alert_config(...)` - Sets up alert configuration per tenant
+  - `purchase.generate_payment_alerts()` - Generates alerts based on due dates
+  - `purchase.get_pending_payment_alerts(tenant_id)` - Retrieves active alerts
+  - `purchase.get_payment_alert_stats(tenant_id)` - Provides alert statistics
+  - `purchase.resolve_payment_alert(alert_id)` - Manually resolves an alert
+  - `purchase.auto_resolve_payment_alerts()` - Trigger that auto-resolves alerts on payment completion
 
 ## Key Entities
 
@@ -108,7 +108,7 @@ Covers:
 **Action**: Set up alert thresholds for a tenant
 
 ```sql
-SELECT purchase_module.initialize_payment_alert_config(
+SELECT purchase.initialize_payment_alert_config(
     p_tenant_id := '<tenant-uuid>',
     p_warning_days_before_due := 7,      -- Alert 7 days before due
     p_urgent_days_before_due := 3,        -- Alert 3 days before due
@@ -126,7 +126,7 @@ SELECT purchase_module.initialize_payment_alert_config(
 **Validation**:
 
 ```sql
-SELECT * FROM purchase_module.purchase_order_payment_alert_config
+SELECT * FROM purchase.purchase_order_payment_alert_config
 WHERE tenant_id = '<tenant-uuid>';
 ```
 
@@ -140,7 +140,7 @@ WHERE tenant_id = '<tenant-uuid>';
 
 ```sql
 -- Scenario 1: Overdue payment (due 5 days ago)
-SELECT purchase_module.create_purchase_order(
+SELECT purchase.create_purchase_order(
     p_supplier_id := '<supplier-uuid>',
     p_warehouse_id := '<warehouse-uuid>',
     p_expected_delivery_date := current_date,
@@ -156,7 +156,7 @@ UPDATE general.account_payable
 SET due_date = current_date - interval '5 days'
 WHERE account_payable_id = (
     SELECT account_payable_id
-    FROM purchase_module.purchase_account_payable
+    FROM purchase.purchase_account_payable
     WHERE purchase_order_id = '<order-uuid>'
 );
 ```
@@ -184,7 +184,7 @@ WHERE account_payable_id = (
 **Action**: Run alert generation to scan all accounts payable
 
 ```sql
-PERFORM purchase_module.generate_payment_alerts();
+PERFORM purchase.generate_payment_alerts();
 ```
 
 **Process Flow**:
@@ -253,7 +253,7 @@ PERFORM purchase_module.generate_payment_alerts();
 **Action**: Retrieve all active alerts for a tenant
 
 ```sql
-SELECT * FROM purchase_module.get_pending_payment_alerts('<tenant-uuid>');
+SELECT * FROM purchase.get_pending_payment_alerts('<tenant-uuid>');
 ```
 
 **Returned Columns**:
@@ -313,7 +313,7 @@ Alert #2:
 **Action**: Get aggregated statistics for all alerts
 
 ```sql
-SELECT * FROM purchase_module.get_payment_alert_stats('<tenant-uuid>');
+SELECT * FROM purchase.get_payment_alert_stats('<tenant-uuid>');
 ```
 
 **Returned Columns**:
@@ -395,7 +395,7 @@ WHERE is_resolved = false
 3. **Verify Payment**:
 
    ```sql
-   CALL purchase_module.verify_purchase_order_payment('<payment-uuid>');
+   CALL purchase.verify_purchase_order_payment('<payment-uuid>');
    ```
 
 4. **Automatic Trigger Execution**:
@@ -455,7 +455,7 @@ WHERE purchase_account_payable_id = '<sap-uuid>';
 
 ```sql
 -- View tenant alert configuration
-SELECT * FROM purchase_module.purchase_order_payment_alert_config
+SELECT * FROM purchase.purchase_order_payment_alert_config
 WHERE tenant_id = '<tenant-uuid>';
 
 -- Expected columns: warning_days_before_due, urgent_days_before_due, email_notifications_enabled, sms_notifications_enabled
@@ -465,7 +465,7 @@ WHERE tenant_id = '<tenant-uuid>';
 
 ```sql
 -- View available alert types
-SELECT * FROM purchase_module.purchase_order_payment_alert_type
+SELECT * FROM purchase.purchase_order_payment_alert_type
 ORDER BY payment_alert_type_id;
 
 -- Expected types: Upcoming Due Date, Urgent Payment, Overdue Payment, Reconciliation Mismatch
@@ -485,14 +485,14 @@ SELECT
     (ap.subtotal + sap.tax_amount - ap.amount_paid) as balance,
     spa.is_resolved,
     spa.alert_date
-FROM purchase_module.purchase_order_payment_alert spa
-JOIN purchase_module.purchase_account_payable sap ON spa.purchase_account_payable_id = sap.purchase_account_payable_id
+FROM purchase.purchase_order_payment_alert spa
+JOIN purchase.purchase_account_payable sap ON spa.purchase_account_payable_id = sap.purchase_account_payable_id
 JOIN general.account_payable ap ON sap.account_payable_id = ap.account_payable_id
-JOIN purchase_module.purchase_order so ON sap.purchase_order_id = so.purchase_order_id
-JOIN purchase_module.supplier s ON so.supplier_id = s.supplier_id
-JOIN purchase_module.supplier_invoice si ON so.purchase_order_id = si.purchase_order_id
-JOIN purchase_module.purchase_order_payment_alert_type spat ON spa.payment_alert_type_id = spat.payment_alert_type_id
-JOIN purchase_module.supplier_branch sb ON s.supplier_id = sb.supplier_id
+JOIN purchase.purchase_order so ON sap.purchase_order_id = so.purchase_order_id
+JOIN purchase.supplier s ON so.supplier_id = s.supplier_id
+JOIN purchase.supplier_invoice si ON so.purchase_order_id = si.purchase_order_id
+JOIN purchase.purchase_order_payment_alert_type spat ON spa.payment_alert_type_id = spat.payment_alert_type_id
+JOIN purchase.supplier_branch sb ON s.supplier_id = sb.supplier_id
 JOIN general.branch b ON sb.branch_id = b.branch_id
 WHERE b.tenant_id = '<tenant-uuid>'
 AND spa.is_resolved = false
@@ -510,7 +510,7 @@ SELECT
     is_resolved,
     created_at,
     updated_at
-FROM purchase_module.purchase_order_payment_alert
+FROM purchase.purchase_order_payment_alert
 WHERE purchase_account_payable_id = '<sap-uuid>'
 ORDER BY created_at DESC;
 ```
@@ -525,7 +525,7 @@ SELECT
     (ap.due_date - current_date) as days_until_due,
     sap.account_payable_status,
     (ap.subtotal + sap.tax_amount - ap.amount_paid) as balance
-FROM purchase_module.purchase_account_payable sap
+FROM purchase.purchase_account_payable sap
 JOIN general.account_payable ap ON sap.account_payable_id = ap.account_payable_id
 WHERE sap.account_payable_status != 3  -- Not paid
 AND ap.due_date IS NOT NULL
@@ -547,8 +547,8 @@ SELECT
     spa.updated_at,
     sap.account_payable_status,
     ap.is_paid
-FROM purchase_module.purchase_order_payment_alert spa
-JOIN purchase_module.purchase_account_payable sap ON spa.purchase_account_payable_id = sap.purchase_account_payable_id
+FROM purchase.purchase_order_payment_alert spa
+JOIN purchase.purchase_account_payable sap ON spa.purchase_account_payable_id = sap.purchase_account_payable_id
 JOIN general.account_payable ap ON sap.account_payable_id = ap.account_payable_id
 WHERE spa.purchase_account_payable_id = '<sap-uuid>';
 
@@ -862,7 +862,7 @@ WHERE spa.purchase_account_payable_id = '<sap-uuid>';
 
 ### Database Objects
 
-- Schema: `purchase_module` - Payment alert tables and functions
+- Schema: `purchase` - Payment alert tables and functions
 - Schema: `general` - Account payable base tables
 - Functions: `purchase_functions.sql` - All alert-related functions
 - Test: `testPaymentAlerts.sql` - Complete alert system test

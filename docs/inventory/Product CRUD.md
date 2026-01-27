@@ -16,7 +16,7 @@
 BEGIN;
 -- lock an existing inventory row, if any
 SELECT inventory_id, stock
-FROM inventory_module.inventory
+FROM inventory_schema.inventory
 WHERE tenant_id = '<tenant_id>'
     AND product_id = '<product_id>'
     AND warehouse_id = '<warehouse_id>'
@@ -25,13 +25,13 @@ FOR UPDATE;
 -- if exists, update; otherwise insert
 
 -- record/insert audit movement
-INSERT INTO inventory_module.inventory_movement
+INSERT INTO inventory_schema.inventory_movement
     (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
 VALUES (
     gen_random_uuid(),
     (
         SELECT inventory_movement_type_id
-        FROM inventory_module.inventory_movement_type
+        FROM inventory_schema.inventory_movement_type
         WHERE inventory_movement_type_name = 'IN' LIMIT 1
     ),
     '<purchase_order_id_or_null>',
@@ -51,19 +51,19 @@ Transactional pattern:
 ```sql
 BEGIN;
 SELECT inventory_id, stock
-FROM inventory_module.inventory
+FROM inventory_schema.inventory
 WHERE tenant_id = '<tenant_id>' AND product_id = '<product_id>' AND warehouse_id = '<warehouse_id>'
 FOR UPDATE;
 
 -- application logic: if no row -> raise 'no inventory' error
 -- if stock < <quantity> -> raise 'insufficient stock'
 
-UPDATE inventory_module.inventory
+UPDATE inventory_schema.inventory
 SET stock = stock - <quantity>, updated_at = current_timestamp
 WHERE inventory_id = '<inventory_id>';
 
-INSERT INTO inventory_module.inventory_movement (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
-VALUES (gen_random_uuid(), (SELECT inventory_movement_type_id FROM inventory_module.inventory_movement_type WHERE inventory_movement_type_name='OUT' LIMIT 1), NULL, current_timestamp);
+INSERT INTO inventory_schema.inventory_movement (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
+VALUES (gen_random_uuid(), (SELECT inventory_movement_type_id FROM inventory_schema.inventory_movement_type WHERE inventory_movement_type_name='OUT' LIMIT 1), NULL, current_timestamp);
 
 COMMIT;
 ```
@@ -83,39 +83,39 @@ Transactional pattern:
 ```sql
 BEGIN;
 -- lock both inventory rows (order locks consistently to avoid deadlocks)
-SELECT inventory_id, stock FROM inventory_module.inventory
+SELECT inventory_id, stock FROM inventory_schema.inventory
 WHERE tenant_id = '<tenant_id>' AND product_id = '<product_id>' AND warehouse_id = '<from_warehouse>'
 FOR UPDATE;
 
-SELECT inventory_id, stock FROM inventory_module.inventory
+SELECT inventory_id, stock FROM inventory_schema.inventory
 WHERE tenant_id = '<tenant_id>' AND product_id = '<product_id>' AND warehouse_id = '<to_warehouse>'
 FOR UPDATE;
 
 -- validate stock on source
-UPDATE inventory_module.inventory
+UPDATE inventory_schema.inventory
 SET stock = stock - <quantity>, updated_at = current_timestamp
 WHERE inventory_id = '<from_inventory_id>' AND stock >= <quantity>;
 
 -- upsert destination
-INSERT INTO inventory_module.inventory (inventory_id, tenant_id, product_id, warehouse_id, stock, created_at, updated_at)
+INSERT INTO inventory_schema.inventory (inventory_id, tenant_id, product_id, warehouse_id, stock, created_at, updated_at)
 VALUES (gen_random_uuid(), '<tenant_id>', '<product_id>', '<to_warehouse>', <quantity>, current_timestamp, current_timestamp)
 ON CONFLICT (tenant_id, product_id, warehouse_id)
-DO UPDATE SET stock = inventory_module.inventory.stock + EXCLUDED.stock, updated_at = current_timestamp;
+DO UPDATE SET stock = inventory_schema.inventory.stock + EXCLUDED.stock, updated_at = current_timestamp;
 
 -- create transfer header and product line for audit
-INSERT INTO inventory_module.inventory_transfer (inventory_transfer_id, from_warehouse_id, to_warehouse_id, inventory_transfer_departure_date, transfer_date, created_at, updated_at)
+INSERT INTO inventory_schema.inventory_transfer (inventory_transfer_id, from_warehouse_id, to_warehouse_id, inventory_transfer_departure_date, transfer_date, created_at, updated_at)
 VALUES (gen_random_uuid(), '<from_warehouse>', '<to_warehouse>', current_timestamp, current_timestamp, current_timestamp, current_timestamp)
 RETURNING inventory_transfer_id;
 
-INSERT INTO inventory_module.inventory_transfer_product (inventory_transfer_product_id, inventory_transfer_id, tenant_id, product_id, quantity, created_at, updated_at)
+INSERT INTO inventory_schema.inventory_transfer_product (inventory_transfer_product_id, inventory_transfer_id, tenant_id, product_id, quantity, created_at, updated_at)
 VALUES (gen_random_uuid(), '<returned_transfer_id>', '<tenant_id>', '<product_id>', <quantity>, current_timestamp, current_timestamp);
 
 -- optional: insert inventory_movement rows for both OUT and IN movements
-INSERT INTO inventory_module.inventory_movement (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
-VALUES (gen_random_uuid(), (SELECT inventory_movement_type_id FROM inventory_module.inventory_movement_type WHERE inventory_movement_type_name='OUT' LIMIT 1), NULL, current_timestamp);
+INSERT INTO inventory_schema.inventory_movement (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
+VALUES (gen_random_uuid(), (SELECT inventory_movement_type_id FROM inventory_schema.inventory_movement_type WHERE inventory_movement_type_name='OUT' LIMIT 1), NULL, current_timestamp);
 
-INSERT INTO inventory_module.inventory_movement (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
-VALUES (gen_random_uuid(), (SELECT inventory_movement_type_id FROM inventory_module.inventory_movement_type WHERE inventory_movement_type_name='IN' LIMIT 1), NULL, current_timestamp);
+INSERT INTO inventory_schema.inventory_movement (inventory_movement_id, inventory_movement_type_id, purchase_order_id, created_at)
+VALUES (gen_random_uuid(), (SELECT inventory_movement_type_id FROM inventory_schema.inventory_movement_type WHERE inventory_movement_type_name='IN' LIMIT 1), NULL, current_timestamp);
 
 COMMIT;
 ```
@@ -138,14 +138,14 @@ Notes:
 
 ```sql
 SELECT inventory_id, tenant_id, product_id, warehouse_id, stock, updated_at
-FROM inventory_module.inventory
+FROM inventory_schema.inventory
 WHERE tenant_id = '<tenant_id>' AND product_id = '<product_id>' AND warehouse_id = '<warehouse_id>';
 ```
 
 - Sum inventory across warehouses for a product:
 
 ```sql
-SELECT SUM(stock) AS total_stock FROM inventory_module.inventory WHERE tenant_id = '<tenant_id>' AND product_id = '<product_id>';
+SELECT SUM(stock) AS total_stock FROM inventory_schema.inventory WHERE tenant_id = '<tenant_id>' AND product_id = '<product_id>';
 ```
 
 s
@@ -154,7 +154,7 @@ s
 
 ```sql
 SELECT im.inventory_movement_id, im.created_at, im.inventory_movement_type_id, im.purchase_order_id, t.inventory_movement_type_name
-FROM inventory_module.inventory_movement im
-LEFT JOIN inventory_module.inventory_movement_type t USING (inventory_movement_type_id)
+FROM inventory_schema.inventory_movement im
+LEFT JOIN inventory_schema.inventory_movement_type t USING (inventory_movement_type_id)
 ORDER BY im.created_at DESC LIMIT 100;
 ```

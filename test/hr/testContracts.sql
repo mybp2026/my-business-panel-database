@@ -20,17 +20,17 @@ BEGIN
 
     -- Buscar empleado de prueba
     SELECT employee_id, contract_id INTO v_employee_id, v_contract_id
-    FROM hr_module.employee
+    FROM hr_schema.employee
     WHERE email = v_email OR doc_number = v_doc_number
     LIMIT 1;
 
     -- Eliminar empleado y contrato de prueba si existen
     IF v_employee_id IS NOT NULL THEN
-        DELETE FROM hr_module.employee WHERE employee_id = v_employee_id;
+        DELETE FROM hr_schema.employee WHERE employee_id = v_employee_id;
         RAISE NOTICE '   ✓ Empleado de prueba eliminado: %', v_employee_id;
     END IF;
     IF v_contract_id IS NOT NULL THEN
-        DELETE FROM hr_module.contract WHERE contract_id = v_contract_id;
+        DELETE FROM hr_schema.contract WHERE contract_id = v_contract_id;
         RAISE NOTICE '   ✓ Contrato de prueba eliminado: %', v_contract_id;
     END IF;
 
@@ -52,7 +52,7 @@ BEGIN
     RAISE NOTICE '👤 SECCIÓN 1: Creación de empleado y contrato';
     RAISE NOTICE '========================================';
 
-    v_employee_id := hr_module.create_new_employee(
+    v_employee_id := hr_schema.create_new_employee(
         p_start_date => '2025-10-01',
         p_end_date => '2026-10-01',
         p_hours => 45,
@@ -92,7 +92,7 @@ BEGIN
 
     -- Buscar empleado y contrato recién creados
     SELECT employee_id, contract_id INTO v_employee_id, v_contract_id
-    FROM hr_module.employee
+    FROM hr_schema.employee
     WHERE email = 'juan.perez@test.com'
     LIMIT 1;
 
@@ -102,7 +102,7 @@ BEGIN
 
     RAISE NOTICE '   Forzando falla del trigger (end_date < start_date)';
     BEGIN
-        UPDATE hr_module.contract
+        UPDATE hr_schema.contract
         SET end_date = '2025-09-01'
         WHERE contract_id = v_contract_id;
 
@@ -134,7 +134,7 @@ BEGIN
     RAISE NOTICE '========================================';
 
     SELECT employee_id, contract_id INTO v_employee_id, v_contract_id
-    FROM hr_module.employee
+    FROM hr_schema.employee
     WHERE email = 'juan.perez@test.com'
     LIMIT 1;
 

@@ -4,44 +4,44 @@
 -- Purpose: Test the payment alert generation and management system
 -- =====================================
 
-set search_path = purchase_module, general;
+set search_path = purchase, general;
 
 -- ========================================
 -- SECTION 0: Cleanup
 -- ========================================
 do $$
 begin
-    delete from purchase_module.purchase_order_payment_alert 
+    delete from purchase.purchase_order_payment_alert 
     where purchase_account_payable_id in (
         select sap.purchase_account_payable_id
-        from purchase_module.purchase_account_payable sap
-        join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+        from purchase.purchase_account_payable sap
+        join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Alert Test Supplier'
     );
     
-    delete from purchase_module.purchase_order_payment 
+    delete from purchase.purchase_order_payment 
     where purchase_account_payable_id in (
         select sap.purchase_account_payable_id
-        from purchase_module.purchase_account_payable sap
-        join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-        join purchase_module.supplier s on so.supplier_id = s.supplier_id
+        from purchase.purchase_account_payable sap
+        join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+        join purchase.supplier s on so.supplier_id = s.supplier_id
         where s.supplier_name = 'Alert Test Supplier'
     );
     
-    delete from purchase_module.purchase_order 
+    delete from purchase.purchase_order 
     where supplier_id in (
-        select supplier_id from purchase_module.supplier 
+        select supplier_id from purchase.supplier 
         where supplier_name = 'Alert Test Supplier'
     );
     
-    delete from purchase_module.supplier_branch 
+    delete from purchase.supplier_branch 
     where supplier_id in (
-        select supplier_id from purchase_module.supplier 
+        select supplier_id from purchase.supplier 
         where supplier_name = 'Alert Test Supplier'
     );
     
-    delete from purchase_module.supplier 
+    delete from purchase.supplier 
     where supplier_name = 'Alert Test Supplier';
     
     delete from general.product 
@@ -50,7 +50,7 @@ begin
         where tenant_name = 'Alert Test Business'
     );
     
-    delete from inventory_module.warehouse 
+    delete from inventory_schema.warehouse 
     where branch_id in (
         select branch_id from general.branch 
         where tenant_id in (
@@ -65,7 +65,7 @@ begin
         where tenant_name = 'Alert Test Business'
     );
     
-    delete from purchase_module.purchase_order_payment_alert_config 
+    delete from purchase.purchase_order_payment_alert_config 
     where tenant_id in (
         select tenant_id from general.tenant 
         where tenant_name = 'Alert Test Business'
@@ -102,16 +102,16 @@ begin
     returning branch_id into v_branch_id;
 
     -- Create warehouse
-    INSERT INTO inventory_module.warehouse(branch_id, warehouse_name, warehouse_address)
+    INSERT INTO inventory_schema.warehouse(branch_id, warehouse_name, warehouse_address)
     VALUES (v_branch_id, 'Main Warehouse', 'Main Warehouse Address')
     returning warehouse_id into v_warehouse_id;
 
     -- Create supplier
-    INSERT INTO purchase_module.supplier(supplier_name)
+    INSERT INTO purchase.supplier(supplier_name)
     VALUES ('Alert Test Supplier')
     returning supplier_id into v_supplier_id;
 
-    INSERT INTO purchase_module.supplier_branch(supplier_id, branch_id)
+    INSERT INTO purchase.supplier_branch(supplier_id, branch_id)
     VALUES (v_supplier_id, v_branch_id);
 
     -- Create product
@@ -120,7 +120,7 @@ begin
     returning product_id into v_product_id;
 
     -- Initialize alert configuration (7 days warning, 3 days urgent)
-    select purchase_module.initialize_payment_alert_config(
+    select purchase.initialize_payment_alert_config(
         v_tenant_id,
         7,  -- warning days
         3,  -- urgent days
@@ -162,11 +162,11 @@ begin
     where t.tenant_name = 'Alert Test Business';
 
     select s.supplier_id into v_supplier_id
-    from purchase_module.supplier s
+    from purchase.supplier s
     where s.supplier_name = 'Alert Test Supplier';
 
     select w.warehouse_id into v_warehouse_id
-    from inventory_module.warehouse w
+    from inventory_schema.warehouse w
     join general.branch b on w.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id
     limit 1;
@@ -178,7 +178,7 @@ begin
     limit 1;
 
     -- Order 1: Overdue (due 5 days ago)
-    select purchase_module.create_purchase_order(
+    select purchase.create_purchase_order(
         v_supplier_id,
         v_warehouse_id,
         (current_date - interval '5 days')::date,
@@ -193,12 +193,12 @@ begin
     set due_date = current_date - interval '5 days'
     where account_payable_id = (
         select account_payable_id 
-        from purchase_module.purchase_account_payable 
+        from purchase.purchase_account_payable 
         where purchase_order_id = v_order_overdue
     );
 
     -- Order 2: Urgent (due in 2 days)
-    select purchase_module.create_purchase_order(
+    select purchase.create_purchase_order(
         v_supplier_id,
         v_warehouse_id,
         (current_date + interval '2 days')::date,
@@ -213,12 +213,12 @@ begin
     set due_date = current_date + interval '2 days'
     where account_payable_id = (
         select account_payable_id 
-        from purchase_module.purchase_account_payable 
+        from purchase.purchase_account_payable 
         where purchase_order_id = v_order_urgent
     );
 
     -- Order 3: Warning (due in 5 days)
-    select purchase_module.create_purchase_order(
+    select purchase.create_purchase_order(
         v_supplier_id,
         v_warehouse_id,
         (current_date + interval '5 days')::date,
@@ -233,12 +233,12 @@ begin
     set due_date = current_date + interval '5 days'
     where account_payable_id = (
         select account_payable_id 
-        from purchase_module.purchase_account_payable 
+        from purchase.purchase_account_payable 
         where purchase_order_id = v_order_warning
     );
 
     -- Order 4: OK (due in 15 days - no alert needed)
-    select purchase_module.create_purchase_order(
+    select purchase.create_purchase_order(
         v_supplier_id,
         v_warehouse_id,
         (current_date + interval '15 days')::date,
@@ -266,7 +266,7 @@ begin
     raise notice '🔔 SECTION 3: Generating payment alerts';
     raise notice '========================================';
 
-    perform purchase_module.generate_payment_alerts();
+    perform purchase.generate_payment_alerts();
 
     raise notice '✓ Alerts generated';
     raise notice '========================================';
@@ -291,7 +291,7 @@ begin
     where t.tenant_name = 'Alert Test Business';
 
     for v_alert in 
-        select * from purchase_module.get_pending_payment_alerts(v_tenant_id)
+        select * from purchase.get_pending_payment_alerts(v_tenant_id)
     loop
         v_count := v_count + 1;
         raise notice '';
@@ -328,7 +328,7 @@ begin
     where t.tenant_name = 'Alert Test Business';
 
     select * into v_stats
-    from purchase_module.get_payment_alert_stats(v_tenant_id);
+    from purchase.get_payment_alert_stats(v_tenant_id);
 
     raise notice 'Total alerts: %', v_stats.total_alerts;
     raise notice 'Overdue payments: %', v_stats.overdue_count;
@@ -360,25 +360,25 @@ begin
 
     -- Get overdue account
     select sap.purchase_account_payable_id into v_purchase_account_payable_id
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
-    join purchase_module.purchase_order so on sap.purchase_order_id = so.purchase_order_id
-    join purchase_module.supplier s on so.supplier_id = s.supplier_id
-    join purchase_module.supplier_branch sb on s.supplier_id = sb.supplier_id
+    join purchase.purchase_order so on sap.purchase_order_id = so.purchase_order_id
+    join purchase.supplier s on so.supplier_id = s.supplier_id
+    join purchase.supplier_branch sb on s.supplier_id = sb.supplier_id
     join general.branch b on sb.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id
     and ap.due_date < current_date
     limit 1;
 
     select count(*)::integer into v_alerts_before
-    from purchase_module.purchase_order_payment_alert
+    from purchase.purchase_order_payment_alert
     where purchase_account_payable_id = v_purchase_account_payable_id
     and is_resolved = false;
 
     raise notice 'Alerts before payment: %', v_alerts_before;
 
     -- Make full payment
-    INSERT INTO purchase_module.purchase_order_payment(
+    INSERT INTO purchase.purchase_order_payment(
         tenant_id,
         purchase_account_payable_id,
         amount_paid,
@@ -393,15 +393,15 @@ begin
         1,
         'FULL-PAYMENT-TEST',
         false
-    from purchase_module.purchase_account_payable sap
+    from purchase.purchase_account_payable sap
     join general.account_payable ap on sap.account_payable_id = ap.account_payable_id
     where sap.purchase_account_payable_id = v_purchase_account_payable_id
     returning payment_id into v_payment_id;
 
-    call purchase_module.verify_purchase_order_payment(v_payment_id);
+    call purchase.verify_purchase_order_payment(v_payment_id);
 
     select count(*)::integer into v_alerts_after
-    from purchase_module.purchase_order_payment_alert
+    from purchase.purchase_order_payment_alert
     where purchase_account_payable_id = v_purchase_account_payable_id
     and is_resolved = false;
 

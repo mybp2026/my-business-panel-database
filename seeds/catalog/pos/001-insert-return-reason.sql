@@ -1,4 +1,6 @@
-INSERT INTO return_reason(reason_code, reason_name, description) VALUES
+SET SEARCH_PATH TO pos_schema;
+
+INSERT INTO pos_schema.return_reason(reason_code, reason_name, description) VALUES
     ('DEFECT', 'Defecto de fábrica', 'El producto tiene un defecto de fabricación'),
     ('SIZE_CHANGE', 'Cambio de talla', 'El cliente requiere una talla diferente'),
     ('WRonG_PRODUCT', 'Producto equivocado', 'Se entregó un producto diferente al solicitado'),

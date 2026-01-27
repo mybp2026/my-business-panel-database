@@ -1,4 +1,4 @@
-INSERT INTO pos_module.sale 
+INSERT INTO pos.sale 
 (
     branch_id,
     currency_id,

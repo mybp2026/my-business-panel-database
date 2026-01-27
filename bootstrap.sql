@@ -6,10 +6,11 @@
 
 BEGIN;
 
-DROP SCHEMA IF EXISTS public CASCADE;
-CREATE SCHEMA public;
-GRANT ALL ON SCHEMA public TO postgres;
-GRANT ALL ON SCHEMA public TO public;
+DROP SCHEMA IF EXISTS general_schema CASCADE;
+DROP SCHEMA IF EXISTS pos_schema CASCADE;
+DROP SCHEMA IF EXISTS inventory_schema CASCADE;
+DROP SCHEMA IF EXISTS purchase_schema CASCADE;
+DROP SCHEMA IF EXISTS hr_schema CASCADE;
 
 -- -----------------
 -- EXTENSIONS
@@ -21,20 +22,24 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- -----------------
 \i schemas/general/general_schema.sql
 \i schemas/pos/pos_schema.sql
-\i schemas/purchase/purchase_schema.sql
 \i schemas/inventory/inventory_schema.sql
+\i schemas/purchase/purchase_schema.sql
 \i schemas/hr/hr_schema.sql
 
 -- -----------------
 -- FUNCTIONS
 -- -----------------
--- \i functions/update_timestamp.sql
+\i functions/general/general_functions.sql
+\i functions/pos/pos_functions.sql
+\i functions/inventory/inventory_functions.sql
+\i functions/purchase/purchase_functions.sql
+\i functions/hr/hr_functions.sql
 
 -- -----------------
 -- SEEDS - CATALOG GENERAL
 -- -----------------
 \i seeds/catalog/general/001-insert-regions.sql
-\i seeds/catalog/general/002-insert-document_types.sql
+\i seeds/catalog/general/002-insert-document-types.sql
 \i seeds/catalog/general/003-insert-customer-segments.sql
 \i seeds/catalog/general/004-insert-customer_segment_margin_types.sql
 \i seeds/catalog/general/005-insert-roles.sql
@@ -58,7 +63,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- SEEDS - CATALOG PURCHASE
 -- -----------------
 \i seeds/catalog/purchase/001-insert-purchase-order-status.sql
-\i seeds/catalog/purchase/002-insert-purchase-order-payment-alert-type.sql
+\i seeds/catalog/purchase/002-insert-purchase-order-payment-alert-types.sql
 
 -- -----------------
 -- SEEDS - CATALOG INVENTORY
@@ -84,27 +89,27 @@ DECLARE
 BEGIN
     FOR v_table_name IN 
         SELECT unnest(ARRAY[
-            'general.region',
-            'general.role',
-            'general.document_type',
-            'general.currency',
-            'general.payment_method',
-            'general.subscription_type',
-            'general.customer_segment',
-            'general.customer_segment_margin_type',
-            'general.tax_rate',
-            'general.account_payable_status',
-            'general.account_payable_type',
-            'pos.return_reason',
-            'pos.return_status',
-            'pos.promotion_type',
-            'pos.score_redemption_status',
-            'pos.score_transaction_type',
-            'purchase.purchase_order_status',
-            'purchase.purchase_order_payment_alert_type',
-            'inventory.inventory_log_type',
-            'hr_module.payment_schedule',
-            'hr_module.paysheet_status'
+            'general_schema.region',
+            'general_schema.role',
+            'general_schema.document_type',
+            'general_schema.currency',
+            'general_schema.payment_method',
+            'general_schema.subscription_type',
+            'general_schema.customer_segment',
+            'general_schema.customer_segment_margin_type',
+            'general_schema.tax_rate',
+            'general_schema.account_payable_status',
+            'general_schema.account_payable_type',
+            'pos_schema.return_reason',
+            'pos_schema.return_status',
+            'pos_schema.promotion_type',
+            'pos_schema.score_redemption_status',
+            'pos_schema.score_transaction_type',
+            'inventory_schema.inventory_log_type',
+            'purchase_schema.purchase_order_status',
+            'purchase_schema.purchase_order_payment_alert_type',
+            'hr_schema.payment_schedule',
+            'hr_schema.paysheet_status'
         ])
     LOOP
         EXECUTE format('SELECT COUNT(*) FROM %s', v_table_name) INTO v_count;

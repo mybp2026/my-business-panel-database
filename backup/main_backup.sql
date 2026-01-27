@@ -1,5 +1,5 @@
-create schema if not exists general;
-set search_path to general;
+CREATE SCHEMA IF NOT EXISTS general;
+SET SEARCH_PATH TO general;
 
 CREATE TABLE IF NOT EXISTS region(
     region_id serial primary key,
@@ -18,7 +18,7 @@ ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS tenant(
     tenant_id uuid primary key default gen_random_uuid(),
     tenant_name varchar(100) unique not null,
-    region_id integer REFERENCES general.region(region_id) on delete set null,
+    region_id integer default 1 REFERENCES general.region(region_id) on delete set null,
     contact_email varchar(100) not null,
     is_subscribed boolean default false,
     stripe_id varchar(255) unique default null,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS tenant(
     updated_at timestamp default current_timestamp
 );
 alter table general.tenant
-    add column if not exists stripe_id varchar(255) unique default null;
+    alter column region_id set default 1;
 
 CREATE TABLE IF NOT EXISTS branch(
     branch_id uuid primary key default gen_random_uuid(),
@@ -591,9 +591,9 @@ drop trigger if exists update_tenant_payment_timestamp on general.tenant_payment
 create trigger update_tenant_payment_timestamp before update on general.tenant_payment
 for each row execute function general.update_timestamp();
 
--- SCHEMA: pos_module   
-create schema if not exists pos_module;
-set search_path to pos_module;
+-- SCHEMA: pos   
+CREATE SCHEMA IF NOT EXISTS pos;
+SET SEARCH_PATH TO pos;
 
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid primary key default gen_random_uuid(),
@@ -607,12 +607,12 @@ CREATE TABLE IF NOT EXISTS sale(
     created_at timestamp not null default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-CREATE INDEX IF NOT EXISTS idx_sale_branch_id on pos_module.sale(branch_id);
-CREATE INDEX IF NOT EXISTS idx_sale_sale_date on pos_module.sale(sale_date);
+CREATE INDEX IF NOT EXISTS idx_sale_branch_id on pos.sale(branch_id);
+CREATE INDEX IF NOT EXISTS idx_sale_sale_date on pos.sale(sale_date);
 
 CREATE TABLE IF NOT EXISTS sale_item(
     sale_item_id uuid primary key default gen_random_uuid(),
-    sale_id uuid not null REFERENCES pos_module.sale(sale_id) on delete cascade,
+    sale_id uuid not null REFERENCES pos.sale(sale_id) on delete cascade,
     tenant_id uuid not null, 
     product_id uuid not null,  
     quantity integer not null check (quantity > 0),
@@ -625,9 +625,9 @@ CREATE TABLE IF NOT EXISTS sale_item(
         REFERENCES general.product(tenant_id, product_id) 
         on delete restrict
 );
-CREATE INDEX IF NOT EXISTS idx_sale_item_product_id on pos_module.sale_item(product_id);
-CREATE INDEX IF NOT EXISTS idx_sale_item_sale_id on pos_module.sale_item(sale_id);
-CREATE INDEX IF NOT EXISTS idx_sale_item_tenant_product on pos_module.sale_item(tenant_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_product_id on pos.sale_item(product_id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_sale_id on pos.sale_item(sale_id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_tenant_product on pos.sale_item(tenant_id, product_id);
 
 CREATE TABLE IF NOT EXISTS cash_register(
     cash_register_id uuid primary key default gen_random_uuid(),
@@ -639,7 +639,7 @@ CREATE TABLE IF NOT EXISTS cash_register(
 
 CREATE TABLE IF NOT EXISTS cash_register_session(
     cash_register_session_id uuid primary key default gen_random_uuid(),
-    cash_register_id uuid not null REFERENCES pos_module.cash_register(cash_register_id) on delete cascade,
+    cash_register_id uuid not null REFERENCES pos.cash_register(cash_register_id) on delete cascade,
     user_id uuid not null REFERENCES general.users(user_id) on delete set null,
     opened_at timestamp not null default current_timestamp,
     closed_at timestamp,
@@ -652,8 +652,8 @@ CREATE TABLE IF NOT EXISTS cash_register_session(
 
 CREATE TABLE IF NOT EXISTS cash_register_sale(
     cash_register_sale_id uuid primary key default gen_random_uuid(),
-    cash_register_session_id uuid not null REFERENCES pos_module.cash_register_session(cash_register_session_id) on delete cascade,
-    sale_id uuid not null unique REFERENCES pos_module.sale(sale_id) on delete cascade, 
+    cash_register_session_id uuid not null REFERENCES pos.cash_register_session(cash_register_session_id) on delete cascade,
+    sale_id uuid not null unique REFERENCES pos.sale(sale_id) on delete cascade, 
     transaction_time timestamp not null default current_timestamp,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
@@ -662,7 +662,7 @@ CREATE TABLE IF NOT EXISTS cash_register_sale(
 CREATE TABLE IF NOT EXISTS customer_payment(
     customer_payment_id uuid primary key not null default gen_random_uuid(),
     tenant_customer_id uuid not null REFERENCES general.tenant_customer(tenant_customer_id) on delete cascade,   
-    sale_id uuid not null REFERENCES pos_module.sale(sale_id) on delete cascade,
+    sale_id uuid not null REFERENCES pos.sale(sale_id) on delete cascade,
     payment_method_id integer REFERENCES general.payment_method(payment_method_id) on delete set null,
     is_points_redemption boolean default false,
     points_redeemed integer default 0 check (points_redeemed >= 0),
@@ -684,7 +684,7 @@ CREATE TABLE IF NOT EXISTS customer_payment(
 CREATE TABLE IF NOT EXISTS bill(
     bill_id uuid primary key default gen_random_uuid(),
     tenant_customer_id uuid REFERENCES general.tenant_customer(tenant_customer_id) on delete set null,
-    sale_id uuid not null REFERENCES pos_module.sale(sale_id) on delete cascade,
+    sale_id uuid not null REFERENCES pos.sale(sale_id) on delete cascade,
     currency_id integer REFERENCES general.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
@@ -692,14 +692,14 @@ CREATE TABLE IF NOT EXISTS bill(
     billed_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-alter table pos_module.bill
+alter table pos.bill
     add column if not exists due_date date;
-CREATE INDEX IF NOT EXISTS idx_bill_sale_id on pos_module.bill(sale_id);
+CREATE INDEX IF NOT EXISTS idx_bill_sale_id on pos.bill(sale_id);
 
 CREATE TABLE IF NOT EXISTS bill_payment(
     bill_payment_id uuid primary key default gen_random_uuid(),
-    bill_id uuid not null REFERENCES pos_module.bill(bill_id) on delete cascade,
-    customer_payment_id uuid not null REFERENCES pos_module.customer_payment(customer_payment_id) on delete cascade,
+    bill_id uuid not null REFERENCES pos.bill(bill_id) on delete cascade,
+    customer_payment_id uuid not null REFERENCES pos.customer_payment(customer_payment_id) on delete cascade,
     payment_amount numeric(10,2) not null check (payment_amount > 0),
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp,
@@ -741,28 +741,28 @@ ON CONFLICT DO NOTHING;
 drop table if exists return_transaction cascade;
 CREATE TABLE IF NOT EXISTS return_transaction(
     return_transaction_id uuid primary key default gen_random_uuid(),
-    bill_id uuid not null REFERENCES pos_module.bill(bill_id) on delete cascade,
+    bill_id uuid not null REFERENCES pos.bill(bill_id) on delete cascade,
     tenant_customer_id uuid REFERENCES general.tenant_customer(tenant_customer_id) on delete set null,
     total_refund_amount numeric(10,2) not null check (total_refund_amount >= 0),
     refund_method int REFERENCES general.payment_method(payment_method_id) on delete set null,
-    return_status_id integer REFERENCES pos_module.return_status(return_status_id) on delete set null,
+    return_status_id integer REFERENCES pos.return_status(return_status_id) on delete set null,
     return_date timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-CREATE INDEX IF NOT EXISTS idx_return_transaction_bill_id on pos_module.return_transaction(bill_id);
-CREATE INDEX IF NOT EXISTS idx_return_transaction_date on pos_module.return_transaction(return_date);
+CREATE INDEX IF NOT EXISTS idx_return_transaction_bill_id on pos.return_transaction(bill_id);
+CREATE INDEX IF NOT EXISTS idx_return_transaction_date on pos.return_transaction(return_date);
 
 CREATE TABLE IF NOT EXISTS return_product(
     return_product_id uuid primary key default gen_random_uuid(),
-    return_transaction_id uuid not null REFERENCES pos_module.return_transaction(return_transaction_id) on delete cascade,
-    sale_item_id uuid not null REFERENCES pos_module.sale_item(sale_item_id) on delete cascade,
+    return_transaction_id uuid not null REFERENCES pos.return_transaction(return_transaction_id) on delete cascade,
+    sale_item_id uuid not null REFERENCES pos.sale_item(sale_item_id) on delete cascade,
     quantity integer not null check (quantity > 0),
     unit_price numeric(10,2) not null check (unit_price >= 0),
     total_price numeric(10,2) not null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
-CREATE INDEX IF NOT EXISTS idx_return_product_transaction_id on pos_module.return_product(return_transaction_id);
+CREATE INDEX IF NOT EXISTS idx_return_product_transaction_id on pos.return_product(return_transaction_id);
 
 CREATE TABLE IF NOT EXISTS promotion_type(
     promotion_type_id serial primary key,
@@ -786,7 +786,7 @@ CREATE TABLE IF NOT EXISTS promotion(
     promotion_name varchar(100) not null,
     promotion_code varchar(50) not null,
     promotion_description text,
-    promotion_type_id int REFERENCES pos_module.promotion_type(promotion_type_id) on delete set null,
+    promotion_type_id int REFERENCES pos.promotion_type(promotion_type_id) on delete set null,
     customer_segment_id int REFERENCES general.customer_segment(customer_segment_id) on delete set null,
     promotion_start_date date not null,
     promotion_end_date date not null,
@@ -799,7 +799,7 @@ CREATE TABLE IF NOT EXISTS promotion(
 
 CREATE TABLE IF NOT EXISTS promotion_rule(
     promotion_rule_id uuid primary key default gen_random_uuid(),
-    promotion_id uuid not null REFERENCES pos_module.promotion(promotion_id) on delete cascade,
+    promotion_id uuid not null REFERENCES pos.promotion(promotion_id) on delete cascade,
     -- =====================================
     -- Fixed amount or percentage discount
     -- =====================================
@@ -903,9 +903,9 @@ CREATE TABLE IF NOT EXISTS score_transaction(
     score_transaction_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null REFERENCES general.tenant(tenant_id) on delete cascade,
     tenant_customer_id uuid not null REFERENCES general.tenant_customer(tenant_customer_id) on delete cascade,
-    transaction_type_id int REFERENCES pos_module.score_transaction_type(score_transaction_type_id) on delete set null,
+    transaction_type_id int REFERENCES pos.score_transaction_type(score_transaction_type_id) on delete set null,
     points integer not null,
-    bill_id uuid REFERENCES pos_module.bill(bill_id) on delete set null,
+    bill_id uuid REFERENCES pos.bill(bill_id) on delete set null,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
@@ -920,7 +920,7 @@ CREATE TABLE IF NOT EXISTS debtor (
 -- ==========================================================================
 --                          FUNCTIONS AND TRIGGERS
 -- ==========================================================================
-set search_path = pos_module;
+set search_path = pos;
 
 create or replace function check_sale_payment_completion(_sale_id uuid)
 returns boolean as $$
@@ -932,7 +932,7 @@ declare
 begin
         select total_amount, is_completed 
         into _sale_total, _is_completed
-        from pos_module.sale
+        from pos.sale
         where sale_id = _sale_id;
         
         if _sale_total is null then
@@ -944,7 +944,7 @@ begin
         end if;
         
         select count(*) into _pending_payments
-        from pos_module.customer_payment
+        from pos.customer_payment
         where sale_id = _sale_id
         and verified = false;
         
@@ -953,7 +953,7 @@ begin
         end if;
         
         select coalesce(sum(payment_amount), 0) into _payments_total
-        from pos_module.customer_payment
+        from pos.customer_payment
         where sale_id = _sale_id
         and verified = true;
         
@@ -962,7 +962,7 @@ begin
         raise notice '   📊 Difference: $%', (_sale_total - _payments_total);
         
         if abs(_payments_total - _sale_total) <= 0.01 then
-            update pos_module.sale
+            update pos.sale
             set is_completed = true,
                 updated_at = current_timestamp
             where sale_id = _sale_id;
@@ -994,14 +994,14 @@ declare
     _session_id uuid;
 begin
     select crs.cash_register_session_id into _session_id
-    from pos_module.cash_register_session crs
-    join pos_module.cash_register cr on crs.cash_register_id = cr.cash_register_id
+    from pos.cash_register_session crs
+    join pos.cash_register cr on crs.cash_register_id = cr.cash_register_id
     where cr.branch_id = new.branch_id
     and crs.is_active = true
     limit 1;
     
     if _session_id is not null then
-        INSERT INTO pos_module.cash_register_sale(
+        INSERT INTO pos.cash_register_sale(
             cash_register_session_id,
             sale_id,
             transaction_time
@@ -1021,9 +1021,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_sale_completed_link_sale_to_session on pos_module.sale;
+drop trigger if exists on_sale_completed_link_sale_to_session on pos.sale;
 create trigger on_sale_completed_link_sale_to_session
-    after update of is_completed on pos_module.sale
+    after update of is_completed on pos.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
     execute function link_sale_to_session();
@@ -1036,9 +1036,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists calculate_bill_total_trigger on pos_module.bill;
+drop trigger if exists calculate_bill_total_trigger on pos.bill;
 create trigger calculate_bill_total_trigger
-    before insert or update on pos_module.bill
+    before insert or update on pos.bill
     for each row
     execute function calculate_bill_total();
 
@@ -1050,13 +1050,13 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists calculate_total_price_return_product_trigger on pos_module.return_product;
+drop trigger if exists calculate_total_price_return_product_trigger on pos.return_product;
 create trigger calculate_total_price_return_product_trigger
-    before insert or update on pos_module.return_product
+    before insert or update on pos.return_product
     for each row
     execute function calculate_total_price();
 
-create or replace function pos_module.get_bill(_sale_id uuid)
+create or replace function pos.get_bill(_sale_id uuid)
 returns table (
     bill_id uuid,
     sale_id uuid,
@@ -1080,7 +1080,7 @@ begin
         b.total_amount,
         b.created_at,
         b.updated_at
-    from pos_module.bill b
+    from pos.bill b
     where b.sale_id = _sale_id;
 end;
 $$ language plpgsql;
@@ -1100,7 +1100,7 @@ begin
         raise notice '🧾 Creating bill for sale: %', new.sale_id;
         
         if exists(
-            select 1 from pos_module.bill
+            select 1 from pos.bill
             where sale_id = new.sale_id
         ) then
             raise notice '⚠️  Bill already exists for sale: %', new.sale_id;
@@ -1109,7 +1109,7 @@ begin
         
         _tenant_customer_id := (
             select tenant_customer_id 
-            from pos_module.customer_payment 
+            from pos.customer_payment 
             where sale_id = new.sale_id 
             limit 1
         );
@@ -1129,7 +1129,7 @@ begin
         raise notice '   Tax: $%', _tax;
         raise notice '   Total: $%', _total;
 
-        INSERT INTO pos_module.bill (
+        INSERT INTO pos.bill (
             sale_id,              
             tenant_customer_id,
             currency_id,
@@ -1148,16 +1148,16 @@ begin
         raise notice '   ✅ Bill created: %', _bill_id;
         
         select array_agg(customer_payment_id) into _payment_ids
-        from pos_module.customer_payment
+        from pos.customer_payment
         where sale_id = new.sale_id
         and verified = true;
         
-        INSERT INTO pos_module.bill_payment(bill_id, customer_payment_id, payment_amount)
+        INSERT INTO pos.bill_payment(bill_id, customer_payment_id, payment_amount)
         select 
             _bill_id,
             customer_payment_id,
             payment_amount
-        from pos_module.customer_payment
+        from pos.customer_payment
         where customer_payment_id = any(_payment_ids);
         
         raise notice '   ✅ % payment(s) linked to bill', array_length(_payment_ids, 1);
@@ -1175,9 +1175,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_sale_completed_create_bill on pos_module.sale;
+drop trigger if exists on_sale_completed_create_bill on pos.sale;
 create trigger on_sale_completed_create_bill
-    after update of is_completed on pos_module.sale
+    after update of is_completed on pos.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
     execute function create_bill();
@@ -1210,7 +1210,7 @@ begin
         si.product_id,
         si.tenant_id
     into _sale_item_record
-    from pos_module.sale_item si
+    from pos.sale_item si
     where si.sale_item_id = new.sale_item_id;
 
     if not found then
@@ -1220,7 +1220,7 @@ begin
     _sale_id := _sale_item_record.sale_id;
 
     -- get bill for sale
-    select bill_id into _bill_id from pos_module.bill where sale_id = _sale_id limit 1;
+    select bill_id into _bill_id from pos.bill where sale_id = _sale_id limit 1;
     if _bill_id is null then
         raise exception 'Bill not found for sale: %', _sale_id;
     end if;
@@ -1238,10 +1238,10 @@ begin
 
     -- Update or remove sale_item to reconcile sale
     if _quantity_remaining = 0 then
-        delete from pos_module.sale_item where sale_item_id = _sale_item_record.sale_item_id;
+        delete from pos.sale_item where sale_item_id = _sale_item_record.sale_item_id;
         raise notice '🗑️  Sale item removed (quantity = 0)';
     else
-        update pos_module.sale_item
+        update pos.sale_item
         set quantity = _quantity_remaining,
             total_price = _quantity_remaining * unit_price,
             updated_at = current_timestamp
@@ -1251,7 +1251,7 @@ begin
 
     -- Update bill totals
     select subtotal_amount, tax_amount, total_amount into _original_subtotal, _original_tax, _original_total
-    from pos_module.bill where bill_id = _bill_id;
+    from pos.bill where bill_id = _bill_id;
 
     _total_returned := new.quantity * new.unit_price;
     raise notice '💰 Amount returned (line): $%', _total_returned;
@@ -1263,7 +1263,7 @@ begin
     select t.tenant_id, r.region_name into _tenant_id, _region_name
     from general.tenant t
     join general.branch b on b.tenant_id = t.tenant_id
-    join pos_module.sale s on s.branch_id = b.branch_id
+    join pos.sale s on s.branch_id = b.branch_id
     join general.region r on r.region_id = t.region_id
     where s.sale_id = _sale_id
     limit 1;
@@ -1274,7 +1274,7 @@ begin
     _new_tax := round(_new_subtotal * (_tax_rate / 100), 2);
     _new_total := round(_new_subtotal + _new_tax, 2);
 
-    update pos_module.bill
+    update pos.bill
     set subtotal_amount = _new_subtotal,
         tax_amount = _new_tax,
         total_amount = _new_total,
@@ -1283,11 +1283,11 @@ begin
 
     raise notice '📊 Bill updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
 
-    select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_module.sale_item si where si.sale_id = _sale_id;
+    select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos.sale_item si where si.sale_id = _sale_id;
     _new_tax := round(_sale_subtotal_after * (_tax_rate / 100), 2);
     _new_total := round(_sale_subtotal_after + _new_tax, 2);
 
-    update pos_module.sale
+    update pos.sale
     set subtotal_amount = _sale_subtotal_after,
         tax_amount = _new_tax,
         total_amount = _new_total,
@@ -1300,9 +1300,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists update_on_return_trigger on pos_module.return_product;
+drop trigger if exists update_on_return_trigger on pos.return_product;
 create trigger update_on_return_trigger
-    after insert on pos_module.return_product
+    after insert on pos.return_product
     for each row
     execute function update_on_return();
 
@@ -1324,12 +1324,12 @@ begin
     
     for _promo in
         select p.promotion_id, p.promo_code, p.promo_name, p.promo_start_date
-        from pos_module.promotion p
+        from pos.promotion p
         where p.is_active = false
         and p.promo_start_date <= _now
         and p.promo_end_date > _now
     loop
-        update pos_module.promotion
+        update pos.promotion
         set is_active = true,
             updated_at = _now
         where promotion_id = _promo.promotion_id;
@@ -1346,11 +1346,11 @@ begin
     
     for _promo in
         select p.promotion_id, p.promo_code, p.promo_name, p.promo_end_date
-        from pos_module.promotion p
+        from pos.promotion p
         where p.is_active = true
         and p.promo_end_date <= _now
     loop
-        update pos_module.promotion
+        update pos.promotion
         set is_active = false,
             updated_at = _now
         where promotion_id = _promo.promotion_id;
@@ -1375,18 +1375,18 @@ $$ language plpgsql;
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos.promotion_rule
     where promotion_id = _promotion_id
     and discount_percentage is not null
     limit 1;
@@ -1425,18 +1425,18 @@ create or replace function calculate_fixed_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos.promotion_rule
     where promotion_id = _promotion_id
     and discount_amount is not null
     limit 1;
@@ -1475,19 +1475,19 @@ create or replace function calculate_buy_x_get_y_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
     _free_items integer;
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos.promotion_rule
     where promotion_id = _promotion_id
     and buy_quantity is not null
     and get_quantity is not null
@@ -1531,18 +1531,18 @@ create or replace function calculate_volume_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos.promotion_rule
     where promotion_id = _promotion_id
     and min_quantity is not null
     and discount_percentage is not null
@@ -1580,18 +1580,18 @@ create or replace function calculate_tiered_pricing_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos.discount_result as $$
 declare
     _rule record;
     _total_price numeric(10,2);
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     _total_price := _quantity * _unit_price;
     
     select * into _rule
-    from pos_module.promotion_rule
+    from pos.promotion_rule
     where promotion_id = _promotion_id
     and tier_level is not null
     and tier_min_quantity <= _quantity
@@ -1645,9 +1645,9 @@ create or replace function calculate_combo_discount(
     _quantity integer,
     _unit_price numeric(10,2),
     _total_purchase_amount numeric(10,2)
-) returns pos_module.discount_result as $$
+) returns pos.discount_result as $$
 declare
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     raise notice '   ℹ️  Combo discounts require multiple products and should be calculated at cart level';
     _result.success := false;
@@ -1671,7 +1671,7 @@ create or replace function calculate_promotion_discount(
 declare
     _promo record;
     _type_name varchar(50);
-    _result pos_module.discount_result;
+    _result pos.discount_result;
 begin
     select 
         p.promotion_id,
@@ -1682,8 +1682,8 @@ begin
         p.promotion_end_date,
         pt.type_name
     into _promo
-    from pos_module.promotion p
-    join pos_module.promotion_type pt on p.promotion_type_id = pt.promotion_type_id
+    from pos.promotion p
+    join pos.promotion_type pt on p.promotion_type_id = pt.promotion_type_id
     where p.promotion_id = _promotion_id
     and p.tenant_id = _tenant_id;
     
@@ -1709,32 +1709,32 @@ begin
     
     case _type_name
         when 'percentage_discount' then
-            _result := pos_module.calculate_percentage_discount(
+            _result := pos.calculate_percentage_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'fixed_amount_discount' then
-            _result := pos_module.calculate_fixed_discount(
+            _result := pos.calculate_fixed_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'buy_x_get_y' then
-            _result := pos_module.calculate_buy_x_get_y_discount(
+            _result := pos.calculate_buy_x_get_y_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'volume_discount' then
-            _result := pos_module.calculate_volume_discount(
+            _result := pos.calculate_volume_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'tiered_pricing' then
-            _result := pos_module.calculate_tiered_pricing_discount(
+            _result := pos.calculate_tiered_pricing_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
         when 'combo' then
-            _result := pos_module.calculate_combo_discount(
+            _result := pos.calculate_combo_discount(
                 _promotion_id, _quantity, _unit_price, _total_purchase_amount
             );
             
@@ -1773,7 +1773,7 @@ declare
 begin
         if _action = 'open' then
             select cash_register_session_id into _session_id
-            from pos_module.cash_register_session
+            from pos.cash_register_session
             where cash_register_id = _cash_register_id
             and is_active = true
             limit 1;
@@ -1783,7 +1783,7 @@ begin
                     _cash_register_id, _session_id;
             end if;
             
-            INSERT INTO pos_module.cash_register_session (
+            INSERT INTO pos.cash_register_session (
                 cash_register_id,
                 opened_at,
                 opening_amount,
@@ -1805,7 +1805,7 @@ begin
             raise notice '   Opened at: %', current_timestamp;
             
         elsif _action = 'close' then
-            update pos_module.cash_register_session
+            update pos.cash_register_session
             set closed_at = current_timestamp,
                 closing_amount = _amount,
                 is_active = false,
@@ -1858,7 +1858,7 @@ declare
 begin
         select exists(
             select 1 
-            from pos_module.loyalty_program 
+            from pos.loyalty_program 
             where tenant_id = _tenant_id 
             and is_active = true
         ) into _program_exists;
@@ -1874,7 +1874,7 @@ begin
         into 
             _minimum_purchase, 
             _points_earned_per_currency_unit 
-        from pos_module.loyalty_program 
+        from pos.loyalty_program 
         where tenant_id = _tenant_id
         and is_active = true
         limit 1;
@@ -1908,7 +1908,7 @@ begin
         
         select exists(
             select 1 
-            from pos_module.score_transaction 
+            from pos.score_transaction 
             where bill_id = _bill_id 
             and transaction_type_id = 1  
         ) into _points_already_awarded;
@@ -1919,7 +1919,7 @@ begin
         end if;
         
         select tenant_customer_id into _tenant_customer_id
-        from pos_module.bill
+        from pos.bill
         where bill_id = _bill_id;
         
         if _tenant_customer_id is null then
@@ -1937,14 +1937,14 @@ begin
         end if;
         
         select coalesce(sum(cp.payment_amount), 0) into _cash_payments_total
-        from pos_module.bill_payment bp
-        join pos_module.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
+        from pos.bill_payment bp
+        join pos.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
         where bp.bill_id = _bill_id
         and cp.is_points_redemption = false;
         
         raise notice '💵 Cash/card payments total: $%', _cash_payments_total;
         
-        _points_earned := pos_module.calculate_purchase_score(
+        _points_earned := pos.calculate_purchase_score(
             _tenant_id,
             _tenant_customer_id,
             _cash_payments_total
@@ -1955,7 +1955,7 @@ begin
             return new;
         end if;
         
-        INSERT INTO pos_module.tenant_customer_score(
+        INSERT INTO pos.tenant_customer_score(
             tenant_id,
             tenant_customer_id,
             score,
@@ -1975,7 +1975,7 @@ begin
             last_earned_at = current_timestamp
         returning score into _current_balance;
         
-        INSERT INTO pos_module.score_transaction(
+        INSERT INTO pos.score_transaction(
             tenant_id,
             tenant_customer_id,
             transaction_type_id,
@@ -2004,11 +2004,11 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_purchase_billed on pos_module.bill_payment;
+drop trigger if exists on_purchase_billed on pos.bill_payment;
 create trigger on_purchase_billed
-    after insert on pos_module.bill_payment
+    after insert on pos.bill_payment
     for each row
-    execute function pos_module.award_points();
+    execute function pos.award_points();
 
 create or replace function redeem_points(
 _tenant_customer_id uuid,
@@ -2039,12 +2039,12 @@ begin
     end if; 
 
     select score into _current_points
-    from pos_module.tenant_customer_score
+    from pos.tenant_customer_score
     where tenant_customer_id = _tenant_customer_id
     and tenant_id = _tenant_id;
 
     select points_redeemed_per_currency_unit into _points_redeemed_per_currency_unit
-    from pos_module.loyalty_program
+    from pos.loyalty_program
     where tenant_id = _tenant_id
     and is_active = true
     limit 1;
@@ -2070,7 +2070,7 @@ begin
 
     _cash_equivalent := _points_to_redeem / _points_redeemed_per_currency_unit;
 
-    update pos_module.tenant_customer_score
+    update pos.tenant_customer_score
     set score = score - _points_to_redeem,
         score_redeemed = score_redeemed + _points_to_redeem,
         last_redeemed_at = current_timestamp,
@@ -2078,7 +2078,7 @@ begin
     where tenant_customer_id = _tenant_customer_id
     and tenant_id = _tenant_id;
 
-    INSERT INTO pos_module.score_transaction(
+    INSERT INTO pos.score_transaction(
         tenant_id,
         tenant_customer_id,
         transaction_type_id,
@@ -2127,7 +2127,7 @@ declare
 begin
     select exists(
         select 1 
-        from pos_module.customer_payment 
+        from pos.customer_payment 
         where customer_payment_id = _payment_id
     ) into _exists;
     
@@ -2149,7 +2149,7 @@ begin
         _payment_amount,
         _is_points_redemption,
         _points_redeemed
-    from pos_module.customer_payment 
+    from pos.customer_payment 
     where customer_payment_id = _payment_id;
     
     if _already_verified then
@@ -2168,7 +2168,7 @@ begin
     
     select name into _payment_method
     from general.payment_method pm
-    join pos_module.customer_payment cp on pm.payment_method_id = cp.payment_method_id
+    join pos.customer_payment cp on pm.payment_method_id = cp.payment_method_id
     where cp.customer_payment_id = _payment_id;
     
     raise notice '   Method: %', _payment_method;
@@ -2179,7 +2179,7 @@ begin
         raise notice '   Points to redeem: %', _points_redeemed;
         
         select * into _redeem_result
-        from pos_module.redeem_points(
+        from pos.redeem_points(
             _tenant_customer_id,
             _points_redeemed
         );
@@ -2199,7 +2199,7 @@ begin
         raise notice '';
     end if;
 
-    update pos_module.customer_payment
+    update pos.customer_payment
     set verified = true,
         updated_at = current_timestamp
     where customer_payment_id = _payment_id;
@@ -2208,7 +2208,7 @@ begin
     raise notice '';
     
     raise notice '🔍 Checking if sale is fully paid...';
-    _sale_completed := pos_module.check_sale_payment_completion(_sale_id);
+    _sale_completed := pos.check_sale_payment_completion(_sale_id);
     
     if _sale_completed then
         raise notice '';
@@ -2229,62 +2229,62 @@ $$ language plpgsql;
 -- UPDATE TIMESTAMP TRIGGERS
 -- ==========================
 
-drop trigger if exists update_customer_payment_timestamp on pos_module.customer_payment;
-create trigger update_customer_payment_timestamp before update on pos_module.customer_payment
+drop trigger if exists update_customer_payment_timestamp on pos.customer_payment;
+create trigger update_customer_payment_timestamp before update on pos.customer_payment
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_bill_timestamp on pos_module.bill;
-create trigger update_bill_timestamp before update on pos_module.bill
+drop trigger if exists update_bill_timestamp on pos.bill;
+create trigger update_bill_timestamp before update on pos.bill
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_return_transaction_timestamp on pos_module.return_transaction;
-create trigger update_return_transaction_timestamp before update on pos_module.return_transaction
+drop trigger if exists update_return_transaction_timestamp on pos.return_transaction;
+create trigger update_return_transaction_timestamp before update on pos.return_transaction
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_return_product_timestamp on pos_module.return_product;
-create trigger update_return_product_timestamp before update on pos_module.return_product
+drop trigger if exists update_return_product_timestamp on pos.return_product;
+create trigger update_return_product_timestamp before update on pos.return_product
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_promotion_timestamp on pos_module.promotion;
-create trigger update_promotion_timestamp before update on pos_module.promotion
+drop trigger if exists update_promotion_timestamp on pos.promotion;
+create trigger update_promotion_timestamp before update on pos.promotion
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_promotion_rule_timestamp on pos_module.promotion_rule;
-create trigger update_promotion_rule_timestamp before update on pos_module.promotion_rule
+drop trigger if exists update_promotion_rule_timestamp on pos.promotion_rule;
+create trigger update_promotion_rule_timestamp before update on pos.promotion_rule
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_cash_register_session_timestamp on pos_module.cash_register_session;
-create trigger update_cash_register_session_timestamp before update on pos_module.cash_register_session
+drop trigger if exists update_cash_register_session_timestamp on pos.cash_register_session;
+create trigger update_cash_register_session_timestamp before update on pos.cash_register_session
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_cash_register_sale_timestamp on pos_module.cash_register_sale;
-create trigger update_cash_register_sale_timestamp before update on pos_module.cash_register_sale
+drop trigger if exists update_cash_register_sale_timestamp on pos.cash_register_sale;
+create trigger update_cash_register_sale_timestamp before update on pos.cash_register_sale
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_tenant_customer_score_timestamp on pos_module.tenant_customer_score;
-create trigger update_tenant_customer_score_timestamp before update on pos_module.tenant_customer_score
+drop trigger if exists update_tenant_customer_score_timestamp on pos.tenant_customer_score;
+create trigger update_tenant_customer_score_timestamp before update on pos.tenant_customer_score
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_score_transaction_timestamp on pos_module.score_transaction;
-create trigger update_score_transaction_timestamp before update on pos_module.score_transaction
+drop trigger if exists update_score_transaction_timestamp on pos.score_transaction;
+create trigger update_score_transaction_timestamp before update on pos.score_transaction
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_bill_payment_timestamp on pos_module.bill_payment;
-create trigger update_bill_payment_timestamp before update on pos_module.bill_payment
+drop trigger if exists update_bill_payment_timestamp on pos.bill_payment;
+create trigger update_bill_payment_timestamp before update on pos.bill_payment
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_sale_timestamp on pos_module.sale;
-create trigger update_sale_timestamp before update on pos_module.sale
+drop trigger if exists update_sale_timestamp on pos.sale;
+create trigger update_sale_timestamp before update on pos.sale
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_sale_item_timestamp on pos_module.sale_item;
-create trigger update_sale_item_timestamp before update on pos_module.sale_item
+drop trigger if exists update_sale_item_timestamp on pos.sale_item;
+create trigger update_sale_item_timestamp before update on pos.sale_item
 for each row execute function general.update_timestamp();
 
 -- SCHEMA: purchase
 -- SCHEMA: purchase
-create schema if not exists purchase_module;
-set search_path to purchase_module;
+CREATE SCHEMA IF NOT EXISTS purchase;
+SET SEARCH_PATH TO purchase;
 
 CREATE TABLE IF NOT EXISTS supplier(
     supplier_id uuid primary key default gen_random_uuid(),
@@ -2296,11 +2296,11 @@ CREATE TABLE IF NOT EXISTS supplier(
     updated_at timestamp default current_timestamp
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_supplier_name on purchase_module.supplier(supplier_name);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_supplier_name on purchase.supplier(supplier_name);
 
 CREATE TABLE IF NOT EXISTS supplier_branch(
     supplier_branch_id uuid primary key default gen_random_uuid(),
-    supplier_id uuid not null REFERENCES purchase_module.supplier(supplier_id) on delete cascade,
+    supplier_id uuid not null REFERENCES purchase.supplier(supplier_id) on delete cascade,
     branch_id uuid not null REFERENCES general.branch(branch_id) on delete cascade,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp,
@@ -2324,18 +2324,18 @@ ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS purchase_order(
     purchase_order_id uuid primary key default gen_random_uuid(),
-    supplier_id uuid not null REFERENCES purchase_module.supplier(supplier_id) on delete cascade,
-    warehouse_id uuid not null REFERENCES inventory_module.warehouse(warehouse_id) on delete cascade,
+    supplier_id uuid not null REFERENCES purchase.supplier(supplier_id) on delete cascade,
+    warehouse_id uuid not null REFERENCES inventory_schema.warehouse(warehouse_id) on delete cascade,
     purchase_order_date date default current_date,
     expected_delivery_date date,
-    purchase_order_status_id integer not null REFERENCES purchase_module.purchase_order_status(status_id) default 1,
+    purchase_order_status_id integer not null REFERENCES purchase.purchase_order_status(status_id) default 1,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
 CREATE TABLE IF NOT EXISTS purchase_order_item(
     purchase_order_item_id uuid primary key default gen_random_uuid(),
-    purchase_order_id uuid not null REFERENCES purchase_module.purchase_order(purchase_order_id) on delete cascade,
+    purchase_order_id uuid not null REFERENCES purchase.purchase_order(purchase_order_id) on delete cascade,
     tenant_id uuid not null,                                                         
     product_id uuid not null,
     quantity_ordered integer not null,
@@ -2348,16 +2348,16 @@ CREATE TABLE IF NOT EXISTS purchase_order_item(
 
 CREATE TABLE IF NOT EXISTS purchase_order_tracking(
     purchase_order_tracking_id uuid primary key default gen_random_uuid(),
-    purchase_order_id uuid not null REFERENCES purchase_module.purchase_order(purchase_order_id) on delete cascade,
-    previous_status_id int REFERENCES purchase_module.purchase_order_status(status_id),
-    new_status_id int not null REFERENCES purchase_module.purchase_order_status(status_id),
+    purchase_order_id uuid not null REFERENCES purchase.purchase_order(purchase_order_id) on delete cascade,
+    previous_status_id int REFERENCES purchase.purchase_order_status(status_id),
+    new_status_id int not null REFERENCES purchase.purchase_order_status(status_id),
     notes text,
     changed_at timestamp default current_timestamp
 );
 
 CREATE TABLE IF NOT EXISTS supplier_invoice(
     supplier_invoice_id uuid primary key default gen_random_uuid(),
-    purchase_order_id uuid not null REFERENCES purchase_module.purchase_order(purchase_order_id) on delete cascade,
+    purchase_order_id uuid not null REFERENCES purchase.purchase_order(purchase_order_id) on delete cascade,
     invoice_number varchar(100) not null,
     invoice_date timestamp default current_timestamp,
     payment_condition varchar(10) not null default 'CREDIT', 
@@ -2377,7 +2377,7 @@ CREATE TABLE IF NOT EXISTS supplier_invoice(
 
 CREATE TABLE IF NOT EXISTS supplier_invoice_item(
     supplier_invoice_item_id uuid primary key default gen_random_uuid(),
-    supplier_invoice_id uuid not null REFERENCES purchase_module.supplier_invoice(supplier_invoice_id) on delete cascade,
+    supplier_invoice_id uuid not null REFERENCES purchase.supplier_invoice(supplier_invoice_id) on delete cascade,
     tenant_id uuid not null,                                                         
     product_id uuid not null,
     quantity_billed integer not null,
@@ -2390,7 +2390,7 @@ CREATE TABLE IF NOT EXISTS supplier_invoice_item(
 
 CREATE TABLE IF NOT EXISTS goods_receipt(
     goods_receipt_id uuid primary key default gen_random_uuid(),
-    purchase_order_id uuid not null REFERENCES purchase_module.purchase_order(purchase_order_id) on delete cascade,
+    purchase_order_id uuid not null REFERENCES purchase.purchase_order(purchase_order_id) on delete cascade,
     received_date timestamp default current_timestamp,
     subtotal_amount numeric(12,3) default 0,
     tax_amount numeric(12,3) default 0,
@@ -2401,7 +2401,7 @@ CREATE TABLE IF NOT EXISTS goods_receipt(
 
 CREATE TABLE IF NOT EXISTS goods_receipt_item(
     goods_receipt_item_id uuid primary key default gen_random_uuid(),
-    goods_receipt_id uuid not null REFERENCES purchase_module.goods_receipt(goods_receipt_id) on delete cascade,
+    goods_receipt_id uuid not null REFERENCES purchase.goods_receipt(goods_receipt_id) on delete cascade,
     tenant_id uuid not null,                                                         
     product_id uuid not null,
     quantity_received integer not null,
@@ -2424,43 +2424,34 @@ CREATE TABLE IF NOT EXISTS goods_receipt_item(
 -- ('Paid', 'Payment has been made'),
 -- ('Overdue', 'Payment is overdue')
 -- ON CONFLICT DO NOTHING;
--- drop table if exists purchase_module.account_payable_status cascade;
+-- drop table if exists purchase.account_payable_status cascade;
 
--- drop table if exists purchase_module.account_payable cascade;
+-- drop table if exists purchase.account_payable cascade;
 
-CREATE TABLE IF NOT EXISTS purchase_account_payable(
+CREATE TABLE IF NOT EXISTS purchase.purchase_account_payable(
     purchase_account_payable_id uuid primary key default gen_random_uuid(),
     account_payable_id uuid NOT NULL UNIQUE REFERENCES general.account_payable(account_payable_id) ON DELETE CASCADE,
-    purchase_order_id uuid NOT NULL UNIQUE REFERENCES purchase_module.purchase_order(purchase_order_id) ON DELETE CASCADE,
+    purchase_order_id uuid NOT NULL UNIQUE REFERENCES purchase.purchase_order(purchase_order_id) ON DELETE CASCADE,
     tax_amount numeric(12,3) default 0,
     account_payable_status INTEGER REFERENCES general.account_payable_status(status_id),
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
--- drop table if exists purchase_module.purchase_order_payment cascade;
-
--- ...existing code...
-
--- Corrección para recrear la tabla de alertas con la estructura correcta
-DROP TABLE IF EXISTS purchase_module.purchase_order_payment_alert CASCADE;
-
-CREATE TABLE purchase_module.purchase_order_payment_alert(
+CREATE TABLE purchase.purchase_order_payment_alert(
     payment_alert_id uuid primary key default gen_random_uuid(),
-    purchase_account_payable_id uuid not null REFERENCES purchase_module.purchase_account_payable(purchase_account_payable_id) on delete cascade,
-    payment_alert_type_id integer not null REFERENCES purchase_module.purchase_order_payment_alert_type(payment_alert_type_id),
+    purchase_account_payable_id uuid not null REFERENCES purchase.purchase_account_payable(purchase_account_payable_id) on delete cascade,
+    payment_alert_type_id integer not null REFERENCES purchase.purchase_order_payment_alert_type(payment_alert_type_id),
     alert_date timestamp default current_timestamp,
     is_resolved boolean default false,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
 );
 
--- Re-aplicar triggers de timestamp si es necesario
-drop trigger if exists update_purchase_order_payment_alert_timestamp on purchase_module.purchase_order_payment_alert;
-create trigger update_purchase_order_payment_alert_timestamp before update on purchase_module.purchase_order_payment_alert
+drop trigger if exists update_purchase_order_payment_alert_timestamp on purchase.purchase_order_payment_alert;
+create trigger update_purchase_order_payment_alert_timestamp before update on purchase.purchase_order_payment_alert
 for each row execute function general.update_timestamp();
 
--- ...existing code...
 
 CREATE TABLE IF NOT EXISTS purchase_order_payment_alert_type(
     payment_alert_type_id serial primary key,
@@ -2478,8 +2469,8 @@ ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS purchase_order_payment_alert(
     payment_alert_id uuid primary key default gen_random_uuid(),
-    purchase_account_payable_id uuid not null REFERENCES purchase_module.purchase_account_payable(purchase_account_payable_id) on delete cascade,
-    payment_alert_type_id integer not null REFERENCES purchase_module.purchase_order_payment_alert_type(payment_alert_type_id),
+    purchase_account_payable_id uuid not null REFERENCES purchase.purchase_account_payable(purchase_account_payable_id) on delete cascade,
+    payment_alert_type_id integer not null REFERENCES purchase.purchase_order_payment_alert_type(payment_alert_type_id),
     alert_date timestamp default current_timestamp,
     is_resolved boolean default false,
     created_at timestamp default current_timestamp,
@@ -2499,9 +2490,9 @@ CREATE TABLE IF NOT EXISTS purchase_order_payment_alert_config(
 
 CREATE TABLE IF NOT EXISTS three_way_matching(
     matching_id uuid primary key default gen_random_uuid(),
-    purchase_order_id uuid not null REFERENCES purchase_module.purchase_order(purchase_order_id) on delete cascade,
-    goods_receipt_id uuid not null REFERENCES purchase_module.goods_receipt(goods_receipt_id) on delete cascade,
-    supplier_invoice_id uuid not null REFERENCES purchase_module.supplier_invoice(supplier_invoice_id) on delete cascade,
+    purchase_order_id uuid not null REFERENCES purchase.purchase_order(purchase_order_id) on delete cascade,
+    goods_receipt_id uuid not null REFERENCES purchase.goods_receipt(goods_receipt_id) on delete cascade,
+    supplier_invoice_id uuid not null REFERENCES purchase.supplier_invoice(supplier_invoice_id) on delete cascade,
     amounts_matched boolean default false,
     quantities_matched boolean default false,
     is_matched boolean default false,
@@ -2522,7 +2513,7 @@ declare
 begin
     select coalesce(sum(quantity_ordered * unit_price), 0)
     into v_total
-    from purchase_module.purchase_order_item
+    from purchase.purchase_order_item
     where purchase_order_id = p_purchase_order_id;
 
     return round(v_total::numeric, 3);
@@ -2554,8 +2545,8 @@ declare
 begin
     -- Obtener tenant_id desde la relación supplier -> supplier_branch -> branch
     select b.tenant_id into v_tenant_id
-    from purchase_module.supplier s
-    join purchase_module.supplier_branch sb on s.supplier_id = sb.supplier_id
+    from purchase.supplier s
+    join purchase.supplier_branch sb on s.supplier_id = sb.supplier_id
     join general.branch b on b.branch_id = sb.branch_id
     where s.supplier_id = p_supplier_id
     limit 1;
@@ -2565,7 +2556,7 @@ begin
     end if;
 
     -- Crear la orden de compra
-    INSERT INTO purchase_module.purchase_order(
+    INSERT INTO purchase.purchase_order(
         supplier_id,
         warehouse_id,
         expected_delivery_date,
@@ -2585,7 +2576,7 @@ begin
             v_qty := coalesce((v_item ->> 'quantity_ordered')::int, 0);
             v_unit := coalesce((v_item ->> 'unit_price')::numeric, 0);
 
-            INSERT INTO purchase_module.purchase_order_item(
+            INSERT INTO purchase.purchase_order_item(
                 purchase_order_id,
                 tenant_id,
                 product_id,
@@ -2602,7 +2593,7 @@ begin
     end if;
 
     -- Calcular subtotal de la orden
-    v_subtotal := coalesce(purchase_module.calculate_purchase_order_total(v_purchase_order_id), 0);
+    v_subtotal := coalesce(purchase.calculate_purchase_order_total(v_purchase_order_id), 0);
 
     -- Obtener tasa de impuesto del tenant
     select coalesce(tr.rate_percentage, 13.00) into v_tax_rate
@@ -2647,7 +2638,7 @@ begin
     ) returning account_payable_id into v_account_payable_id;
 
     -- ✅ PASO 2: Crear registro en la tabla HIJA (purchase_account_payable)
-    INSERT INTO purchase_module.purchase_account_payable(
+    INSERT INTO purchase.purchase_account_payable(
         account_payable_id,
         purchase_order_id,
         tax_amount,
@@ -2661,7 +2652,7 @@ begin
 
     -- Crear factura si se requiere
     if p_has_invoice then
-        INSERT INTO purchase_module.supplier_invoice(
+        INSERT INTO purchase.supplier_invoice(
             purchase_order_id,
             invoice_number,
             invoice_date,
@@ -2680,7 +2671,7 @@ begin
         ) returning supplier_invoice_id into v_supplier_invoice_id;
 
         -- Crear items de factura desde los items de la orden
-        INSERT INTO purchase_module.supplier_invoice_item(
+        INSERT INTO purchase.supplier_invoice_item(
             supplier_invoice_id,
             tenant_id,
             product_id,
@@ -2693,7 +2684,7 @@ begin
             product_id,
             quantity_ordered,
             unit_price
-        from purchase_module.purchase_order_item
+        from purchase.purchase_order_item
         where purchase_order_id = v_purchase_order_id;
     end if;
 
@@ -2704,7 +2695,7 @@ $$ language plpgsql;
 create or replace function update_order_status()
 returns trigger as $$
 begin
-    INSERT INTO purchase_module.purchase_order_tracking(
+    INSERT INTO purchase.purchase_order_tracking(
         purchase_order_id,
         previous_status_id,
         new_status_id,
@@ -2722,9 +2713,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_order_status_update on purchase_module.purchase_order;
+drop trigger if exists on_order_status_update on purchase.purchase_order;
 create trigger on_order_status_update
-after update of purchase_order_status_id on purchase_module.purchase_order
+after update of purchase_order_status_id on purchase.purchase_order
 for each row execute function update_order_status();
 
 DROP FUNCTION IF EXISTS check_account_payable_completion(UUID);
@@ -2755,7 +2746,7 @@ BEGIN
         _current_amount_paid,
         _target_purchase_ap_id
     FROM general.account_payable ap
-    JOIN purchase_module.purchase_account_payable sap 
+    JOIN purchase.purchase_account_payable sap 
         ON ap.account_payable_id = sap.account_payable_id
     WHERE ap.account_payable_id = _account_payable_id;
 
@@ -2764,7 +2755,7 @@ BEGIN
     END IF;
 
     SELECT COUNT(*) INTO _pending_payments
-    FROM purchase_module.purchase_order_payment sop
+    FROM purchase.purchase_order_payment sop
     WHERE sop.purchase_account_payable_id = _target_purchase_ap_id
     AND sop.verified = FALSE;
 
@@ -2773,7 +2764,7 @@ BEGIN
     END IF;
 
     SELECT COALESCE(SUM(sop.amount_paid), 0) INTO _payments_total
-    FROM purchase_module.purchase_order_payment sop
+    FROM purchase.purchase_order_payment sop
     WHERE sop.purchase_account_payable_id = _target_purchase_ap_id
     AND sop.verified = TRUE;
 
@@ -2790,7 +2781,7 @@ BEGIN
             updated_at = CURRENT_TIMESTAMP
         WHERE account_payable_id = _account_payable_id;
 
-        UPDATE purchase_module.purchase_account_payable
+        UPDATE purchase.purchase_account_payable
         SET account_payable_status = 3,
             updated_at = CURRENT_TIMESTAMP
         WHERE account_payable_id = _account_payable_id;
@@ -2798,7 +2789,7 @@ BEGIN
         RETURN TRUE;
 
     ELSIF _payments_total > 0 THEN
-        UPDATE purchase_module.purchase_account_payable
+        UPDATE purchase.purchase_account_payable
         SET account_payable_status = 2,
             updated_at = CURRENT_TIMESTAMP
         WHERE account_payable_id = _account_payable_id;
@@ -2815,9 +2806,9 @@ create or replace function recalc_account_payable_on_payment()
 returns trigger as $$
 begin
     if new.verified = true and (old.verified is null or old.verified = false) then
-        perform purchase_module.check_account_payable_completion(
+        perform purchase.check_account_payable_completion(
             (select account_payable_id 
-             from purchase_module.purchase_account_payable 
+             from purchase.purchase_account_payable 
              where purchase_account_payable_id = new.purchase_account_payable_id)
         );
     end if;
@@ -2825,9 +2816,9 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists recalc_account_payable_on_payment_trigger on purchase_module.purchase_order_payment;
+drop trigger if exists recalc_account_payable_on_payment_trigger on purchase.purchase_order_payment;
 create trigger recalc_account_payable_on_payment_trigger
-    after update of verified on purchase_module.purchase_order_payment
+    after update of verified on purchase.purchase_order_payment
     for each row
     execute function recalc_account_payable_on_payment();
 
@@ -2842,7 +2833,7 @@ begin
         where account_payable_id = new.account_payable_id;
         
         if v_is_paid = true then
-            update purchase_module.supplier_invoice
+            update purchase.supplier_invoice
             set paid = true,
                 updated_at = current_timestamp
             where purchase_order_id = new.purchase_order_id;
@@ -2853,11 +2844,11 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists update_invoice_paid_status_trigger on purchase_module.purchase_account_payable;
+drop trigger if exists update_invoice_paid_status_trigger on purchase.purchase_account_payable;
 create trigger update_invoice_paid_status_trigger
-    after update of account_payable_status on purchase_module.purchase_account_payable
+    after update of account_payable_status on purchase.purchase_account_payable
     for each row
-    execute function purchase_module.update_invoice_paid_status();
+    execute function purchase.update_invoice_paid_status();
 
 create or replace function create_goods_receipt()
 returns trigger as $$
@@ -2870,7 +2861,7 @@ begin
     if new.purchase_order_status_id = 3 and old.purchase_order_status_id is distinct from 3 then
         if exists(
             select 1 
-            from purchase_module.goods_receipt 
+            from purchase.goods_receipt 
             where purchase_order_id = new.purchase_order_id
         ) then
             return new;
@@ -2881,11 +2872,11 @@ begin
             sap.tax_amount
         into v_subtotal, v_tax_amount
         from general.account_payable ap
-        join purchase_module.purchase_account_payable sap 
+        join purchase.purchase_account_payable sap 
             on ap.account_payable_id = sap.account_payable_id
         where sap.purchase_order_id = new.purchase_order_id;
 
-        INSERT INTO purchase_module.goods_receipt(
+        INSERT INTO purchase.goods_receipt(
             purchase_order_id,
             received_date,
             subtotal_amount,
@@ -2899,10 +2890,10 @@ begin
 
         for v_item in 
             select tenant_id, product_id, quantity_ordered
-            from purchase_module.purchase_order_item
+            from purchase.purchase_order_item
             where purchase_order_id = new.purchase_order_id
         loop
-            INSERT INTO purchase_module.goods_receipt_item(
+            INSERT INTO purchase.goods_receipt_item(
                 goods_receipt_id,
                 tenant_id,
                 product_id,
@@ -2915,18 +2906,18 @@ begin
             );
         end loop;
 
-        perform purchase_module.execute_three_way_matching(new.purchase_order_id, v_goods_receipt_id);
+        perform purchase.execute_three_way_matching(new.purchase_order_id, v_goods_receipt_id);
     end if;
 
     return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists create_goods_receipt_trigger on purchase_module.purchase_order;
+drop trigger if exists create_goods_receipt_trigger on purchase.purchase_order;
 create trigger create_goods_receipt_trigger
-    after update of purchase_order_status_id on purchase_module.purchase_order
+    after update of purchase_order_status_id on purchase.purchase_order
     for each row
-    execute function purchase_module.create_goods_receipt();
+    execute function purchase.create_goods_receipt();
 
 create or replace function execute_three_way_matching(
     p_purchase_order_id uuid,
@@ -2950,7 +2941,7 @@ declare
     v_quantities_matched boolean;
 begin
     select supplier_invoice_id into v_supplier_invoice_id
-    from purchase_module.supplier_invoice
+    from purchase.supplier_invoice
     where purchase_order_id = p_purchase_order_id;
 
     if v_supplier_invoice_id is null then
@@ -2959,7 +2950,7 @@ begin
 
     if exists(
         select 1 
-        from purchase_module.three_way_matching 
+        from purchase.three_way_matching 
         where purchase_order_id = p_purchase_order_id
     ) then
         return;
@@ -2974,7 +2965,7 @@ begin
         v_order_tax,
         v_order_total
     from general.account_payable ap
-    join purchase_module.purchase_account_payable sap 
+    join purchase.purchase_account_payable sap 
         on ap.account_payable_id = sap.account_payable_id
     where sap.purchase_order_id = p_purchase_order_id;
 
@@ -2986,7 +2977,7 @@ begin
         v_invoice_subtotal,
         v_invoice_tax,
         v_invoice_total
-    from purchase_module.supplier_invoice
+    from purchase.supplier_invoice
     where supplier_invoice_id = v_supplier_invoice_id;
 
     select 
@@ -2997,19 +2988,19 @@ begin
         v_receipt_subtotal,
         v_receipt_tax,
         v_receipt_total
-    from purchase_module.goods_receipt
+    from purchase.goods_receipt
     where goods_receipt_id = p_goods_receipt_id;
 
     select coalesce(sum(quantity_ordered), 0) into v_order_qty
-    from purchase_module.purchase_order_item
+    from purchase.purchase_order_item
     where purchase_order_id = p_purchase_order_id;
 
     select coalesce(sum(quantity_billed), 0) into v_invoice_qty
-    from purchase_module.supplier_invoice_item
+    from purchase.supplier_invoice_item
     where supplier_invoice_id = v_supplier_invoice_id;
 
     select coalesce(sum(quantity_received), 0) into v_receipt_qty
-    from purchase_module.goods_receipt_item
+    from purchase.goods_receipt_item
     where goods_receipt_id = p_goods_receipt_id;
 
     v_amounts_matched := (abs(v_order_subtotal - v_invoice_subtotal) <= 0.01) and 
@@ -3025,7 +3016,7 @@ begin
     v_quantities_matched := (v_order_qty = v_invoice_qty) and 
                             (v_order_qty = v_receipt_qty);
 
-    INSERT INTO purchase_module.three_way_matching(
+    INSERT INTO purchase.three_way_matching(
         purchase_order_id,
         goods_receipt_id,
         supplier_invoice_id,
@@ -3063,7 +3054,7 @@ begin
             pac.tenant_id,
             pac.warning_days_before_due,
             pac.urgent_days_before_due
-        from purchase_module.purchase_order_payment_alert_config pac
+        from purchase.purchase_order_payment_alert_config pac
     loop
         for v_account in
             select 
@@ -3077,13 +3068,13 @@ begin
                 (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) as balance_remaining,
                 so.purchase_order_id
             from general.account_payable ap
-            join purchase_module.purchase_account_payable sap 
+            join purchase.purchase_account_payable sap 
                 on ap.account_payable_id = sap.account_payable_id
-            join purchase_module.purchase_order so 
+            join purchase.purchase_order so 
                 on sap.purchase_order_id = so.purchase_order_id
-            join purchase_module.supplier s 
+            join purchase.supplier s 
                 on so.supplier_id = s.supplier_id
-            join purchase_module.supplier_branch sb 
+            join purchase.supplier_branch sb 
                 on s.supplier_id = sb.supplier_id
             join general.branch b 
                 on sb.branch_id = b.branch_id
@@ -3105,14 +3096,14 @@ begin
             end if;
             
             select payment_alert_id into v_existing_alert_id
-            from purchase_module.purchase_order_payment_alert
+            from purchase.purchase_order_payment_alert
             where purchase_account_payable_id = v_account.purchase_account_payable_id
             and payment_alert_type_id = v_alert_type_id
             and is_resolved = false
             limit 1;
             
             if v_existing_alert_id is null then
-                INSERT INTO purchase_module.purchase_order_payment_alert(
+                INSERT INTO purchase.purchase_order_payment_alert(
                     purchase_account_payable_id,
                     payment_alert_type_id,
                     alert_date,
@@ -3165,20 +3156,20 @@ begin
         (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) as balance_remaining,
         spa.alert_date,
         spa.created_at
-    from purchase_module.purchase_order_payment_alert spa
-    join purchase_module.purchase_order_payment_alert_type spat 
+    from purchase.purchase_order_payment_alert spa
+    join purchase.purchase_order_payment_alert_type spat 
         on spa.payment_alert_type_id = spat.payment_alert_type_id
-    join purchase_module.purchase_account_payable sap 
+    join purchase.purchase_account_payable sap 
         on spa.purchase_account_payable_id = sap.purchase_account_payable_id
     join general.account_payable ap 
         on sap.account_payable_id = ap.account_payable_id
-    join purchase_module.purchase_order so 
+    join purchase.purchase_order so 
         on sap.purchase_order_id = so.purchase_order_id
-    join purchase_module.supplier s 
+    join purchase.supplier s 
         on so.supplier_id = s.supplier_id
-    left join purchase_module.supplier_invoice si 
+    left join purchase.supplier_invoice si 
         on so.purchase_order_id = si.purchase_order_id
-    join purchase_module.supplier_branch sb 
+    join purchase.supplier_branch sb 
         on s.supplier_id = sb.supplier_id
     join general.branch b 
         on sb.branch_id = b.branch_id
@@ -3195,7 +3186,7 @@ $$ language plpgsql;
 create or replace function resolve_payment_alert(p_alert_id uuid)
 returns void as $$
 begin
-    update purchase_module.purchase_order_payment_alert
+    update purchase.purchase_order_payment_alert
     set is_resolved = true,
         updated_at = current_timestamp
     where payment_alert_id = p_alert_id;
@@ -3213,7 +3204,7 @@ begin
         where account_payable_id = new.account_payable_id;
         
         if v_is_paid = true then
-            update purchase_module.purchase_order_payment_alert
+            update purchase.purchase_order_payment_alert
             set is_resolved = true,
                 updated_at = current_timestamp
             where purchase_account_payable_id = new.purchase_account_payable_id
@@ -3225,11 +3216,11 @@ begin
 end;
 $$ language plpgsql;
 
-drop trigger if exists auto_resolve_payment_alerts_trigger on purchase_module.purchase_account_payable;
+drop trigger if exists auto_resolve_payment_alerts_trigger on purchase.purchase_account_payable;
 create trigger auto_resolve_payment_alerts_trigger
-    after update of account_payable_status on purchase_module.purchase_account_payable
+    after update of account_payable_status on purchase.purchase_account_payable
     for each row
-    execute function purchase_module.auto_resolve_payment_alerts();
+    execute function purchase.auto_resolve_payment_alerts();
 
 create or replace function initialize_payment_alert_config(
     p_tenant_id uuid,
@@ -3241,7 +3232,7 @@ create or replace function initialize_payment_alert_config(
 declare
     v_config_id uuid;
 begin
-    INSERT INTO purchase_module.purchase_order_payment_alert_config(
+    INSERT INTO purchase.purchase_order_payment_alert_config(
         tenant_id,
         warning_days_before_due,
         urgent_days_before_due,
@@ -3282,18 +3273,18 @@ begin
         count(*) filter (where spat.payment_alert_type_id = 2)::integer as urgent_count,
         count(*) filter (where spat.payment_alert_type_id = 1)::integer as warning_count,
         coalesce(sum(ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid), 0) as total_amount_at_risk
-    from purchase_module.purchase_order_payment_alert spa
-    join purchase_module.purchase_order_payment_alert_type spat 
+    from purchase.purchase_order_payment_alert spa
+    join purchase.purchase_order_payment_alert_type spat 
         on spa.payment_alert_type_id = spat.payment_alert_type_id
-    join purchase_module.purchase_account_payable sap 
+    join purchase.purchase_account_payable sap 
         on spa.purchase_account_payable_id = sap.purchase_account_payable_id
     join general.account_payable ap 
         on sap.account_payable_id = ap.account_payable_id
-    join purchase_module.purchase_order so 
+    join purchase.purchase_order so 
         on sap.purchase_order_id = so.purchase_order_id
-    join purchase_module.supplier s 
+    join purchase.supplier s 
         on so.supplier_id = s.supplier_id
-    join purchase_module.supplier_branch sb 
+    join purchase.supplier_branch sb 
         on s.supplier_id = sb.supplier_id
     join general.branch b 
         on sb.branch_id = b.branch_id
@@ -3306,57 +3297,57 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql;
 
-drop trigger if exists update_supplier_timestamp on purchase_module.supplier;
-create trigger update_supplier_timestamp before update on purchase_module.supplier
+drop trigger if exists update_supplier_timestamp on purchase.supplier;
+create trigger update_supplier_timestamp before update on purchase.supplier
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_purchase_order_timestamp on purchase_module.purchase_order;
-create trigger update_purchase_order_timestamp before update on purchase_module.purchase_order
+drop trigger if exists update_purchase_order_timestamp on purchase.purchase_order;
+create trigger update_purchase_order_timestamp before update on purchase.purchase_order
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_purchase_order_item_timestamp on purchase_module.purchase_order_item;
-create trigger update_purchase_order_item_timestamp before update on purchase_module.purchase_order_item
+drop trigger if exists update_purchase_order_item_timestamp on purchase.purchase_order_item;
+create trigger update_purchase_order_item_timestamp before update on purchase.purchase_order_item
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_supplier_invoice_timestamp on purchase_module.supplier_invoice;
-create trigger update_supplier_invoice_timestamp before update on purchase_module.supplier_invoice
+drop trigger if exists update_supplier_invoice_timestamp on purchase.supplier_invoice;
+create trigger update_supplier_invoice_timestamp before update on purchase.supplier_invoice
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_supplier_invoice_item_timestamp on purchase_module.supplier_invoice_item;
-create trigger update_supplier_invoice_item_timestamp before update on purchase_module.supplier_invoice_item
+drop trigger if exists update_supplier_invoice_item_timestamp on purchase.supplier_invoice_item;
+create trigger update_supplier_invoice_item_timestamp before update on purchase.supplier_invoice_item
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_goods_receipt_timestamp on purchase_module.goods_receipt;
-create trigger update_goods_receipt_timestamp before update on purchase_module.goods_receipt
+drop trigger if exists update_goods_receipt_timestamp on purchase.goods_receipt;
+create trigger update_goods_receipt_timestamp before update on purchase.goods_receipt
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_goods_receipt_item_timestamp on purchase_module.goods_receipt_item;
-create trigger update_goods_receipt_item_timestamp before update on purchase_module.goods_receipt_item
+drop trigger if exists update_goods_receipt_item_timestamp on purchase.goods_receipt_item;
+create trigger update_goods_receipt_item_timestamp before update on purchase.goods_receipt_item
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_account_payable_timestamp on purchase_module.purchase_account_payable;
-create trigger update_account_payable_timestamp before update on purchase_module.purchase_account_payable
+drop trigger if exists update_account_payable_timestamp on purchase.purchase_account_payable;
+create trigger update_account_payable_timestamp before update on purchase.purchase_account_payable
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_purchase_order_payment_timestamp on purchase_module.purchase_order_payment;
-create trigger update_purchase_order_payment_timestamp before update on purchase_module.purchase_order_payment
+drop trigger if exists update_purchase_order_payment_timestamp on purchase.purchase_order_payment;
+create trigger update_purchase_order_payment_timestamp before update on purchase.purchase_order_payment
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_purchase_order_payment_alert_timestamp on purchase_module.purchase_order_payment_alert;
-create trigger update_purchase_order_payment_alert_timestamp before update on purchase_module.purchase_order_payment_alert
+drop trigger if exists update_purchase_order_payment_alert_timestamp on purchase.purchase_order_payment_alert;
+create trigger update_purchase_order_payment_alert_timestamp before update on purchase.purchase_order_payment_alert
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_purchase_order_payment_alert_config_timestamp on purchase_module.purchase_order_payment_alert_config;
-create trigger update_purchase_order_payment_alert_config_timestamp before update on purchase_module.purchase_order_payment_alert_config
+drop trigger if exists update_purchase_order_payment_alert_config_timestamp on purchase.purchase_order_payment_alert_config;
+create trigger update_purchase_order_payment_alert_config_timestamp before update on purchase.purchase_order_payment_alert_config
 for each row execute function general.update_timestamp();
 
-drop trigger if exists update_three_way_matching_timestamp on purchase_module.three_way_matching;
-create trigger update_three_way_matching_timestamp before update on purchase_module.three_way_matching
+drop trigger if exists update_three_way_matching_timestamp on purchase.three_way_matching;
+create trigger update_three_way_matching_timestamp before update on purchase.three_way_matching
 for each row execute function general.update_timestamp();
 
--- SCHEMA: inventory_module
-create schema if not exists inventory_module;
-set search_path to inventory_module;
+-- SCHEMA: inventory_schema
+CREATE SCHEMA IF NOT EXISTS inventory_schema;
+SET SEARCH_PATH TO inventory_schema;
 
 CREATE TABLE IF NOT EXISTS warehouse (
     warehouse_id uuid primary key default gen_random_uuid(),
@@ -3371,7 +3362,7 @@ CREATE TABLE IF NOT EXISTS inventory(
     inventory_id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null,                                                         
     product_id uuid not null,
-    warehouse_id uuid not null REFERENCES inventory_module.warehouse(warehouse_id) on delete cascade,
+    warehouse_id uuid not null REFERENCES inventory_schema.warehouse(warehouse_id) on delete cascade,
     stock integer not null,
     expiration_date timestamp check (expiration_date is null or expiration_date > current_timestamp),
     created_at timestamp default current_timestamp,
@@ -3389,14 +3380,14 @@ CREATE TABLE IF NOT EXISTS inventory_log_type(
     updated_at timestamp default current_timestamp
 );
 INSERT INTO inventory_log_type (inventory_log_type_name, inventory_log_type_description) VALUES
-    ('IN', 'inventory added to inventory_module'),
-    ('OUT', 'inventory removed from inventory_module')
+    ('IN', 'inventory added to inventory_schema'),
+    ('OUT', 'inventory removed from inventory_schema')
 ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS inventory_log(
     inventory_log_id uuid primary key default gen_random_uuid(),
-    inventory_log_type_id integer not null REFERENCES inventory_module.inventory_log_type(inventory_log_type_id) on delete cascade,
-    warehouse_id uuid not null REFERENCES inventory_module.warehouse(warehouse_id) on delete cascade,
+    inventory_log_type_id integer not null REFERENCES inventory_schema.inventory_log_type(inventory_log_type_id) on delete cascade,
+    warehouse_id uuid not null REFERENCES inventory_schema.warehouse(warehouse_id) on delete cascade,
     tenant_id uuid not null,                                                         
     product_id uuid not null,
     quantity integer not null,
@@ -3409,8 +3400,8 @@ CREATE TABLE IF NOT EXISTS inventory_log(
 
 CREATE TABLE IF NOT EXISTS inventory_transfer(
     inventory_transfer_id uuid primary key default gen_random_uuid(),
-    from_warehouse_id uuid not null REFERENCES inventory_module.warehouse(warehouse_id) on delete cascade,
-    to_warehouse_id uuid not null REFERENCES inventory_module.warehouse(warehouse_id) on delete cascade,
+    from_warehouse_id uuid not null REFERENCES inventory_schema.warehouse(warehouse_id) on delete cascade,
+    to_warehouse_id uuid not null REFERENCES inventory_schema.warehouse(warehouse_id) on delete cascade,
     inventory_transfer_departure_date timestamp default current_timestamp,
     inventory_transfer_arrival_date timestamp,
     transfer_date timestamp default current_timestamp,
@@ -3420,7 +3411,7 @@ CREATE TABLE IF NOT EXISTS inventory_transfer(
 
 CREATE TABLE IF NOT EXISTS inventory_transfer_product(
     inventory_transfer_product_id uuid primary key default gen_random_uuid(),
-    inventory_transfer_id uuid not null REFERENCES inventory_module.inventory_transfer(inventory_transfer_id) on delete cascade,
+    inventory_transfer_id uuid not null REFERENCES inventory_schema.inventory_transfer(inventory_transfer_id) on delete cascade,
     tenant_id uuid not null,                                                         
     product_id uuid not null,
     quantity integer not null,
@@ -3434,7 +3425,7 @@ CREATE TABLE IF NOT EXISTS discrepancy_count(
     discrepancy_count_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid not null,                                                         
     product_id uuid not null,
-    warehouse_id uuid NOT NULL REFERENCES inventory_module.warehouse(warehouse_id) ON DELETE CASCADE,
+    warehouse_id uuid NOT NULL REFERENCES inventory_schema.warehouse(warehouse_id) ON DELETE CASCADE,
     stored_quantity integer NOT NULL,
     physical_quantity integer NOT NULL,
     discrepancy_reason text,
@@ -3451,12 +3442,12 @@ CREATE TABLE IF NOT EXISTS discrepancy_count(
 CREATE OR REPLACE FUNCTION reduce_stock_on_sale()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE inventory_module.inventory
+    UPDATE inventory_schema.inventory
     SET stock = stock - NEW.quantity_sold
     WHERE inventory_id = NEW.inventory_id;
 
     -- Check if stock went negative
-    IF (SELECT stock FROM inventory_module.inventory WHERE inventory_id = NEW.inventory_id) < 0 THEN
+    IF (SELECT stock FROM inventory_schema.inventory WHERE inventory_id = NEW.inventory_id) < 0 THEN
         RAISE EXCEPTION 'Not enough stock for product ID %', NEW.product_id;
     END IF;
 
@@ -3464,9 +3455,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trigger_reduce_stock ON pos_module.sale;
+DROP TRIGGER IF EXISTS trigger_reduce_stock ON pos.sale;
 CREATE TRIGGER trigger_reduce_stock
-    AFTER INSERT ON pos_module.sale
+    AFTER INSERT ON pos.sale
 FOR EACH ROW
     EXECUTE FUNCTION reduce_stock_on_sale();
 
@@ -3480,9 +3471,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trigger_increase_stock ON pos_module.return_product;
+DROP TRIGGER IF EXISTS trigger_increase_stock ON pos.return_product;
 CREATE TRIGGER trigger_increase_stock
-    AFTER INSERT ON pos_module.return_product
+    AFTER INSERT ON pos.return_product
 FOR EACH ROW
     EXECUTE FUNCTION increase_stock_on_return();
 
@@ -3491,8 +3482,8 @@ RETURNS TABLE(warehouse_id uuid, product_name varchar, product_count bigint) AS 
 BEGIN
     RETURN QUERY
     SELECT w.warehouse_id, p.product_name AS product_name, COUNT(i.product_id) AS product_count
-    FROM inventory_module.warehouse w
-    LEFT JOIN inventory_module.inventory i ON w.warehouse_id = i.warehouse_id
+    FROM inventory_schema.warehouse w
+    LEFT JOIN inventory_schema.inventory i ON w.warehouse_id = i.warehouse_id
     INNER JOIN general.product p ON i.product_id = p.product_id AND i.tenant_id = p.tenant_id
     GROUP BY w.warehouse_id, p.product_name;
 END;
@@ -3501,48 +3492,48 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION log_inventory_movement()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO inventory_module.inventory_log (inventory_log_type_id, purchase_order_id)
+    INSERT INTO inventory_schema.inventory_log (inventory_log_type_id, purchase_order_id)
     VALUES (NEW.movement_type_id, NEW.purchase_order_id);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 CREATE TRIGGER trigger_log_inventory_movement
-    AFTER INSERT ON purchase_module.purchase_order_item
+    AFTER INSERT ON purchase.purchase_order_item
 FOR EACH ROW
     EXECUTE FUNCTION log_inventory_movement();
 
-DROP TRIGGER IF EXISTS update_warehouse_timestamp ON inventory_module.warehouse;
-CREATE TRIGGER update_warehouse_timestamp BEFORE UPDATE ON inventory_module.warehouse
+DROP TRIGGER IF EXISTS update_warehouse_timestamp ON inventory_schema.warehouse;
+CREATE TRIGGER update_warehouse_timestamp BEFORE UPDATE ON inventory_schema.warehouse
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_inventory_timestamp ON inventory_module.inventory;
-CREATE TRIGGER update_inventory_timestamp BEFORE UPDATE ON inventory_module.inventory
+DROP TRIGGER IF EXISTS update_inventory_timestamp ON inventory_schema.inventory;
+CREATE TRIGGER update_inventory_timestamp BEFORE UPDATE ON inventory_schema.inventory
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_inventory_log_type_timestamp ON inventory_module.inventory_log_type;
-CREATE TRIGGER update_inventory_log_type_timestamp BEFORE UPDATE ON inventory_module.inventory_log_type   
+DROP TRIGGER IF EXISTS update_inventory_log_type_timestamp ON inventory_schema.inventory_log_type;
+CREATE TRIGGER update_inventory_log_type_timestamp BEFORE UPDATE ON inventory_schema.inventory_log_type   
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_inventory_log_timestamp ON inventory_module.inventory_log;
-CREATE TRIGGER update_inventory_log_timestamp BEFORE UPDATE ON inventory_module.inventory_log
+DROP TRIGGER IF EXISTS update_inventory_log_timestamp ON inventory_schema.inventory_log;
+CREATE TRIGGER update_inventory_log_timestamp BEFORE UPDATE ON inventory_schema.inventory_log
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_inventory_transfer_timestamp ON inventory_module.inventory_transfer;
-CREATE TRIGGER update_inventory_transfer_timestamp BEFORE UPDATE ON inventory_module.inventory_transfer
+DROP TRIGGER IF EXISTS update_inventory_transfer_timestamp ON inventory_schema.inventory_transfer;
+CREATE TRIGGER update_inventory_transfer_timestamp BEFORE UPDATE ON inventory_schema.inventory_transfer
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_inventory_transfer_product_timestamp ON inventory_module.inventory_transfer_product;
-CREATE TRIGGER update_inventory_transfer_product_timestamp BEFORE UPDATE ON inventory_module.inventory_transfer_product
+DROP TRIGGER IF EXISTS update_inventory_transfer_product_timestamp ON inventory_schema.inventory_transfer_product;
+CREATE TRIGGER update_inventory_transfer_product_timestamp BEFORE UPDATE ON inventory_schema.inventory_transfer_product
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_discrepancy_count_timestamp ON inventory_module.discrepancy_count;
-CREATE TRIGGER update_discrepancy_count_timestamp BEFORE UPDATE ON inventory_module.discrepancy_count
+DROP TRIGGER IF EXISTS update_discrepancy_count_timestamp ON inventory_schema.discrepancy_count;
+CREATE TRIGGER update_discrepancy_count_timestamp BEFORE UPDATE ON inventory_schema.discrepancy_count
 FOR EACH ROW EXECUTE FUNCTION general.update_timestamp();
 
--- SCHEMA: hr_module
-DROP SCHEMA IF EXISTS hr_module CASCADE;
-CREATE SCHEMA IF NOT EXISTS hr_module;
-SET search_path to hr_module;
+-- SCHEMA: hr_schema
+DROP SCHEMA IF EXISTS hr_schema CASCADE;
+CREATE SCHEMA IF NOT EXISTS hr_schema;
+SET SEARCH_PATH TO hr_schema;
 
 -- MODULO DE EMPLEADO
 
@@ -3551,7 +3542,7 @@ CREATE TABLE IF NOT EXISTS payment_schedule(
 	description VARCHAR(100) NOT NULL,
 	daycount INTEGER NOT NULL
 );
-INSERT INTO hr_module.payment_schedule(description, daycount) VALUES
+INSERT INTO hr_schema.payment_schedule(description, daycount) VALUES
 ('Monthly', 30),
 ('Fortnight', 15),
 ('Weekly', 7),
@@ -3568,7 +3559,7 @@ CREATE TABLE IF NOT EXISTS contract(
 	duties TEXT
 );
 --Indice para filtracion o busqueda por rango de precios
-CREATE INDEX IF NOT EXISTS idx_contract_base_salary ON hr_module.contract (base_salary);
+CREATE INDEX IF NOT EXISTS idx_contract_base_salary ON hr_schema.contract (base_salary);
 
 CREATE TABLE IF NOT EXISTS employee(
 	employee_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
@@ -3579,33 +3570,33 @@ CREATE TABLE IF NOT EXISTS employee(
 	doc_number VARCHAR(100) NOT NULL UNIQUE,
 	phone VARCHAR(100) NOT NULL,
 	email VARCHAR(100) NOT NULL UNIQUE,
-	contract_id UUID NOT NULL REFERENCES hr_module.contract(contract_id) ON DELETE CASCADE,
-	schedule_id INTEGER NOT NULL REFERENCES hr_module.payment_schedule(payment_schedule_id),
+	contract_id UUID NOT NULL REFERENCES hr_schema.contract(contract_id) ON DELETE CASCADE,
+	schedule_id INTEGER NOT NULL REFERENCES hr_schema.payment_schedule(payment_schedule_id),
 	is_active BOOLEAN DEFAULT true,
 	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE hr_module.employee
+ALTER TABLE hr_schema.employee
 	ADD COLUMN IF NOT EXISTS tenant_id UUID NOT NULL REFERENCES general.tenant(tenant_id);
 	
 --Indice para que se pueda garantizar que no haya empleados duplicados
-CREATE UNIQUE INDEX idx_employee_doc_number ON hr_module.employee (doc_number);
+CREATE UNIQUE INDEX idx_employee_doc_number ON hr_schema.employee (doc_number);
 
 --Inidice para la recuperacion de cuentas o autenticacion del empleado
-CREATE UNIQUE INDEX idx_employee_email ON hr_module.employee (email);
+CREATE UNIQUE INDEX idx_employee_email ON hr_schema.employee (email);
 
 --Indices destinados para la aceleracion de los JOINS
-CREATE INDEX IF NOT EXISTS idx_employee_user_id ON hr_module.employee (user_id);
-CREATE INDEX IF NOT EXISTS idx_employee_contract_id ON hr_module.employee (contract_id);
-CREATE INDEX IF NOT EXISTS idx_employee_scheduled_id ON hr_module.employee (schedule_id);
+CREATE INDEX IF NOT EXISTS idx_employee_user_id ON hr_schema.employee (user_id);
+CREATE INDEX IF NOT EXISTS idx_employee_contract_id ON hr_schema.employee (contract_id);
+CREATE INDEX IF NOT EXISTS idx_employee_scheduled_id ON hr_schema.employee (schedule_id);
 
 --Indice que se utilizara unicamente para el proceso de nomina y generacion de reportes
-CREATE INDEX IF NOT EXISTS idx_employee_is_active ON hr_module.employee (is_active);
+CREATE INDEX IF NOT EXISTS idx_employee_is_active ON hr_schema.employee (is_active);
 
 CREATE TABLE IF NOT EXISTS clocking(
 	clocking_id SERIAL PRIMARY KEY NOT NULL,
-	employee_id UUID NOT NULL REFERENCES hr_module.employee(employee_id),
+	employee_id UUID NOT NULL REFERENCES hr_schema.employee(employee_id),
 	branch_id UUID NOT NULL REFERENCES general.branch(branch_id),
 	clock_in TIMESTAMP,
 	clock_out TIMESTAMP,
@@ -3613,9 +3604,9 @@ CREATE TABLE IF NOT EXISTS clocking(
 );
 
 -- Indice para buscar los turnos de un empleado dentro de un rango de fechas
-CREATE INDEX IF NOT EXISTS idx_track_employee_hours_in ON hr_module.clocking (employee_id, clock_in DESC);
+CREATE INDEX IF NOT EXISTS idx_track_employee_hours_in ON hr_schema.clocking (employee_id, clock_in DESC);
 -- Indice para ubicar turnos por sucursal
-CREATE INDEX IF NOT EXISTS idx_track_hours_branch_id ON hr_module.clocking (branch_id);
+CREATE INDEX IF NOT EXISTS idx_track_hours_branch_id ON hr_schema.clocking (branch_id);
 
 -- MODULO DE NOMINA
 
@@ -3623,7 +3614,7 @@ CREATE TABLE IF NOT EXISTS paysheet_status(
 	status_id SERIAL PRIMARY KEY NOT NULL,
 	status_description VARCHAR(100)
 );
-INSERT INTO hr_module.paysheet_status(status_description) VALUES
+INSERT INTO hr_schema.paysheet_status(status_description) VALUES
 ('Pending'),
 ('Completed'),
 ('Canceled')
@@ -3641,7 +3632,7 @@ CREATE TABLE IF NOT EXISTS payroll_concept(
 
 -- Indice para filtracion por conceptos
 -- FIXME: column "ccss_apply" does not exist 
--- CREATE INDEX IF NOT EXISTS idx_payroll_concept_apply ON hr_module.payroll_concept(ccss_apply, tax_apply);
+-- CREATE INDEX IF NOT EXISTS idx_payroll_concept_apply ON hr_schema.payroll_concept(ccss_apply, tax_apply);
 
 CREATE TABLE IF NOT EXISTS paysheet(
 	paysheet_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
@@ -3653,18 +3644,18 @@ CREATE TABLE IF NOT EXISTS paysheet(
 	total_earnings NUMERIC(19, 4) NOT NULL DEFAULT 0,
 	total_deductions NUMERIC(19, 4) NOT NULL DEFAULT 0,
 	net_total NUMERIC(19, 4) NOT NULL DEFAULT 0,
-	paysheet_status_id INTEGER NOT NULL REFERENCES hr_module.paysheet_status(status_id),
+	paysheet_status_id INTEGER NOT NULL REFERENCES hr_schema.paysheet_status(status_id),
 	created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 --Indice para la consulta de nominas por periodo de pago
-CREATE INDEX IF NOT EXISTS idx_paysheet_period_dates ON hr_module.paysheet (tenant_id, period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_paysheet_period_dates ON hr_schema.paysheet (tenant_id, period_start, period_end);
 
 CREATE TABLE IF NOT EXISTS paysheet_detail(
 	detail_id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
-	paysheet_id UUID NOT NULL REFERENCES hr_module.paysheet(paysheet_id) ON DELETE CASCADE,
-	employee_id UUID NOT NULL REFERENCES hr_module.employee(employee_id),
-	contract_id UUID NOT NULL REFERENCES hr_module.contract(contract_id),
+	paysheet_id UUID NOT NULL REFERENCES hr_schema.paysheet(paysheet_id) ON DELETE CASCADE,
+	employee_id UUID NOT NULL REFERENCES hr_schema.employee(employee_id),
+	contract_id UUID NOT NULL REFERENCES hr_schema.contract(contract_id),
 	payment_method_id INTEGER NOT NULL REFERENCES general.payment_method(payment_method_id),
 	gross_salary NUMERIC(19, 4) NOT NULL,
 	total_earnings NUMERIC(19, 4) NOT NULL DEFAULT 0,
@@ -3676,27 +3667,27 @@ CREATE TABLE IF NOT EXISTS paysheet_detail(
 );
 
 -- Indice para agilizar la busqueda de todos los detalles bajo un paysheet_id
-CREATE INDEX IF NOT EXISTS idx_paysheet_detail_paysheet_id ON hr_module.paysheet_detail(paysheet_id);
+CREATE INDEX IF NOT EXISTS idx_paysheet_detail_paysheet_id ON hr_schema.paysheet_detail(paysheet_id);
 -- Indice compuesto para la consulta del historial de pagos a un empleado
-CREATE INDEX IF NOT EXISTS idx_paysheet_detail_emp_paydate ON hr_module.paysheet_detail (employee_id, pay_date DESC);
+CREATE INDEX IF NOT EXISTS idx_paysheet_detail_emp_paydate ON hr_schema.paysheet_detail (employee_id, pay_date DESC);
 
 CREATE TABLE IF NOT EXISTS payroll_movement (
 	movement_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
-	detail_id UUID NOT NULL REFERENCES hr_module.paysheet_detail(detail_id) ON DELETE CASCADE,
-	concept_id INTEGER NOT NULL REFERENCES hr_module.payroll_concept(concept_id),
+	detail_id UUID NOT NULL REFERENCES hr_schema.paysheet_detail(detail_id) ON DELETE CASCADE,
+	concept_id INTEGER NOT NULL REFERENCES hr_schema.payroll_concept(concept_id),
 	base_amount NUMERIC(19, 4) NOT NULL,
 	calculated_amount NUMERIC(19, 4) NOT NULL,
 	description TEXT
 );
 
 -- Indice para agilizar la busqueda de todos los movimientos bajo un detail_id
-CREATE INDEX IF NOT EXISTS idx_payroll_movement_detail_id ON hr_module.payroll_movement(detail_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_movement_detail_id ON hr_schema.payroll_movement(detail_id);
 
 -- ==========================================================================
 --                          FUNCTIONS AND TRIGGERS
 -- ==========================================================================
 
-CREATE OR REPLACE FUNCTION hr_module.create_new_employee(
+CREATE OR REPLACE FUNCTION hr_schema.create_new_employee(
   -- Parametros para la creacion del contrato
   p_start_date DATE,
   p_end_date DATE,
@@ -3721,17 +3712,17 @@ DECLARE
   v_new_employee_id UUID;
 BEGIN
 
-  IF NOT EXISTS (SELECT 1 FROM hr_module.payment_schedule WHERE payment_schedule_id = p_schedule_id) THEN
+  IF NOT EXISTS (SELECT 1 FROM hr_schema.payment_schedule WHERE payment_schedule_id = p_schedule_id) THEN
     RAISE EXCEPTION 'Integrity error: schedule_id (schedule_id: %) doesnt exists', p_schedule_id;
   END IF;
 
-  INSERT INTO hr_module.contract (start_date, end_date, hours, base_salary, duties)
+  INSERT INTO hr_schema.contract (start_date, end_date, hours, base_salary, duties)
   VALUES (p_start_date, p_end_date, p_hours, p_base_salary, p_duties)
   RETURNING contract_id INTO v_new_contract_id;
 
   v_new_employee_id := gen_random_uuid();
 
-  INSERT INTO hr_module.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id)
+  INSERT INTO hr_schema.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id)
   VALUES (
     v_new_employee_id,
     p_user_id,
@@ -3771,10 +3762,10 @@ BEGIN
 
 	SELECT COALESCE(SUM(calculated_amount), 0)
 	INTO v_new_gross_salary
-	FROM hr_module.income_register
+	FROM hr_schema.income_register
 	WHERE detail_id = v_detail_id;
 
-	UPDATE hr_module.paysheet_detail
+	UPDATE hr_schema.paysheet_detail
 	SET gross_salary = v_new_gross_salary,
   recalc_needed = TRUE
 	WHERE detail_id = v_detail_id;
@@ -3783,14 +3774,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- FIXME: relation "hr_module.income_register" does not exist
--- DROP TRIGGER IF EXISTS update_gross_salary on hr_module.income_register;
+-- FIXME: relation "hr_schema.income_register" does not exist
+-- DROP TRIGGER IF EXISTS update_gross_salary on hr_schema.income_register;
 -- CREATE TRIGGER update_gross_salary
--- 	AFTER INSERT OR UPDATE OR DELETE ON hr_module.income_register
+-- 	AFTER INSERT OR UPDATE OR DELETE ON hr_schema.income_register
 -- 	FOR EACH ROW
 -- 	EXECUTE FUNCTION update_gross_salary();
 
-CREATE OR REPLACE FUNCTION hr_module.update_paysheet_state (
+CREATE OR REPLACE FUNCTION hr_schema.update_paysheet_state (
     p_paysheet_id UUID
 )
 RETURNS VARCHAR AS $$
@@ -3802,7 +3793,7 @@ DECLARE
 BEGIN
     -- Obtenemos el id del estado completado del catálogo
     SELECT status_id INTO v_completed_status_id
-    FROM hr_module.paysheet_status
+    FROM hr_schema.paysheet_status
     WHERE status_description = v_completed_status_name;
 
     IF v_completed_status_id IS NULL THEN
@@ -3811,7 +3802,7 @@ BEGIN
 
     -- Obtenemos el id de estado actual de la nómina
     SELECT paysheet_status_id INTO v_current_status_id
-    FROM hr_module.paysheet
+    FROM hr_schema.paysheet
     WHERE paysheet_id = p_paysheet_id;
 
     IF NOT FOUND THEN
@@ -3826,7 +3817,7 @@ BEGIN
     -- Revisamos si quedan calculos pendientes
     SELECT COUNT(*)
     INTO v_pending_recalculations
-    FROM hr_module.paysheet_detail
+    FROM hr_schema.paysheet_detail
     WHERE paysheet_id = p_paysheet_id
       AND recalc_needed = TRUE;
 
@@ -3836,7 +3827,7 @@ BEGIN
     END IF;
 
     --Si no hay pendientes, actualizamos el estado a 'Completed'
-    UPDATE hr_module.paysheet
+    UPDATE hr_schema.paysheet
     SET
         paysheet_status_id = v_completed_status_id
     WHERE paysheet_id = p_paysheet_id;
@@ -3846,7 +3837,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Funcion para la generacion de reportes ccss mensuales de periodos especificos
-CREATE OR REPLACE FUNCTION hr_module.generate_monthly_ccss(
+CREATE OR REPLACE FUNCTION hr_schema.generate_monthly_ccss(
 	p_year INTEGER,
 	p_month INTEGER
 )
@@ -3860,7 +3851,7 @@ DECLARE
 	v_completed_status VARCHAR(15) := 'Completed';
 BEGIN
 	SELECT status_id INTO v_status_completed_id
-	FROM hr_module.paysheet_status
+	FROM hr_schema.paysheet_status
 	WHERE status_description = v_completed_status;
 
 	IF v_status_completed_id IS NULL THEN
@@ -3873,9 +3864,9 @@ BEGIN
 		COALESCE(SUM(pd.ccss_tenant_deduction), 0) AS total_tenant,
 		COALESCE(SUM(pd.ccss_employee_deduction + ccss_tenant_deduction), 0) AS total
 	FROM
-		hr_module.paysheet_detail pd
+		hr_schema.paysheet_detail pd
 	INNER JOIN
-		hr_module.paysheet p ON pd.paysheet_id = p.paysheet_id
+		hr_schema.paysheet p ON pd.paysheet_id = p.paysheet_id
 	WHERE
 		EXTRACT(YEAR FROM p.payment_day) = p_year
 		AND EXTRACT(MONTH FROM p.payment_day) = p_month
@@ -3884,7 +3875,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION hr_module.validate_contract_dates()
+CREATE OR REPLACE FUNCTION hr_schema.validate_contract_dates()
 RETURNS TRIGGER AS $$
 BEGIN
 	IF NEW.end_date IS NOT NULL AND NEW.end_date < NEW.start_date THEN
@@ -3895,18 +3886,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS validate_contract_dates ON hr_module.contract;
+DROP TRIGGER IF EXISTS validate_contract_dates ON hr_schema.contract;
 CREATE TRIGGER validate_contract_dates
-BEFORE INSERT OR UPDATE ON hr_module.contract
+BEFORE INSERT OR UPDATE ON hr_schema.contract
 FOR EACH ROW
-EXECUTE FUNCTION hr_module.validate_contract_dates();
+EXECUTE FUNCTION hr_schema.validate_contract_dates();
 
-CREATE OR REPLACE FUNCTION hr_module.protect_net_salary()
+CREATE OR REPLACE FUNCTION hr_schema.protect_net_salary()
 RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.net_salary IS DISTINCT FROM NEW.net_salary THEN
-        PERFORM 1 FROM hr_module.paysheet p
-        	INNER JOIN hr_module.paysheet_status ps ON p.paysheet_status_id = ps.status_id
+        PERFORM 1 FROM hr_schema.paysheet p
+        	INNER JOIN hr_schema.paysheet_status ps ON p.paysheet_status_id = ps.status_id
         	WHERE p.paysheet_id = NEW.paysheet_id AND ps.status_description = 'Completed';
         
         IF FOUND THEN
@@ -3918,8 +3909,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS protect_net_salary ON hr_module.paysheet_detail;
+DROP TRIGGER IF EXISTS protect_net_salary ON hr_schema.paysheet_detail;
 CREATE TRIGGER protect_net_salary
-BEFORE INSERT OR UPDATE ON hr_module.paysheet_detail
+BEFORE INSERT OR UPDATE ON hr_schema.paysheet_detail
 FOR EACH ROW
-EXECUTE FUNCTION hr_module.protect_net_salary();
+EXECUTE FUNCTION hr_schema.protect_net_salary();

@@ -1,6 +1,6 @@
 # Partial and Full Returns — End-to-End Flow
 
-This document explains the end-to-end flow for processing partial and full product returns at point-of-sale. The goal is to demonstrate that a customer can return one or more items from a billed sale, that each returned item is recorded in pos_module.return_product, and that the corresponding bill and original sale are automatically adjusted.
+This document explains the end-to-end flow for processing partial and full product returns at point-of-sale. The goal is to demonstrate that a customer can return one or more items from a billed sale, that each returned item is recorded in pos.return_product, and that the corresponding bill and original sale are automatically adjusted.
 
 Scope: retail returns where returns create return_transaction + return_product rows and triggers update bill totals and reconcile the sale record.
 
@@ -8,8 +8,8 @@ Scope: retail returns where returns create return_transaction + return_product r
 
 - Tenant/Branch/Customer/Product exist in general.\* tables.
 - POS objects and functions deployed:
-  - Tables: pos_module.sale, pos_module.sale_item, pos_module.customer_payment, pos_module.bill, pos_module.return_transaction, pos_module.return_product.
-  - Triggers / functions: pos_module.update_on_return (trigger on return_product), pos_module.create_bill, pos_module.check_sale_payment_completion, general.update_timestamp.
+  - Tables: pos.sale, pos.sale_item, pos.customer_payment, pos.bill, pos.return_transaction, pos.return_product.
+  - Triggers / functions: pos.update_on_return (trigger on return_product), pos.create_bill, pos.check_sale_payment_completion, general.update_timestamp.
 
 ## High-level Flow
 
@@ -32,7 +32,7 @@ Scope: retail returns where returns create return_transaction + return_product r
 Create a return transaction pointing to the bill you want to adjust.
 
 ```sql
-INSERT INTO pos_module.return_transaction (
+INSERT INTO pos.return_transaction (
   bill_id,
   tenant_customer_id,
   total_refund_amount, -- set 0, trigger/script will update after lines inserted
@@ -41,7 +41,7 @@ INSERT INTO pos_module.return_transaction (
 )
 VALUES (
   '<bill_id>', '<tenant_customer_id>', 0.00, 1, -- 1 = cash (example)
-  (SELECT return_status_id FROM pos_module.return_status WHERE status_name = 'pending' LIMIT 1)
+  (SELECT return_status_id FROM pos.return_status WHERE status_name = 'pending' LIMIT 1)
 )
 RETURNING return_transaction_id;
 ```
@@ -52,7 +52,7 @@ Each returned product must reference the original sale_item_id. This creates an 
 
 ```sql
 -- Example: return 2 units of sale_item X and 1 unit of sale_item Y
-INSERT INTO pos_module.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
+INSERT INTO pos.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
 VALUES
   ('<return_tx_id>', '<sale_item_id_A>', 2, 10.00),
   ('<return_tx_id>', '<sale_item_id_B>', 1, 20.00);
@@ -68,7 +68,7 @@ On each return_product insert, update_on_return should:
 - Verify returned quantity <= original sale_item.quantity, otherwise raise.
 - Decrease sale_item.quantity (or delete sale_item if remaining quantity = 0).
 - Subtract returned line amount from bill.subtotal; recompute tax and total using tenant/region tax rate.
-- Update pos_module.bill totals and pos_module.sale totals to keep them consistent.
+- Update pos.bill totals and pos.sale totals to keep them consistent.
 - Optionally record inventory adjustments or refund movements.
 
 Example checks (pseudocode):
@@ -80,9 +80,9 @@ Example checks (pseudocode):
 After inserting return_product rows, update the header with the sum of returned totals:
 
 ```sql
-UPDATE pos_module.return_transaction
+UPDATE pos.return_transaction
 SET total_refund_amount = (
-  SELECT COALESCE(SUM(total_price), 0) FROM pos_module.return_product
+  SELECT COALESCE(SUM(total_price), 0) FROM pos.return_product
   WHERE return_transaction_id = '<return_tx_id>'
 )
 WHERE return_transaction_id = '<return_tx_id>';
@@ -103,7 +103,7 @@ Record refund to customer via customer_payment or external refund workflow. Exam
 
 - return_product empty after script: ensure your INSERTs commit and no trigger raises an exception causing rollback.
 - Returned quantity > purchased: update_on_return should raise an exception; check error logs for the message.
-- Bill not updated: verify update_on_return trigger exists on pos_module.return_product and that tax rate lookup works for tenant/region.
+- Bill not updated: verify update_on_return trigger exists on pos.return_product and that tax rate lookup works for tenant/region.
 - Sale totals inconsistent: confirm update_on_return recalculates sale_subtotal from remaining sale_item rows and updates sale.tax/total.
 
 ## Quick Debugging Queries
@@ -112,7 +112,7 @@ Record refund to customer via customer_payment or external refund workflow. Exam
 
 ```sql
 SELECT rt.return_transaction_id, rt.total_refund_amount, rt.return_date
-FROM pos_module.return_transaction rt
+FROM pos.return_transaction rt
 WHERE rt.bill_id = '<bill_id>';
 ```
 
@@ -121,8 +121,8 @@ WHERE rt.bill_id = '<bill_id>';
 ```sql
 SELECT rp.return_product_id, rp.sale_item_id, rp.quantity, rp.unit_price, rp.total_price,
        p.sku, p.product_name
-FROM pos_module.return_product rp
-JOIN pos_module.sale_item si ON rp.sale_item_id = si.sale_item_id
+FROM pos.return_product rp
+JOIN pos.sale_item si ON rp.sale_item_id = si.sale_item_id
 JOIN general.product p ON si.product_id = p.product_id AND si.tenant_id = p.tenant_id
 WHERE rp.return_transaction_id = '<return_tx_id>';
 ```
@@ -130,8 +130,8 @@ WHERE rp.return_transaction_id = '<return_tx_id>';
 - Verify bill and sale totals after returns:
 
 ```sql
-SELECT b.subtotal_amount, b.tax_amount, b.total_amount FROM pos_module.bill b WHERE b.bill_id = '<bill_id>';
-SELECT s.subtotal_amount, s.tax_amount, s.total_amount FROM pos_module.sale s WHERE s.sale_id = '<sale_id>';
+SELECT b.subtotal_amount, b.tax_amount, b.total_amount FROM pos.bill b WHERE b.bill_id = '<bill_id>';
+SELECT s.subtotal_amount, s.tax_amount, s.total_amount FROM pos.sale s WHERE s.sale_id = '<sale_id>';
 ```
 
 ## Notes for Integrators / Developers
