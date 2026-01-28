@@ -17,7 +17,7 @@
 do $$
 declare
     v_tenant_ids uuid[];
-begin
+BEGIN
     raise notice '========================================';
     raise notice '🧹 SECCIÓN 0: Limpieza inicial (idempotente)';
     raise notice '========================================';
@@ -189,7 +189,7 @@ declare
     v_product_c_id uuid;
     v_cash_register_id uuid;
     v_loyalty_program_id uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🏪 SECCIÓN 1: Configuración inicial (idempotente)';
@@ -318,7 +318,7 @@ declare
     v_subtotal numeric(10,2) := 50.00;
     v_tax numeric(10,2);
     v_total numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💵 SECCIÓN 2: Venta con pago en EFECTIVO (con impuestos)';
@@ -374,7 +374,7 @@ declare
     v_subtotal numeric(10,2) := 120.00;
     v_tax numeric(10,2);
     v_total numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💳 SECCIÓN 3: Venta con pago en TARJETA (con impuestos)';
@@ -444,7 +444,7 @@ declare
     v_total numeric(10,2);
     v_cash_payment numeric(10,2) := 350.00;
     v_card_payment numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💵💳 SECCIÓN 4: Venta con pago HÍBRIDO (con impuestos)';
@@ -504,7 +504,7 @@ declare
     v_customer_id uuid;
     v_score_record record;
     v_loyalty_program record;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECCIÓN 5: Estado actual del cliente';
@@ -550,7 +550,7 @@ declare
     v_subtotal numeric(10,2) := 120.00;
     v_tax numeric(10,2);
     v_total numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🎁 SECCIÓN 6: Venta con canje PARCIAL de puntos (con impuestos)';
@@ -635,7 +635,7 @@ declare
     v_redeem_rate numeric(10,2);
     v_cash_value numeric(10,2);
     v_sale_total numeric(10,2) := 25.00; -- Precio del Mouse
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🎁 SECCIÓN 7: Venta con canje TOTAL de puntos';
@@ -702,7 +702,7 @@ declare
     v_points_available int;
     v_points_to_redeem int := 999999; -- Más de los disponibles
     v_redeem_rate numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '⚠️  SECCIÓN 8: Validación - Puntos insuficientes';
@@ -732,7 +732,7 @@ begin
     INSERT INTO pos.sale_item (sale_id, tenant_id, product_id, quantity, unit_price, total_price)
     VALUES (v_sale_id, v_tenant_id, v_product_id, 1, 500.00, 500.00);
 
-    begin
+    BEGIN
         INSERT INTO pos.customer_payment (tenant_customer_id, sale_id, payment_method_id, is_points_redemption, points_redeemed, points_to_currency_rate, payment_amount, currency_id, verified)
         VALUES (v_customer_id, v_sale_id, 4, true, v_points_to_redeem, (1.0 / v_redeem_rate), 500.00, 1, false)
         returning customer_payment_id into v_payment_id;
@@ -765,7 +765,7 @@ declare
     v_total_sales int;
     v_total_revenue numeric(10,2);
     v_total_bills int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECCIÓN 9: RESUMEN FINAL';

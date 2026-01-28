@@ -13,7 +13,7 @@ set search_path = general, pos;
 do $$
 declare
     v_tenant_id uuid;
-begin
+BEGIN
     select tenant_id into v_tenant_id from general.tenant where tenant_name = 'Promos Test Shop' limit 1;
     if v_tenant_id is not null then
         RAISE NOTICE '%', format('🧹 Cleaning previous test tenant: %s', v_tenant_id);
@@ -105,7 +105,7 @@ declare
     v_prod_c uuid;
     v_currency_id int;
     v_payment_method_id int;
-begin
+BEGIN
     RAISE NOTICE '%', format('🏗️  SECCIÓN 1: Creación de datos maestros');
 
     -- Tenant
@@ -201,7 +201,7 @@ declare
     v_tax_rate numeric(5,2) := coalesce((select rate_percentage from general.tax_rate where region = 'US Federal' limit 1), 0);
     v_tax numeric(12,2);
     v_total numeric(12,2);
-begin
+BEGIN
     RAISE NOTICE '%', format('🛒 SECCIÓN 2: Creating base sale (no promo)');
 
     -- Remove any previous sales/payments for this tenant to keep idempotence at sale-level
@@ -270,7 +270,7 @@ declare
     v_rule_id uuid;
     v_discount record;
     v_subtotal numeric(12,2) := (select subtotal_amount from pos.sale s join general.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id order by s.sale_date desc limit 1);
-begin
+BEGIN
     RAISE NOTICE ''; 
     RAISE NOTICE '%', format('--- 3.1 Percentage discount (20 percent) ---');
 
@@ -304,7 +304,7 @@ declare
     v_type_id int := (select promotion_type_id from pos.promotion_type where type_name = 'fixed_amount_discount' limit 1);
     v_promo_id uuid;    -- Variable declarada para capturar el ID
     v_discount record;  -- Variable para el loop de resultados
-begin
+BEGIN
     RAISE NOTICE ''; 
     RAISE NOTICE '%', format('--- 3.2 Fixed amount discount ($10 off, min $50) ---');
 
@@ -338,7 +338,7 @@ declare
     v_type_id int := (select promotion_type_id from pos.promotion_type where type_name = 'buy_x_get_y' limit 1);
     v_promo_id uuid;
     v_discount record; -- CORRECCIÓN: Variable agregada
-begin
+BEGIN
     RAISE NOTICE ''; 
     RAISE NOTICE '%', format('--- 3.3 Buy X Get Y (2x1) ---');
 
@@ -370,7 +370,7 @@ declare
     v_type_id int := (select promotion_type_id from pos.promotion_type where type_name = 'volume_discount' limit 1);
     v_promo_id uuid;
     v_discount record; -- CORRECCIÓN: Variable agregada
-begin
+BEGIN
     RAISE NOTICE ''; 
     RAISE NOTICE '%', format('--- 3.4 Volume discount (15 percent para 10+) ---');
 
@@ -402,7 +402,7 @@ declare
     v_type_id int := (select promotion_type_id from pos.promotion_type where type_name = 'tiered_pricing' limit 1);
     v_promo_id uuid;
     v_discount record; -- CORRECCIÓN: Variable agregada
-begin
+BEGIN
     RAISE NOTICE ''; 
     RAISE NOTICE '%', format('--- 3.5 Tiered pricing (levels) ---');
 
@@ -439,7 +439,7 @@ do $$
 declare
     v_tenant_id uuid := (select tenant_id from general.tenant where tenant_name = 'Promos Test Shop' limit 1);
     v_type_id int := (select promotion_type_id from pos.promotion_type where type_name = 'combo' limit 1);
-begin
+BEGIN
     RAISE NOTICE ''; 
     RAISE NOTICE '%', format('--- 3.6 Combo (cart-level - informational) ---');
 
@@ -476,7 +476,7 @@ declare
     v_discount_amount numeric(12,2);
     v_total_after numeric(12,2);
     v_discount_rec record;
-begin
+BEGIN
     RAISE NOTICE ''; 
 
     -- Recompute base subtotal for the three items (same as base sale)

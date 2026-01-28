@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS product(
 do $$
 declare
     i int;
-begin
+BEGIN
     for i in 0..7 loop
         execute format(
             'CREATE TABLE IF NOT EXISTS general_schema.product_p%s partition of general_schema.product for VALUES with (modulus 8, remainder %s);'

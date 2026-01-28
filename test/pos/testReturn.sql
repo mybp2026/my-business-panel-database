@@ -19,7 +19,7 @@ set local search_path = general, pos;
 do $$
 declare
     v_tenant_id uuid;
-begin
+BEGIN
     raise notice '========================================';
     raise notice '🧹 SECCIÓN 0: Limpieza inicial (idempotente)';
     raise notice '========================================';
@@ -117,7 +117,7 @@ declare
     v_prod_b uuid;
     v_prod_c uuid;
     v_cash_reg uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🏪 SECCIÓN 1: Preparación de datos';
@@ -213,7 +213,7 @@ declare
     v_tax numeric(10,2);
     v_subtotal numeric(10,2);
     v_total numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🛒 SECCIÓN 2: Crear venta y pagar (genera factura)';
@@ -274,7 +274,7 @@ declare
     v_return_total numeric(10,2);
     v_expected_return numeric(10,2) := 40.00;
     v_return_product_count int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🔄 SECCIÓN 3: Crear devolución PARCIAL';
@@ -354,7 +354,7 @@ declare
     v_expected_subtotal numeric(10,2) := 100.00; -- 140 - 40
     v_expected_tax numeric(10,2);
     v_expected_total numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📦 SECCIÓN 4: Verificaciones tras devolución PARCIAL';
@@ -417,7 +417,7 @@ declare
     v_customer_id uuid;
     v_si record;
     v_total_returned numeric(10,2) := 0;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🔄 SECCIÓN 5: Devolución TOTAL de elementos restantes';
@@ -462,7 +462,7 @@ declare
     v_bill record;
     v_remaining_items int;
     v_tenant_id uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📦 SECCIÓN 6: Verificaciones tras devolución TOTAL';
@@ -509,7 +509,7 @@ declare
     v_return_count int;
     v_return_sum numeric(10,2);
     v_return_detail record;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECCIÓN 7: RESUMEN FINAL';

@@ -18,7 +18,7 @@
 -- SECCIÓN 0: Limpieza inicial
 -- ========================================
 do $$
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🧹 SECCIÓN 0: Limpieza inicial';
@@ -172,7 +172,7 @@ declare
     v_product_c_id uuid;
     v_cash_register_id uuid;
     v_loyalty_program_id uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🏗️  SECCIÓN 1: Configuración inicial';
@@ -274,7 +274,7 @@ do $$
 declare
     v_tenant_id uuid;
     v_cash_register_id uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💰 SECCIÓN 2: Abrir sesión de caja';
@@ -329,7 +329,7 @@ declare
     v_tax_amount numeric(10,2);
     v_total_amount numeric(10,2);
     v_region_id integer;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🛒 SECCIÓN 3: Crear venta';
@@ -492,7 +492,7 @@ declare
     v_sale_subtotal numeric(10,2);
     v_sale_tax numeric(10,2);
     v_sale_total numeric(10,2);  -- ✅ Ya incluye impuesto
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💳 SECCIÓN 4: Registrar pago de contado';
@@ -587,7 +587,7 @@ declare
     v_session_id uuid;
     v_points_earned integer;
     v_sale_completed boolean;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🔐 SECCIÓN 5: Verificar pago';
@@ -687,7 +687,7 @@ declare
     v_bill record;
     v_item record;
     v_payment record;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📄 SECCIÓN 6: Detalle de factura';
@@ -790,7 +790,7 @@ declare
     v_tenant_id uuid;
     v_cash_register_id uuid;
     v_closing_amount numeric(10,2);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💰 SECCIÓN 7: Cerrar sesión de caja';
@@ -843,7 +843,7 @@ declare
     v_total_payments integer;
     v_total_revenue numeric(10,2);
     v_total_points integer;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECCIÓN 8: Resumen final';

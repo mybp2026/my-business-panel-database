@@ -12,7 +12,7 @@
 do $$
 declare
     v_tenant_id uuid;
-begin
+BEGIN
     INSERT INTO general.tenant (name, contact_email)
     VALUES ('Comercio de Prueba', 'comercio@prueba.com')
     returning tenant_id into v_tenant_id;
@@ -46,7 +46,7 @@ do $$
 declare
     v_tenant_id uuid;
     v_payment_id uuid;
-begin
+BEGIN
     -- Obtener el tenant_id
     select tenant_id into v_tenant_id
     from general.tenant
@@ -107,7 +107,7 @@ limit 1;
 do $$
 declare
     v_payment_id uuid;
-begin
+BEGIN
     -- Obtener el ID del último pago no verificado
     select tenant_payment_id into v_payment_id
     from general.tenant_payment tp
@@ -169,7 +169,7 @@ declare
     v_payment_id uuid;
     v_current_subscription_end_date date;
     v_days_remaining int;
-begin
+BEGIN
     -- Obtener tenant_id
     select tenant_id into v_tenant_id
     from general.tenant
@@ -253,7 +253,7 @@ declare
     v_payment_id uuid;
     v_old_end_date date;
     v_days_remaining int;
-begin
+BEGIN
     -- Obtener el último pago no verificado
     select tenant_payment_id into v_payment_id
     from general.tenant_payment tp
@@ -304,7 +304,7 @@ declare
     v_days_difference int;
     v_subscription_record record;
     v_tenant_is_active boolean;  -- ✅ Nueva variable
-begin
+BEGIN
     -- Obtener tenant_id
     select tenant_id into v_tenant_id
     from general.tenant

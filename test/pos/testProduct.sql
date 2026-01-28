@@ -23,7 +23,7 @@ set local search_path = general, pos;
 do $$
 declare
     v_tenant_id uuid;
-begin
+BEGIN
     raise notice '========================================';
     raise notice '🧹 SECCIÓN 0: Limpieza inicial (idempotente)';
     raise notice '========================================';
@@ -56,7 +56,7 @@ do $$
 declare
     v_tenant_id uuid;
     v_category_id int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🏪 SECCIÓN 1: Preparación (tenant & category)';
@@ -92,7 +92,7 @@ do $$
 declare
     v_tenant_id uuid := (select tenant_id from general.tenant where tenant_name = 'Product Test Shop' limit 1);
     v_pid uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '➕ SECCIÓN 2: Insertar productos individuales';
@@ -134,7 +134,7 @@ declare
     v_sku text;
     v_pid uuid;  -- ✅ CORRECCIÓN: Declarar variable
     v_count_inserted int := 0;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📦 SECCIÓN 3: Insertar productos en LOTE (20 items)';
@@ -164,7 +164,7 @@ do $$
 declare
     v_tenant_id uuid := (select tenant_id from general.tenant where tenant_name = 'Product Test Shop' limit 1);
     v_deleted int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '➖ SECCIÓN 4: Borrar producto individual (SINGLE-002)';
@@ -190,7 +190,7 @@ do $$
 declare
     v_tenant_id uuid := (select tenant_id from general.tenant where tenant_name = 'Product Test Shop' limit 1);
     v_deleted int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🧺 SECCIÓN 5: Borrar lote de productos (sku LIKE ''BATCH-%%'')';  -- ✅ CORRECCIÓN: Usar %% para escapar %
@@ -214,7 +214,7 @@ declare
     v_count_total int;
     v_count_single int;
     v_tableoid record;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🔍 SECCIÓN 6: Verificaciones finales';
@@ -251,7 +251,7 @@ do $$
 declare
     v_tenant_id uuid := (select tenant_id from general.tenant where tenant_name = 'Product Test Shop' limit 1);
     v_count int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECCIÓN 7: RESUMEN FINAL';

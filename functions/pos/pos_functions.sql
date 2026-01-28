@@ -1,13 +1,13 @@
 set search_path = pos_schema;
 
-create or replace function check_sale_payment_completion(_sale_id uuid)
+CREATE OR REPLACE FUNCTION check_sale_payment_completion(_sale_id uuid)
 returns boolean as $$
 declare
     _sale_total numeric(10,2);
     _payments_total numeric(10,2);
     _is_completed boolean;
     _pending_payments int;
-begin
+BEGIN
         select total_amount, is_completed 
         into _sale_total, _is_completed
         from pos_schema.sale
@@ -66,11 +66,11 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function link_sale_to_session()
+CREATE OR REPLACE FUNCTION link_sale_to_session()
 returns trigger as $$
 declare 
     _session_id uuid;
-begin
+BEGIN
     select crs.cash_register_session_id into _session_id
     from pos_schema.cash_register_session crs
     join pos_schema.cash_register cr on crs.cash_register_id = cr.cash_register_id
@@ -106,9 +106,9 @@ create trigger on_sale_completed_link_sale_to_session
     when (old.is_completed is false and new.is_completed is true)
     execute function link_sale_to_session();
 
-create or replace function calculate_bill_total()
+CREATE OR REPLACE FUNCTION calculate_bill_total()
 returns trigger as $$
-begin
+BEGIN
     new.total_amount := new.subtotal_amount + new.tax_amount;
     return new;
 end;
@@ -120,9 +120,9 @@ create trigger calculate_bill_total_trigger
     for each row
     execute function calculate_bill_total();
 
-create or replace function calculate_total_price()
+CREATE OR REPLACE FUNCTION calculate_total_price()
 returns trigger as $$
-begin
+BEGIN
     new.total_price := new.quantity * new.unit_price;
     return new;
 end;
@@ -134,7 +134,7 @@ create trigger calculate_total_price_return_product_trigger
     for each row
     execute function calculate_total_price();
 
-create or replace function pos_schema.get_bill(_sale_id uuid)
+CREATE OR REPLACE FUNCTION pos_schema.get_bill(_sale_id uuid)
 returns table (
     bill_id uuid,
     sale_id uuid,
@@ -146,7 +146,7 @@ returns table (
     created_at timestamp,
     updated_at timestamp
 ) as $$
-begin
+BEGIN
     return query
     select 
         b.bill_id,
@@ -163,7 +163,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function create_bill()
+CREATE OR REPLACE FUNCTION create_bill()
 returns trigger as $$
 declare
     _bill_id uuid;
@@ -174,7 +174,7 @@ declare
     _tax numeric(10,2);
     _total numeric(10,2);
     _payment_ids uuid[];
-begin
+BEGIN
         raise notice 'Creating bill for sale: %', new.sale_id;
         
         if exists(
@@ -260,7 +260,7 @@ create trigger on_sale_completed_create_bill
     when (old.is_completed is false and new.is_completed is true)
     execute function create_bill();
 
-create or replace function update_on_return()
+CREATE OR REPLACE FUNCTION update_on_return()
 returns trigger as $$
 declare
     _sale_item_record record;
@@ -278,7 +278,7 @@ declare
     _sale_subtotal_after numeric(10,2);
     _region_name varchar;
     _tenant_id uuid;
-begin
+BEGIN
     select 
         si.sale_item_id,
         si.sale_id,
@@ -385,7 +385,7 @@ create trigger update_on_return_trigger
     execute function update_on_return();
 
 
-create or replace function auto_toggle_promotions()
+CREATE OR REPLACE FUNCTION auto_toggle_promotions()
 returns table(
     action text,
     promotion_id uuid,
@@ -395,7 +395,7 @@ returns table(
 declare
     _now timestamp := current_timestamp;
     _promo record;
-begin
+BEGIN
     raise notice 'AUTO-TOGGLE PROMOTIONS';
     raise notice 'Timestamp: %', _now;
     raise notice '';
@@ -448,7 +448,7 @@ begin
 end;
 $$ language plpgsql;
 
-    create or replace function calculate_percentage_discount(
+    CREATE OR REPLACE FUNCTION calculate_percentage_discount(
     _promotion_id uuid,
     _quantity integer,
     _unit_price numeric(10,2),
@@ -460,7 +460,7 @@ declare
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
     _result pos_schema.discount_result;
-begin
+BEGIN
     _total_price := _quantity * _unit_price;
     
     select * into _rule
@@ -498,7 +498,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function calculate_fixed_discount(
+CREATE OR REPLACE FUNCTION calculate_fixed_discount(
     _promotion_id uuid,
     _quantity integer,
     _unit_price numeric(10,2),
@@ -510,7 +510,7 @@ declare
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
     _result pos_schema.discount_result;
-begin
+BEGIN
     _total_price := _quantity * _unit_price;
     
     select * into _rule
@@ -548,7 +548,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function calculate_buy_x_get_y_discount(
+CREATE OR REPLACE FUNCTION calculate_buy_x_get_y_discount(
     _promotion_id uuid,
     _quantity integer,
     _unit_price numeric(10,2),
@@ -561,7 +561,7 @@ declare
     _discount_pct numeric(5,2);
     _free_items integer;
     _result pos_schema.discount_result;
-begin
+BEGIN
     _total_price := _quantity * _unit_price;
     
     select * into _rule
@@ -604,7 +604,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function calculate_volume_discount(
+CREATE OR REPLACE FUNCTION calculate_volume_discount(
     _promotion_id uuid,
     _quantity integer,
     _unit_price numeric(10,2),
@@ -616,7 +616,7 @@ declare
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
     _result pos_schema.discount_result;
-begin
+BEGIN
     _total_price := _quantity * _unit_price;
     
     select * into _rule
@@ -653,7 +653,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function calculate_tiered_pricing_discount(
+CREATE OR REPLACE FUNCTION calculate_tiered_pricing_discount(
     _promotion_id uuid,
     _quantity integer,
     _unit_price numeric(10,2),
@@ -665,7 +665,7 @@ declare
     _discount numeric(10,2);
     _discount_pct numeric(5,2);
     _result pos_schema.discount_result;
-begin
+BEGIN
     _total_price := _quantity * _unit_price;
     
     select * into _rule
@@ -718,7 +718,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function calculate_combo_discount(
+CREATE OR REPLACE FUNCTION calculate_combo_discount(
     _promotion_id uuid,
     _quantity integer,
     _unit_price numeric(10,2),
@@ -726,14 +726,14 @@ create or replace function calculate_combo_discount(
 ) returns pos_schema.discount_result as $$
 declare
     _result pos_schema.discount_result;
-begin
+BEGIN
     raise notice '   Combo discounts require multiple products and should be calculated at cart level';
     _result.success := false;
     return _result;
 end;
 $$ language plpgsql;
 
-create or replace function calculate_promotion_discount(
+CREATE OR REPLACE FUNCTION calculate_promotion_discount(
     _promotion_id uuid,
     _tenant_id uuid,
     _product_id uuid,
@@ -750,7 +750,7 @@ declare
     _promo record;
     _type_name varchar(50);
     _result pos_schema.discount_result;
-begin
+BEGIN
     select 
         p.promotion_id,
         p.promotion_code,
@@ -848,7 +848,7 @@ declare
     _session_id uuid;
     _session record;
     _rows_updated int;
-begin
+BEGIN
         if _action = 'open' then
             select cash_register_session_id into _session_id
             from pos_schema.cash_register_session
@@ -923,7 +923,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function calculate_purchase_score(
+CREATE OR REPLACE FUNCTION calculate_purchase_score(
 _tenant_id uuid,
 _tenant_customer_id uuid,
 _purchase_amount numeric(10,2)
@@ -933,7 +933,7 @@ declare
     _points_earned_per_currency_unit numeric(5,2);
     _score integer;
     _program_exists boolean;
-begin
+BEGIN
         select exists(
             select 1 
             from pos_schema.loyalty_program 
@@ -971,7 +971,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function award_points()
+CREATE OR REPLACE FUNCTION award_points()
 returns trigger as $$
 declare
     _tenant_id uuid;
@@ -981,7 +981,7 @@ declare
     _current_balance integer;
     _cash_payments_total numeric(10,2);
     _points_already_awarded boolean;
-begin
+BEGIN
         _bill_id := new.bill_id;
         
         select exists(
@@ -1088,7 +1088,7 @@ create trigger on_purchase_billed
     for each row
     execute function pos_schema.award_points();
 
-create or replace function redeem_points(
+CREATE OR REPLACE FUNCTION redeem_points(
 _tenant_customer_id uuid,
 _points_to_redeem integer
 ) returns table(
@@ -1102,7 +1102,7 @@ declare
     _tenant_id uuid;
     _current_points integer;
     _cash_equivalent numeric(10,2);
-begin   
+BEGIN   
     select tenant_id into _tenant_id
     from general_schema.tenant_customer
     where tenant_customer_id = _tenant_customer_id;
@@ -1202,7 +1202,7 @@ declare
     _points_redeemed integer;
     _redeem_result record;
     _sale_completed boolean;
-begin
+BEGIN
     select exists(
         select 1 
         from pos_schema.customer_payment 

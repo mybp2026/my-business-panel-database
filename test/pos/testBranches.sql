@@ -4,7 +4,7 @@
 
 -- SECCIÓN 0: Limpieza inicial de datos de prueba
 do $$
-begin
+BEGIN
     -- Elimina ventas y sus items
     delete from pos.sale_item
     where sale_id in (
@@ -73,7 +73,7 @@ declare
     v_prod_a uuid;
     v_prod_b uuid;
     v_prod_c uuid;
-begin
+BEGIN
     -- Crear tenant
     INSERT INTO general.tenant (tenant_name, region_id, contact_email, is_subscribed)
     VALUES ('Comercio MultiSucursal', 1, 'contacto@multi.com', true)
@@ -131,7 +131,7 @@ declare
     v_prod_b uuid;
     v_prod_c uuid;
     v_sale_id uuid;
-begin
+BEGIN
     -- Obtener IDs
     select tenant_id into v_tenant_id from general.tenant where tenant_name = 'Comercio MultiSucursal';
     select branch_id into v_branch_centro from general.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro';

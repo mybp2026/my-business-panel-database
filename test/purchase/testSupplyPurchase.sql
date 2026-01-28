@@ -16,7 +16,7 @@ set search_path = purchase, general;
 -- SECCIÓN 0: Limpieza inicial (idempotente)
 -- ========================================
 do $$
-begin
+BEGIN
     raise notice '========================================';
     raise notice '🧹 SECCIÓN 0: Limpieza inicial';
     raise notice '========================================';
@@ -110,7 +110,7 @@ declare
     v_prod2 uuid;
     v_prod3 uuid;
     v_warehouse_exists boolean;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🏪 SECCIÓN 1: Preparación de datos maestros';
@@ -213,7 +213,7 @@ declare
     v_total_amount numeric(12,3);
     v_supplier_invoice_id uuid;
     v_invoice_total numeric(12,3);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📦 SECCIÓN 2: Crear orden de compra';
@@ -291,7 +291,7 @@ declare
     v_status_name varchar;
     v_paid numeric(12,3);
     v_balance numeric(12,3);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💸 SECCIÓN 3: Pago inicial 40%%';
@@ -373,7 +373,7 @@ declare
     v_new_status int;
     v_old_status_name varchar;
     v_new_status_name varchar;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🚚 SECCIÓN 4: Envío de mercancía';
@@ -425,7 +425,7 @@ declare
     v_status_name varchar;
     v_paid numeric(12,3);
     v_balance numeric(12,3);
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💸 SECCIÓN 5: Pago parcial 30%%';
@@ -513,7 +513,7 @@ declare
     v_balance numeric(12,3);
     v_invoice_paid boolean;
     v_is_paid boolean;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💸 SECCIÓN 6: Pago final 30%%';
@@ -621,7 +621,7 @@ declare
     v_goods_receipt_id uuid;
     v_goods_receipt_total numeric(12,3);
     v_items_count int;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📦 SECCIÓN 7: Marcar como Delivered';
@@ -694,7 +694,7 @@ declare
     v_invoice_qty integer;
     v_receipt_qty integer;
     v_rec record;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🔍 SECCIÓN 8: Conciliación a tres vías';
@@ -834,7 +834,7 @@ declare
     v_receipt_total numeric(12,3);
     v_payments_count int;
     v_is_matched boolean;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECCIÓN 9: RESUMEN FINAL';

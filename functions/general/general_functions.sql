@@ -8,7 +8,7 @@ declare
     _already_verified boolean;
     _rows_updated int;
     _tenant_id uuid;
-begin
+BEGIN
     select exists(
         select 1 
         from general_schema.tenant_payment 
@@ -59,7 +59,7 @@ $$;
 
 
 
-create or replace function create_subscription()
+CREATE OR REPLACE FUNCTION create_subscription()
 returns trigger as $$
 declare
     _subscription_type_id int;
@@ -70,7 +70,7 @@ declare
     _new_end_date date;
     _tenant_id uuid;
     _plan_duration interval;
-begin
+BEGIN
     _tenant_id := new.tenant_id;
 
 
@@ -150,9 +150,9 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function enable_tenant()
+CREATE OR REPLACE FUNCTION enable_tenant()
 returns trigger as $$
-begin
+BEGIN
 
     update general_schema.tenant
     set is_subscribed = true,
@@ -178,17 +178,17 @@ create trigger on_subscription_created
     for each row
     execute function general_schema.enable_tenant();
 
-create or replace function update_timestamp()
+CREATE OR REPLACE FUNCTION update_timestamp()
 returns trigger as $$
-begin
+BEGIN
     new.updated_at = current_timestamp;
     return new;
 end;
 $$ language plpgsql;
 
-create or replace function update_product_tsv()
+CREATE OR REPLACE FUNCTION update_product_tsv()
 returns trigger as $$
-begin
+BEGIN
     new.product_name_tsv = to_tsvector('spanish', new.product_name);
     return new;
 end;

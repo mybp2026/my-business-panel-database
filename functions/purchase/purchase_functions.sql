@@ -1,11 +1,11 @@
 SET SEARCH_PATH = purchase_schema;
 
-create or replace function calculate_purchase_order_total(
+CREATE OR REPLACE FUNCTION calculate_purchase_order_total(
     p_purchase_order_id uuid
 ) returns numeric as $$
 declare
     v_total numeric(12,3);
-begin
+BEGIN
     select coalesce(sum(quantity_ordered * unit_price), 0)
     into v_total
     from purchase_schema.purchase_order_item
@@ -15,7 +15,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function create_purchase_order(
+CREATE OR REPLACE FUNCTION create_purchase_order(
     p_supplier_id uuid,
     p_warehouse_id uuid,
     p_expected_delivery_date date,
@@ -37,7 +37,7 @@ declare
     v_account_payable_id uuid;
     v_account_payable_type_id int;
     v_due_date date;
-begin
+BEGIN
     -- Obtener tenant_id desde la relación supplier -> supplier_branch -> branch
     select b.tenant_id into v_tenant_id
     from purchase_schema.supplier s
@@ -187,9 +187,9 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function update_order_status()
+CREATE OR REPLACE FUNCTION update_order_status()
 returns trigger as $$
-begin
+BEGIN
     INSERT INTO purchase_schema.purchase_order_tracking(
         purchase_order_id,
         previous_status_id,
@@ -297,9 +297,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-create or replace function recalc_account_payable_on_payment()
+CREATE OR REPLACE FUNCTION recalc_account_payable_on_payment()
 returns trigger as $$
-begin
+BEGIN
     if new.verified = true and (old.verified is null or old.verified = false) then
         perform purchase_schema.check_account_payable_completion(
             (select account_payable_id 
@@ -317,11 +317,11 @@ create trigger recalc_account_payable_on_payment_trigger
     for each row
     execute function recalc_account_payable_on_payment();
 
-create or replace function update_invoice_paid_status()
+CREATE OR REPLACE FUNCTION update_invoice_paid_status()
 returns trigger as $$
 declare
     v_is_paid boolean;
-begin
+BEGIN
     if new.account_payable_status = 3 and old.account_payable_status is distinct from 3 then
         select is_paid into v_is_paid
         from general_schema.account_payable
@@ -345,14 +345,14 @@ create trigger update_invoice_paid_status_trigger
     for each row
     execute function purchase_schema.update_invoice_paid_status();
 
-create or replace function create_goods_receipt()
+CREATE OR REPLACE FUNCTION create_goods_receipt()
 returns trigger as $$
 declare
     v_goods_receipt_id uuid;
     v_subtotal numeric(12,3);
     v_tax_amount numeric(12,3);
     v_item record;
-begin
+BEGIN
     if new.purchase_order_status_id = 3 and old.purchase_order_status_id is distinct from 3 then
         if exists(
             select 1 
@@ -414,7 +414,7 @@ create trigger create_goods_receipt_trigger
     for each row
     execute function purchase_schema.create_goods_receipt();
 
-create or replace function execute_three_way_matching(
+CREATE OR REPLACE FUNCTION execute_three_way_matching(
     p_purchase_order_id uuid,
     p_goods_receipt_id uuid
 ) returns void as $$
@@ -434,7 +434,7 @@ declare
     v_receipt_qty integer;
     v_amounts_matched boolean;
     v_quantities_matched boolean;
-begin
+BEGIN
     select supplier_invoice_id into v_supplier_invoice_id
     from purchase_schema.supplier_invoice
     where purchase_order_id = p_purchase_order_id;
@@ -535,7 +535,7 @@ exception
 end;
 $$ language plpgsql;
 
-create or replace function generate_payment_alerts()
+CREATE OR REPLACE FUNCTION generate_payment_alerts()
 returns void as $$
 declare
     v_config record;
@@ -543,7 +543,7 @@ declare
     v_days_until_due integer;
     v_alert_type_id integer;
     v_existing_alert_id uuid;
-begin
+BEGIN
     for v_config in 
         select 
             pac.tenant_id,
@@ -621,7 +621,7 @@ $$ language plpgsql;
 
 drop function if exists get_pending_payment_alerts(uuid);
 
-create or replace function get_pending_payment_alerts(p_tenant_id uuid)
+CREATE OR REPLACE FUNCTION get_pending_payment_alerts(p_tenant_id uuid)
 returns table(
     payment_alert_id uuid,
     purchase_account_payable_id uuid,
@@ -636,7 +636,7 @@ returns table(
     alert_date timestamp,
     created_at timestamp
 ) as $$
-begin
+BEGIN
     return query
     select 
         spa.payment_alert_id,
@@ -678,9 +678,9 @@ exception
 end;
 $$ language plpgsql;
 
-create or replace function resolve_payment_alert(p_alert_id uuid)
+CREATE OR REPLACE FUNCTION resolve_payment_alert(p_alert_id uuid)
 returns void as $$
-begin
+BEGIN
     update purchase_schema.purchase_order_payment_alert
     set is_resolved = true,
         updated_at = current_timestamp
@@ -688,11 +688,11 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function auto_resolve_payment_alerts()
+CREATE OR REPLACE FUNCTION auto_resolve_payment_alerts()
 returns trigger as $$
 declare
     v_is_paid boolean;
-begin
+BEGIN
     if new.account_payable_status = 3 and old.account_payable_status is distinct from 3 then
         select is_paid into v_is_paid
         from general_schema.account_payable
@@ -717,7 +717,7 @@ create trigger auto_resolve_payment_alerts_trigger
     for each row
     execute function purchase_schema.auto_resolve_payment_alerts();
 
-create or replace function initialize_payment_alert_config(
+CREATE OR REPLACE FUNCTION initialize_payment_alert_config(
     p_tenant_id uuid,
     p_warning_days integer default 7,
     p_urgent_days integer default 3,
@@ -726,7 +726,7 @@ create or replace function initialize_payment_alert_config(
 ) returns uuid as $$
 declare
     v_config_id uuid;
-begin
+BEGIN
     INSERT INTO purchase_schema.purchase_order_payment_alert_config(
         tenant_id,
         warning_days_before_due,
@@ -752,7 +752,7 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function get_payment_alert_stats(p_tenant_id uuid)
+CREATE OR REPLACE FUNCTION get_payment_alert_stats(p_tenant_id uuid)
 returns table(
     total_alerts integer,
     overdue_count integer,
@@ -760,7 +760,7 @@ returns table(
     warning_count integer,
     total_amount_at_risk numeric
 ) as $$
-begin
+BEGIN
     return query
     select 
         count(*)::integer as total_alerts,

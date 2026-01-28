@@ -10,7 +10,7 @@ set search_path = purchase, general;
 -- SECTION 0: Cleanup
 -- ========================================
 do $$
-begin
+BEGIN
     delete from purchase.purchase_order_payment_alert 
     where purchase_account_payable_id in (
         select sap.purchase_account_payable_id
@@ -86,7 +86,7 @@ declare
     v_supplier_id uuid;
     v_product_id uuid;
     v_config_id uuid;
-begin
+BEGIN
     raise notice '========================================';
     raise notice '🔧 SETUP: Creating test data';
     raise notice '========================================';
@@ -151,7 +151,7 @@ declare
     v_order_urgent uuid;
     v_order_warning uuid;
     v_order_ok uuid;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📦 SECTION 2: Creating orders with varying due dates';
@@ -260,7 +260,7 @@ end $$;
 -- SECTION 3: Generate alerts
 -- ========================================
 do $$
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '🔔 SECTION 3: Generating payment alerts';
@@ -280,7 +280,7 @@ declare
     v_tenant_id uuid;
     v_alert record;
     v_count integer := 0;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📋 SECTION 4: Pending payment alerts';
@@ -317,7 +317,7 @@ do $$
 declare
     v_tenant_id uuid;
     v_stats record;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '📊 SECTION 5: Alert statistics';
@@ -348,7 +348,7 @@ declare
     v_payment_id uuid;
     v_alerts_before integer;
     v_alerts_after integer;
-begin
+BEGIN
     raise notice '';
     raise notice '========================================';
     raise notice '💰 SECTION 6: Auto-resolve alerts on payment';
