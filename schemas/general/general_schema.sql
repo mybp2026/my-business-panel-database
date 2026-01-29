@@ -170,9 +170,23 @@ CREATE TABLE IF NOT EXISTS subscription(
 CREATE TABLE IF NOT EXISTS product_category(
     product_category_id serial primary key,
     category_name varchar(100) unique not null,
+    parent_category_id INTEGER                                    
+        REFERENCES general_schema.product_category(product_category_id)
+        ON DELETE CASCADE,
+    hierarchy_level INTEGER DEFAULT 0 CHECK (hierarchy_level >= 0),  
     created_at timestamp default current_timestamp,
-    updated_at timestamp default current_timestamp
+    updated_at timestamp default current_timestamp,
+    
+    CONSTRAINT chk_no_self_reference                              
+        CHECK (product_category_id != parent_category_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_product_category_parent 
+    ON general_schema.product_category(parent_category_id) 
+    WHERE parent_category_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_product_category_hierarchy 
+    ON general_schema.product_category(parent_category_id, hierarchy_level);
 
 CREATE TABLE IF NOT EXISTS product(
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
