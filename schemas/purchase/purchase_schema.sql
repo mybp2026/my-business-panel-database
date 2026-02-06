@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS supplier(
     supplier_contact_info TEXT,
     supplier_address TEXT,
     supplier_notes TEXT,
+    added_by uuid REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

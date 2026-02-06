@@ -17,14 +17,14 @@ Covers:
 
 ## Prerequisites
 
-- Schemas: `purchase`, `general_schema`, `inventory_schema`
+- Schemas: `purchase_schema`, `general_schema`, `inventory_schema`
 - general_schema data: tenant, branch, products, payment methods, tax rates
 - Installed functions/triggers:
-  - `purchase.create_purchase_order(...)`
-  - `purchase.calculate_purchase_order_total(...)`
-  - `purchase.verify_purchase_order_payment(...)`
-  - `purchase.create_goods_receipt()` (trigger on order status change)
-  - `purchase.execute_three_way_matching(...)` (called after items are inserted)
+  - `purchase_schema.create_purchase_order(...)`
+  - `purchase_schema.calculate_purchase_order_total(...)`
+  - `purchase_schema.verify_purchase_order_payment(...)`
+  - `purchase_schema.create_goods_receipt()` (trigger on order status change)
+  - `purchase_schema.execute_three_way_matching(...)` (called after items are inserted)
 
 ## Key entities
 
