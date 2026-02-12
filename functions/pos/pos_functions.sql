@@ -106,7 +106,7 @@ create trigger on_sale_completed_link_sale_to_session
     when (old.is_completed is false and new.is_completed is true)
     execute function link_sale_to_session();
 
-CREATE OR REPLACE FUNCTION calculate_bill_total()
+CREATE OR REPLACE FUNCTION calculate_digital_sale_invoice_total()
 returns trigger as $$
 BEGIN
     new.total_amount := new.subtotal_amount + new.tax_amount;
@@ -114,11 +114,11 @@ BEGIN
 end;
 $$ language plpgsql;
 
-drop trigger if exists calculate_bill_total_trigger on pos_schema.bill;
-create trigger calculate_bill_total_trigger
-    before insert or update on pos_schema.bill
+drop trigger if exists calculate_digital_sale_invoice_total_trigger on pos_schema.digital_sale_invoice;
+create trigger calculate_digital_sale_invoice_total_trigger
+    before insert or update on pos_schema.digital_sale_invoice
     for each row
-    execute function calculate_bill_total();
+    execute function calculate_digital_sale_invoice_total();
 
 CREATE OR REPLACE FUNCTION calculate_total_price()
 returns trigger as $$
@@ -134,9 +134,9 @@ create trigger calculate_total_price_return_product_trigger
     for each row
     execute function calculate_total_price();
 
-CREATE OR REPLACE FUNCTION pos_schema.get_bill(_sale_id uuid)
+CREATE OR REPLACE FUNCTION pos_schema.get_digital_sale_invoice(_sale_id uuid)
 returns table (
-    bill_id uuid,
+    digital_sale_invoice_id uuid,
     sale_id uuid,
     tenant_customer_id uuid,
     currency_id INTEGER,
@@ -149,7 +149,7 @@ returns table (
 BEGIN
     return query
     select 
-        b.bill_id,
+        b.digital_sale_invoice_id,
         b.sale_id,
         b.tenant_customer_id,
         b.currency_id,
@@ -158,15 +158,15 @@ BEGIN
         b.total_amount,
         b.created_at,
         b.updated_at
-    from pos_schema.bill b
+    from pos_schema.digital_sale_invoice b
     where b.sale_id = _sale_id;
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION create_bill()
+CREATE OR REPLACE FUNCTION create_digital_sale_invoice()
 returns trigger as $$
 declare
-    _bill_id uuid;
+    _digital_sale_invoice_id uuid;
     _tenant_customer_id uuid;
     _tenant_id uuid;
     _currency_id INTEGER;
@@ -175,13 +175,13 @@ declare
     _total numeric(10,2);
     _payment_ids uuid[];
 BEGIN
-        raise notice 'Creating bill for sale: %', new.sale_id;
+        raise notice 'Creating digital sale invoice for sale: %', new.sale_id;
         
         if exists(
-            select 1 from pos_schema.bill
+            select 1 from pos_schema.digital_sale_invoice
             where sale_id = new.sale_id
         ) then
-            raise notice 'Bill already exists for sale: %', new.sale_id;
+            raise notice 'Digital sale invoice already exists for sale: %', new.sale_id;
             return new;
         end if;
         
@@ -207,7 +207,7 @@ BEGIN
         raise notice '   Tax: $%', _tax;
         raise notice '   Total: $%', _total;
 
-        INSERT INTO pos_schema.bill (
+        INSERT INTO pos_schema.digital_sale_invoice (
             sale_id,              
             tenant_customer_id,
             currency_id,
@@ -221,50 +221,51 @@ BEGIN
             _subtotal,
             _tax,
             _total
-        ) returning bill_id into _bill_id;
+        ) returning digital_sale_invoice_id into _digital_sale_invoice_id;
         
-        raise notice '   Bill created: %', _bill_id;
+        raise notice '   Digital sale invoice created: %', _digital_sale_invoice_id;
         
         select array_agg(customer_payment_id) into _payment_ids
         from pos_schema.customer_payment
         where sale_id = new.sale_id
         and verified = true;
         
-        INSERT INTO pos_schema.bill_payment(bill_id, customer_payment_id, payment_amount)
+        INSERT INTO pos_schema.digital_sale_invoice_payment(digital_sale_invoice_id, customer_payment_id, payment_amount)
         select 
-            _bill_id,
+            _digital_sale_invoice_id,
             customer_payment_id,
             payment_amount
         from pos_schema.customer_payment
         where customer_payment_id = any(_payment_ids);
         
-        raise notice '   % payment(s) linked to bill', array_length(_payment_ids, 1);
+        raise notice '   % payment(s) linked to digital sale invoice', array_length(_payment_ids, 1);
         raise notice '';
-        raise notice 'Bill creation completed successfully';
-        raise notice '   Bill ID: %', _bill_id;
+        raise notice 'Digital sale invoice creation completed successfully';
+        raise notice '   Invoice ID: %', _digital_sale_invoice_id;
         raise notice '   Sale ID: %', new.sale_id;
 
         return new;
         
     exception
         when others then
-            raise notice 'Error creating bill: %', sqlerrm;
+            raise notice 'Error creating digital sale invoice: %', sqlerrm;
             return new;
 end;
 $$ language plpgsql;
 
 drop trigger if exists on_sale_completed_create_bill on pos_schema.sale;
-create trigger on_sale_completed_create_bill
+drop trigger if exists on_sale_completed_create_digital_sale_invoice on pos_schema.sale;
+create trigger on_sale_completed_create_digital_sale_invoice
     after update of is_completed on pos_schema.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
-    execute function create_bill();
+    execute function create_digital_sale_invoice();
 
 CREATE OR REPLACE FUNCTION update_on_return()
 returns trigger as $$
 declare
     _sale_item_record record;
-    _bill_id uuid;
+    _digital_sale_invoice_id uuid;
     _sale_id uuid;
     _total_returned numeric(10,2) := 0;
     _original_subtotal numeric(10,2);
@@ -297,13 +298,13 @@ BEGIN
 
     _sale_id := _sale_item_record.sale_id;
 
-    -- get bill for sale
-    select bill_id into _bill_id from pos_schema.bill where sale_id = _sale_id limit 1;
-    if _bill_id is null then
-        raise exception 'Bill not found for sale: %', _sale_id;
+    -- get digital sale invoice for sale
+    select digital_sale_invoice_id into _digital_sale_invoice_id from pos_schema.digital_sale_invoice where sale_id = _sale_id limit 1;
+    if _digital_sale_invoice_id is null then
+        raise exception 'Digital sale invoice not found for sale: %', _sale_id;
     end if;
 
-    raise notice 'Bill ID: %', _bill_id;
+    raise notice 'Digital Sale Invoice ID: %', _digital_sale_invoice_id;
     raise notice 'Original sale item: qty=% unit=$% total=$%', _sale_item_record.quantity, _sale_item_record.unit_price, _sale_item_record.total_price;
 
     if new.quantity > _sale_item_record.quantity then
@@ -327,9 +328,9 @@ BEGIN
         raise notice 'Sale item quantity updated from % to %', _sale_item_record.quantity, _quantity_remaining;
     end if;
 
-    -- Update bill totals
+    -- Update digital sale invoice totals
     select subtotal_amount, tax_amount, total_amount into _original_subtotal, _original_tax, _original_total
-    from pos_schema.bill where bill_id = _bill_id;
+    from pos_schema.digital_sale_invoice where digital_sale_invoice_id = _digital_sale_invoice_id;
 
     _total_returned := new.quantity * new.unit_price;
     raise notice 'Amount returned (line): $%', _total_returned;
@@ -352,14 +353,14 @@ BEGIN
     _new_tax := round(_new_subtotal * (_tax_rate / 100), 2);
     _new_total := round(_new_subtotal + _new_tax, 2);
 
-    update pos_schema.bill
+    update pos_schema.digital_sale_invoice
     set subtotal_amount = _new_subtotal,
         tax_amount = _new_tax,
         total_amount = _new_total,
         updated_at = current_timestamp
-    where bill_id = _bill_id;
+    where digital_sale_invoice_id = _digital_sale_invoice_id;
 
-    raise notice 'Bill updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
+    raise notice 'Digital sale invoice updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
 
     select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_schema.sale_item si where si.sale_id = _sale_id;
     _new_tax := round(_sale_subtotal_after * (_tax_rate / 100), 2);
@@ -979,32 +980,32 @@ returns trigger as $$
 declare
     _tenant_id uuid;
     _tenant_customer_id uuid;
-    _bill_id uuid;
+    _digital_sale_invoice_id uuid;
     _points_earned INTEGER;
     _current_balance INTEGER;
     _cash_payments_total numeric(10,2);
     _points_already_awarded BOOLEAN;
 BEGIN
-        _bill_id := new.bill_id;
+        _digital_sale_invoice_id := new.digital_sale_invoice_id;
         
         select exists(
             select 1 
             from pos_schema.score_transaction 
-            where bill_id = _bill_id 
+            where digital_sale_invoice_id = _digital_sale_invoice_id 
             and transaction_type_id = 1  
         ) into _points_already_awarded;
         
         if _points_already_awarded then
-            raise notice 'Points already awarded for bill %', _bill_id;
+            raise notice 'Points already awarded for digital sale invoice %', _digital_sale_invoice_id;
             return new;
         end if;
         
         select tenant_customer_id into _tenant_customer_id
-        from pos_schema.bill
-        where bill_id = _bill_id;
+        from pos_schema.digital_sale_invoice
+        where digital_sale_invoice_id = _digital_sale_invoice_id;
         
         if _tenant_customer_id is null then
-            raise notice 'No customer found for bill %', _bill_id;
+            raise notice 'No customer found for digital sale invoice %', _digital_sale_invoice_id;
             return new;
         end if;
         
@@ -1018,9 +1019,9 @@ BEGIN
         end if;
         
         select coalesce(sum(cp.payment_amount), 0) into _cash_payments_total
-        from pos_schema.bill_payment bp
+        from pos_schema.digital_sale_invoice_payment bp
         join pos_schema.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
-        where bp.bill_id = _bill_id
+        where bp.digital_sale_invoice_id = _digital_sale_invoice_id
         and cp.is_points_redemption = false;
         
         raise notice 'Cash/card payments total: $%', _cash_payments_total;
@@ -1032,7 +1033,7 @@ BEGIN
         );
         
         if _points_earned <= 0 then
-            raise notice 'No points earned for this purchase (Bill: %)', _bill_id;
+            raise notice 'No points earned for this purchase (Invoice: %)', _digital_sale_invoice_id;
             return new;
         end if;
         
@@ -1061,19 +1062,19 @@ BEGIN
             tenant_customer_id,
             transaction_type_id,
             points,
-            bill_id,
+            digital_sale_invoice_id,
             created_at
         ) VALUES (
             _tenant_id,
             _tenant_customer_id,
             1,  
             _points_earned,
-            _bill_id,
+            _digital_sale_invoice_id,
             current_timestamp
         );
         
         raise notice 'Awarded % points to customer %', _points_earned, _tenant_customer_id;
-        raise notice 'Bill: %', _bill_id;
+        raise notice 'Invoice: %', _digital_sale_invoice_id;
         raise notice 'New balance: % points', _current_balance;
         
         return new;
@@ -1086,8 +1087,10 @@ end;
 $$ language plpgsql;
 
 drop trigger if exists on_purchase_billed on pos_schema.bill_payment;
-create trigger on_purchase_billed
-    after insert on pos_schema.bill_payment
+drop trigger if exists on_purchase_billed on pos_schema.digital_sale_invoice_payment;
+drop trigger if exists on_invoice_payment_award_points on pos_schema.digital_sale_invoice_payment;
+create trigger on_invoice_payment_award_points
+    after insert on pos_schema.digital_sale_invoice_payment
     for each row
     execute function pos_schema.award_points();
 
@@ -1314,8 +1317,9 @@ drop trigger if exists update_customer_payment_timestamp on pos_schema.customer_
 create trigger update_customer_payment_timestamp before update on pos_schema.customer_payment
 for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_timestamp on pos_schema.bill;
-create trigger update_bill_timestamp before update on pos_schema.bill
+drop trigger if exists update_bill_timestamp on pos_schema.digital_sale_invoice;
+drop trigger if exists update_digital_sale_invoice_timestamp on pos_schema.digital_sale_invoice;
+create trigger update_digital_sale_invoice_timestamp before update on pos_schema.digital_sale_invoice
 for each row execute function general_schema.update_timestamp();
 
 drop trigger if exists update_return_transaction_timestamp on pos_schema.return_transaction;
@@ -1350,8 +1354,9 @@ drop trigger if exists update_score_transaction_timestamp on pos_schema.score_tr
 create trigger update_score_transaction_timestamp before update on pos_schema.score_transaction
 for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_payment_timestamp on pos_schema.bill_payment;
-create trigger update_bill_payment_timestamp before update on pos_schema.bill_payment
+drop trigger if exists update_bill_payment_timestamp on pos_schema.digital_sale_invoice_payment;
+drop trigger if exists update_digital_sale_invoice_payment_timestamp on pos_schema.digital_sale_invoice_payment;
+create trigger update_digital_sale_invoice_payment_timestamp before update on pos_schema.digital_sale_invoice_payment
 for each row execute function general_schema.update_timestamp();
 
 drop trigger if exists update_sale_timestamp on pos_schema.sale;

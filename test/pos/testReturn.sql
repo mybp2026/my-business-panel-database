@@ -1,10 +1,10 @@
--- =====================================
+﻿-- =====================================
 -- SCRIPT DE PRUEBA: DEVOLUCIONES PARCIALES Y TOTALES (idempotente)
 -- =====================================
 -- Sections follow the same style as testHybridPay.sql
 -- 1) Cleanup (idempotent)
 -- 2) Prepare tenant/branch/user/customer/products
--- 3) Create sale and bill (via verify_customer_payment trigger)
+-- 3) Create sale and digital_sale_invoice (via verify_customer_payment trigger)
 -- 4) Perform PARTIAL return (less than purchased quantity)
 -- 5) Verify invoice and sale updated and return_product rows created
 -- 6) Perform TOTAL return of remaining items
@@ -30,27 +30,27 @@ BEGIN
 
         delete from pos_schema.return_product where return_transaction_id in (
             select return_transaction_id from pos_schema.return_transaction rt
-            join pos_schema.bill b on rt.bill_id = b.bill_id
+            join pos_schema.digital_sale_invoice b on rt.digital_sale_invoice_id = b.digital_sale_invoice_id
             join pos_schema.sale s on b.sale_id = s.sale_id
             join general_schema.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_schema.return_transaction where bill_id in (
-            select b.bill_id from pos_schema.bill b
+        delete from pos_schema.return_transaction where digital_sale_invoice_id in (
+            select b.digital_sale_invoice_id from pos_schema.digital_sale_invoice b
             join pos_schema.sale s on b.sale_id = s.sale_id
             join general_schema.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_schema.bill_payment where bill_id in (
-            select b.bill_id from pos_schema.bill b
+        delete from pos_schema.digital_sale_invoice_payment where digital_sale_invoice_id in (
+            select b.digital_sale_invoice_id from pos_schema.digital_sale_invoice b
             join pos_schema.sale s on b.sale_id = s.sale_id
             join general_schema.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_schema.bill where sale_id in (
+        delete from pos_schema.digital_sale_invoice where sale_id in (
             select s.sale_id from pos_schema.sale s
             join general_schema.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
@@ -203,7 +203,7 @@ end $$;
 
 
 -- ========================================
--- SECCIÓN 2: Crear venta y pagar (genera bill)
+-- SECCIÓN 2: Crear venta y pagar (genera factura digital)
 -- ========================================
 DO $$
 declare
@@ -257,11 +257,11 @@ BEGIN
 
     perform pg_sleep(0.2);
 
-    if not exists (select 1 from pos_schema.bill where sale_id = v_sale_id) then
-        raise exception 'Bill was not created for sale %', v_sale_id;
+    if not exists (select 1 from pos_schema.digital_sale_invoice where sale_id = v_sale_id) then
+        raise exception 'Digital sale invoice was not created for sale %', v_sale_id;
     end if;
 
-    raise notice '✅ SECCIÓN 2 COMPLETADA - Sale billed';
+    raise notice '✅ SECCIÓN 2 COMPLETADA - Sale invoiced';
 end $$;
 
 
@@ -271,7 +271,7 @@ end $$;
 DO $$
 declare
     v_sale_id uuid;
-    v_bill_id uuid;
+    v_digital_sale_invoice_id uuid;
     v_return_tx uuid;
     v_customer_id uuid;
     v_si_a uuid;
@@ -295,7 +295,7 @@ BEGIN
 
     if v_sale_id is null then raise exception 'No sale found for partial return'; end if;
 
-    select bill_id, tenant_customer_id into v_bill_id, v_customer_id from pos_schema.bill where sale_id = v_sale_id limit 1;
+    select digital_sale_invoice_id, tenant_customer_id into v_digital_sale_invoice_id, v_customer_id from pos_schema.digital_sale_invoice where sale_id = v_sale_id limit 1;
 
     select sale_item_id into v_si_a from pos_schema.sale_item where sale_id = v_sale_id and product_variant_id = (
         select product_variant_id from general_schema.product_variant where tenant_id = (select tenant_id from general_schema.tenant where tenant_name = 'Return Test Shop' limit 1) and sku = 'RT-A' limit 1
@@ -309,13 +309,13 @@ BEGIN
         raise exception 'Sale items for A or B not found';
     end if;
 
-    INSERT INTO pos_schema.return_transaction (bill_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
-    VALUES (v_bill_id, v_customer_id, 0.00, 1, (select return_status_id from pos_schema.return_status where status_name = 'pending' limit 1))
+    INSERT INTO pos_schema.return_transaction (digital_sale_invoice_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
+    VALUES (v_digital_sale_invoice_id, v_customer_id, 0.00, 1, (select return_status_id from pos_schema.return_status where status_name = 'pending' limit 1))
     returning return_transaction_id into v_return_tx;
 
     raise notice '✓ Return transaction created: %', v_return_tx;
 
-    -- insert return lines (trigger will compute total_price and update sale_item/bill)
+    -- insert return lines (trigger will compute total_price and update sale_item/digital_sale_invoice)
     INSERT INTO pos_schema.return_product (return_transaction_id, sale_item_id, quantity, unit_price)
     VALUES
         (v_return_tx, v_si_a, 2, 10.00),
@@ -350,7 +350,7 @@ end $$;
 -- ========================================
 DO $$
 declare
-    v_bill record;
+    v_invoice record;
     v_qty_a int;
     v_qty_b int;
     v_qty_c int;
@@ -367,12 +367,12 @@ BEGIN
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Return Test Shop' limit 1;
 
-    select b.subtotal_amount, b.tax_amount, b.total_amount into v_bill
-    from pos_schema.bill b
+    select b.subtotal_amount, b.tax_amount, b.total_amount into v_invoice
+    from pos_schema.digital_sale_invoice b
     join pos_schema.sale s on b.sale_id = s.sale_id
     join general_schema.branch br on s.branch_id = br.branch_id
     where br.tenant_id = v_tenant_id
-    order by b.billed_at desc
+    order by b.invoiced_at desc
     limit 1;
 
     select coalesce(quantity,0) into v_qty_a from pos_schema.sale_item si join general_schema.product_variant pv on si.tenant_id = pv.tenant_id and si.product_variant_id = pv.product_variant_id where pv.sku = 'RT-A' and si.tenant_id = v_tenant_id limit 1;
@@ -391,19 +391,19 @@ BEGIN
     v_expected_tax := round(v_expected_subtotal * (v_tax_rate / 100), 2);
     v_expected_total := round(v_expected_subtotal + v_expected_tax, 2);
 
-    raise notice 'Bill after partial return: subtotal $% tax $% total $%', v_bill.subtotal_amount, v_bill.tax_amount, v_bill.total_amount;
+    raise notice 'Invoice after partial return: subtotal $% tax $% total $%', v_invoice.subtotal_amount, v_invoice.tax_amount, v_invoice.total_amount;
     raise notice 'Remaining quantities -> A: %, B: %, C: %', v_qty_a, v_qty_b, v_qty_c;
 
-    if abs(v_bill.subtotal_amount - v_expected_subtotal) > 0.01 then
-        raise exception 'Partial return: bill subtotal mismatch. Expected $% got $%', v_expected_subtotal, v_bill.subtotal_amount;
+    if abs(v_invoice.subtotal_amount - v_expected_subtotal) > 0.01 then
+        raise exception 'Partial return: Invoice subtotal mismatch. Expected $% got $%', v_expected_subtotal, v_invoice.subtotal_amount;
     end if;
 
-    if abs(v_bill.tax_amount - v_expected_tax) > 0.01 then
-        raise exception 'Partial return: bill tax mismatch. Expected $% got $%', v_expected_tax, v_bill.tax_amount;
+    if abs(v_invoice.tax_amount - v_expected_tax) > 0.01 then
+        raise exception 'Partial return: Invoice tax mismatch. Expected $% got $%', v_expected_tax, v_invoice.tax_amount;
     end if;
 
-    if abs(v_bill.total_amount - v_expected_total) > 0.01 then
-        raise exception 'Partial return: bill total mismatch. Expected $% got $%', v_expected_total, v_bill.total_amount;
+    if abs(v_invoice.total_amount - v_expected_total) > 0.01 then
+        raise exception 'Partial return: Invoice total mismatch. Expected $% got $%', v_expected_total, v_invoice.total_amount;
     end if;
 
     -- verify sale totals reconciled with remaining sale_items
@@ -416,7 +416,7 @@ end $$;
 -- ========================================
 DO $$
 declare
-    v_bill_id uuid;
+    v_digital_sale_invoice_id uuid;
     v_return_tx uuid;
     v_sale_id uuid;
     v_customer_id uuid;
@@ -436,10 +436,10 @@ BEGIN
     order by s.sale_date desc
     limit 1;
 
-    select bill_id, tenant_customer_id into v_bill_id, v_customer_id from pos_schema.bill where sale_id = v_sale_id limit 1;
+    select digital_sale_invoice_id, tenant_customer_id into v_digital_sale_invoice_id, v_customer_id from pos_schema.digital_sale_invoice where sale_id = v_sale_id limit 1;
 
-    INSERT INTO pos_schema.return_transaction (bill_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
-    VALUES (v_bill_id, v_customer_id, 0.00, 1, (select return_status_id from pos_schema.return_status where status_name = 'pending' limit 1))
+    INSERT INTO pos_schema.return_transaction (digital_sale_invoice_id, tenant_customer_id, total_refund_amount, refund_method, return_status_id)
+    VALUES (v_digital_sale_invoice_id, v_customer_id, 0.00, 1, (select return_status_id from pos_schema.return_status where status_name = 'pending' limit 1))
     returning return_transaction_id into v_return_tx;
 
     for v_si in
@@ -464,7 +464,7 @@ end $$;
 -- ========================================
 DO $$
 declare
-    v_bill record;
+    v_invoice record;
     v_remaining_items int;
     v_tenant_id uuid;
 BEGIN
@@ -475,12 +475,12 @@ BEGIN
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Return Test Shop' limit 1;
 
-    select b.subtotal_amount, b.tax_amount, b.total_amount into v_bill
-    from pos_schema.bill b
+    select b.subtotal_amount, b.tax_amount, b.total_amount into v_invoice
+    from pos_schema.digital_sale_invoice b
     join pos_schema.sale s on b.sale_id = s.sale_id
     join general_schema.branch br on s.branch_id = br.branch_id
     where br.tenant_id = v_tenant_id
-    order by b.billed_at desc
+    order by b.invoiced_at desc
     limit 1;
 
     select count(*) into v_remaining_items from pos_schema.sale_item si
@@ -488,15 +488,15 @@ BEGIN
     join general_schema.branch br on s.branch_id = br.branch_id
     where br.tenant_id = v_tenant_id;
 
-    raise notice 'Bill after total return: subtotal $% tax $% total $%', v_bill.subtotal_amount, v_bill.tax_amount, v_bill.total_amount;
+    raise notice 'Invoice after total return: subtotal $% tax $% total $%', v_invoice.subtotal_amount, v_invoice.tax_amount, v_invoice.total_amount;
     raise notice 'Remaining sale_item rows for tenant: %', v_remaining_items;
 
     if v_remaining_items <> 0 then
         raise exception 'Total return failed: sale_items still exist (% rows)', v_remaining_items;
     end if;
 
-    if round(v_bill.subtotal_amount,2) <> 0.00 or round(v_bill.total_amount,2) <> 0.00 then
-        raise exception 'Total return failed: bill not zeroed (subtotal $% total $%)', v_bill.subtotal_amount, v_bill.total_amount;
+    if round(v_invoice.subtotal_amount,2) <> 0.00 or round(v_invoice.total_amount,2) <> 0.00 then
+        raise exception 'Total return failed: Invoice not zeroed (subtotal $% total $%)', v_invoice.subtotal_amount, v_invoice.total_amount;
     end if;
 
     raise notice '✅ Total return succeeded, invoice zeroed and sale items removed';
@@ -527,7 +527,7 @@ BEGIN
     into v_return_count, v_return_sum
     from pos_schema.return_product rp
     join pos_schema.return_transaction rt on rp.return_transaction_id = rt.return_transaction_id
-    join pos_schema.bill b on rt.bill_id = b.bill_id
+    join pos_schema.digital_sale_invoice b on rt.digital_sale_invoice_id = b.digital_sale_invoice_id
     where b.sale_id in (
         select s.sale_id from pos_schema.sale s
         join general_schema.branch br on s.branch_id = br.branch_id
@@ -552,7 +552,7 @@ BEGIN
             pv.variant_name
         from pos_schema.return_product rp
         join pos_schema.return_transaction rt on rp.return_transaction_id = rt.return_transaction_id
-        join pos_schema.bill b on rt.bill_id = b.bill_id
+        join pos_schema.digital_sale_invoice b on rt.digital_sale_invoice_id = b.digital_sale_invoice_id
         join pos_schema.sale_item si on rp.sale_item_id = si.sale_item_id
         join general_schema.product_variant pv on si.product_variant_id = pv.product_variant_id and si.tenant_id = pv.tenant_id
         where b.sale_id in (

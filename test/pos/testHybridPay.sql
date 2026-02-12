@@ -1,25 +1,25 @@
 -- =====================================
--- SCRIPT DE PRUEBA: PAGOS H√çBRIDOS Y SISTEMA DE PUNTOS 
+-- SCRIPT DE PRUEBA: PAGOS HÕBRIDOS Y SISTEMA DE PUNTOS 
 -- =====================================
--- 1. Configuraci√≥n de programa de lealtad con ratios din√°micos
--- 2. Venta con pago en efectivo ‚Üí Gana puntos
--- 3. Venta con pago en tarjeta ‚Üí Gana puntos
--- 4. Venta con pago h√≠brido (efectivo + tarjeta) ‚Üí Gana puntos
--- 5. Venta con canje de puntos parcial ‚Üí Gana y canjea puntos (SOLO de pagos en dinero)
--- 6. Venta con canje de puntos total ‚Üí Solo canjea puntos (NO gana puntos)
--- 7. Validaciones de l√≠mites de puntos
--- 8. Verificaci√≥n de ratios configurables por tenant
+-- 1. ConfiguraciÛn de programa de lealtad con ratios din·micos
+-- 2. Venta con pago en efectivo ? Gana puntos
+-- 3. Venta con pago en tarjeta ? Gana puntos
+-- 4. Venta con pago hÌbrido (efectivo + tarjeta) ? Gana puntos
+-- 5. Venta con canje de puntos parcial ? Gana y canjea puntos (SOLO de pagos en dinero)
+-- 6. Venta con canje de puntos total ? Solo canjea puntos (NO gana puntos)
+-- 7. Validaciones de lÌmites de puntos
+-- 8. VerificaciÛn de ratios configurables por tenant
 -- =====================================
 
 -- ========================================
--- SECCI√ìN 0: Limpieza y preparaci√≥n (orden correcto de dependencias)
+-- SECCI”N 0: Limpieza y preparaciÛn (orden correcto de dependencias)
 -- ========================================
 DO $$
 declare
     v_tenant_ids uuid[];
 BEGIN
     raise notice '========================================';
-    raise notice 'üßπ SECCI√ìN 0: Limpieza inicial';
+    raise notice '?? SECCI”N 0: Limpieza inicial';
     raise notice '========================================';
 
     -- Obtener tenant_ids para limpieza
@@ -28,12 +28,12 @@ BEGIN
     where tenant_name in ('SuperMercado Digital', 'Super Comercio Digital');
 
     if v_tenant_ids is null then
-        raise notice '   ‚ÑπÔ∏è  No hay datos previos para limpiar';
-        raise notice '‚úÖ SECCI√ìN 0 COMPLETADA';
+        raise notice '   ??  No hay datos previos para limpiar';
+        raise notice '? SECCI”N 0 COMPLETADA';
         return;
     end if;
 
-    -- 1. score_transaction (depende de bill, tenant_customer)
+    -- 1. score_transaction (depende de digital_sale_invoice, tenant_customer)
     delete from pos_schema.score_transaction 
     where tenant_id = any(v_tenant_ids);
 
@@ -41,10 +41,10 @@ BEGIN
     delete from pos_schema.tenant_customer_score 
     where tenant_id = any(v_tenant_ids);
 
-    -- 3. bill_payment (depende de bill)
-    delete from pos_schema.bill_payment 
-    where bill_id in (
-        select bill_id from pos_schema.bill 
+    -- 3. digital_sale_invoice_payment (depende de digital_sale_invoice)
+    delete from pos_schema.digital_sale_invoice_payment 
+    where digital_sale_invoice_id in (
+        select digital_sale_invoice_id from pos_schema.digital_sale_invoice 
         where sale_id in (
             select sale_id from pos_schema.sale 
             where branch_id in (
@@ -57,8 +57,8 @@ BEGIN
     delete from pos_schema.return_product 
     where return_transaction_id in (
         select return_transaction_id from pos_schema.return_transaction 
-        where bill_id in (
-            select bill_id from pos_schema.bill 
+        where digital_sale_invoice_id in (
+            select digital_sale_invoice_id from pos_schema.digital_sale_invoice 
             where sale_id in (
                 select sale_id from pos_schema.sale 
                 where branch_id in (
@@ -68,10 +68,10 @@ BEGIN
         )
     );
 
-    -- 5. return_transaction (depende de bill)
+    -- 5. return_transaction (depende de digital_sale_invoice)
     delete from pos_schema.return_transaction 
-    where bill_id in (
-        select bill_id from pos_schema.bill 
+    where digital_sale_invoice_id in (
+        select digital_sale_invoice_id from pos_schema.digital_sale_invoice 
         where sale_id in (
             select sale_id from pos_schema.sale 
             where branch_id in (
@@ -80,8 +80,8 @@ BEGIN
         )
     );
 
-    -- 6. bill (depende de sale)
-    delete from pos_schema.bill 
+    -- 6. digital_sale_invoice (depende de sale)
+    delete from pos_schema.digital_sale_invoice 
     where sale_id in (
         select sale_id from pos_schema.sale 
         where branch_id in (
@@ -107,7 +107,7 @@ BEGIN
         )
     );
 
-    -- ‚úÖ 9. sale_item (CR√çTICO: Usar tenant_id directo para asegurar borrado)
+    -- ? 9. sale_item (CRÕTICO: Usar tenant_id directo para asegurar borrado)
     delete from pos_schema.sale_item 
     where tenant_id = any(v_tenant_ids);
 
@@ -119,7 +119,7 @@ BEGIN
     delete from general_schema.product_variant 
     where tenant_id = any(v_tenant_ids);
 
-    -- ‚úÖ 12. product_variant adicional + product CABYS test entries
+    -- ? 12. product_variant adicional + product CABYS test entries
     delete from general_schema.product_variant 
     where tenant_id = any(v_tenant_ids);
     DELETE FROM general_schema.product WHERE cabys_code LIKE 'HPTEST%';
@@ -175,13 +175,13 @@ BEGIN
     delete from general_schema.tenant 
     where tenant_id = any(v_tenant_ids);
 
-    raise notice '‚úÖ SECCI√ìN 0 COMPLETADA';
+    raise notice '? SECCI”N 0 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 1: Configuraci√≥n inicial completa (idempotente)
+-- SECCI”N 1: ConfiguraciÛn inicial completa (idempotente)
 -- ========================================
 DO $$
 declare
@@ -197,7 +197,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üè™ SECCI√ìN 1: Configuraci√≥n inicial (idempotente)';
+    raise notice '?? SECCI”N 1: ConfiguraciÛn inicial (idempotente)';
     raise notice '========================================';
     raise notice '';
 
@@ -208,7 +208,7 @@ BEGIN
         VALUES ('Super Comercio Digital', 1, 'contacto@superdigital.com', true)
         returning tenant_id into v_tenant_id;
     end if;
-    raise notice '‚úì Tenant: %', v_tenant_id;
+    raise notice '? Tenant: %', v_tenant_id;
 
     -- 1.2 Crear sucursal
     select branch_id into v_branch_id from general_schema.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro' limit 1;
@@ -217,7 +217,7 @@ BEGIN
         VALUES (v_tenant_id, 'Sucursal Centro', 'Av. Principal #123', true)
         returning branch_id into v_branch_id;
     end if;
-    raise notice '‚úì Branch: %', v_branch_id;
+    raise notice '? Branch: %', v_branch_id;
 
     -- 1.3 Crear usuario cajero
     select user_id into v_user_id from general_schema.users where email = 'cajero@superdigital.com' limit 1;
@@ -226,23 +226,23 @@ BEGIN
         VALUES (v_tenant_id, 'cajero@superdigital.com', 'hash123', 1)
         returning user_id into v_user_id;
     end if;
-    raise notice '‚úì Usuario cajero: %', v_user_id;
+    raise notice '? Usuario cajero: %', v_user_id;
 
-    -- 1.4 Crear cliente (Juan P√©rez)
+    -- 1.4 Crear cliente (Juan PÈrez)
     select tenant_customer_id into v_customer_id from general_schema.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
     if v_customer_id is null then
         INSERT INTO general_schema.tenant_customer (
             tenant_id, first_name, last_name, document_number, email, phone, customer_segment_id
         ) VALUES (
-            v_tenant_id, 'Juan', 'P√©rez', 'DNI-12345678', 'juan.perez@email.com', '+506-8888-9999', 3
+            v_tenant_id, 'Juan', 'PÈrez', 'DNI-12345678', 'juan.perez@email.com', '+506-8888-9999', 3
         ) returning tenant_customer_id into v_customer_id;
     end if;
-    raise notice '‚úì Cliente: %', v_customer_id;
+    raise notice '? Cliente: %', v_customer_id;
 
     -- 1.5 Crear productos (CABYS + variantes)
     -- Create CABYS entries
     INSERT INTO general_schema.product (cabys_code, product_name)
-    VALUES ('HPTEST0000001', 'Electr√≥nicos')
+    VALUES ('HPTEST0000001', 'ElectrÛnicos')
     ON CONFLICT (cabys_code) DO NOTHING;
 
     -- Create variants
@@ -263,11 +263,11 @@ BEGIN
     select product_variant_id into v_variant_c_id from general_schema.product_variant where tenant_id = v_tenant_id and sku = 'PROD-003' limit 1;
     if v_variant_c_id is null then
         INSERT INTO general_schema.product_variant (tenant_id, cabys_code, sku, variant_name, unit_price, is_active)
-        VALUES (v_tenant_id, 'HPTEST0000001', 'PROD-003', 'Teclado Mec√°nico', 120.00, true)
+        VALUES (v_tenant_id, 'HPTEST0000001', 'PROD-003', 'Teclado Mec·nico', 120.00, true)
         returning product_variant_id into v_variant_c_id;
     end if;
 
-    raise notice '‚úì Variantes: %, %, %', v_variant_a_id, v_variant_b_id, v_variant_c_id;
+    raise notice '? Variantes: %, %, %', v_variant_a_id, v_variant_b_id, v_variant_c_id;
 
     -- 1.6 Crear caja registradora
     select cash_register_id into v_cash_register_id from pos_schema.cash_register where branch_id = v_branch_id limit 1;
@@ -276,9 +276,9 @@ BEGIN
         VALUES (v_branch_id, true)
         returning cash_register_id into v_cash_register_id;
     end if;
-    raise notice '‚úì Cash register: %', v_cash_register_id;
+    raise notice '? Cash register: %', v_cash_register_id;
 
-    -- 1.7 Abrir sesi√≥n de caja (requerido para link_sale_to_session)
+    -- 1.7 Abrir sesiÛn de caja (requerido para link_sale_to_session)
     perform 1 from pos_schema.cash_register_session 
     where cash_register_id = v_cash_register_id and is_active = true;
     if not found then
@@ -287,7 +287,7 @@ BEGIN
         ) VALUES (
             v_cash_register_id, v_user_id, 500.00, true
         );
-        raise notice '‚úì Cash register session opened';
+        raise notice '? Cash register session opened';
     end if;
 
     -- 1.8 Crear programa de lealtad
@@ -298,7 +298,7 @@ BEGIN
         ) VALUES (v_tenant_id, 10.00, 100.00, 0.00, true)
         returning loyalty_program_id into v_loyalty_program_id;
     end if;
-    raise notice '‚úì Loyalty program: %', v_loyalty_program_id;
+    raise notice '? Loyalty program: %', v_loyalty_program_id;
 
     -- 1.9 Inicializar puntos del cliente
     perform 1 from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
@@ -307,13 +307,13 @@ BEGIN
         VALUES (v_tenant_id, v_customer_id, 0, 0, 0);
     end if;
 
-    raise notice '‚úÖ SECCI√ìN 1 COMPLETADA';
+    raise notice '? SECCI”N 1 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 2: Venta simple con pago en efectivo ‚Üí Gana puntos
+-- SECCI”N 2: Venta simple con pago en efectivo ? Gana puntos
 -- ========================================
 DO $$
 declare
@@ -332,7 +332,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üíµ SECCI√ìN 2: Venta con pago en EFECTIVO (con impuestos)';
+    raise notice '?? SECCI”N 2: Venta con pago en EFECTIVO (con impuestos)';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
@@ -363,13 +363,13 @@ BEGIN
 
     select coalesce(score, 0) into v_points_after from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
-    raise notice '  Puntos ganados: % (antes % -> despu√©s %)', (v_points_after - v_points_before), v_points_before, v_points_after;
-    raise notice '‚úÖ SECCI√ìN 2 COMPLETADA';
+    raise notice '  Puntos ganados: % (antes % -> despuÈs %)', (v_points_after - v_points_before), v_points_before, v_points_after;
+    raise notice '? SECCI”N 2 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 3: Venta con pago en tarjeta ‚Üí Gana puntos
+-- SECCI”N 3: Venta con pago en tarjeta ? Gana puntos
 -- ========================================
 DO $$
 declare
@@ -388,20 +388,20 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üí≥ SECCI√ìN 3: Venta con pago en TARJETA (con impuestos)';
+    raise notice '?? SECCI”N 3: Venta con pago en TARJETA (con impuestos)';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
     
-    -- VALIDACI√ìN DEFENSIVA
+    -- VALIDACI”N DEFENSIVA
     if v_tenant_id is null then
-        raise exception '‚ùå ERROR: Tenant no encontrado en Secci√≥n 3';
+        raise exception '? ERROR: Tenant no encontrado en SecciÛn 3';
     end if;
 
     select branch_id into v_branch_id from general_schema.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro' limit 1;
     
     if v_branch_id is null then
-        raise exception '‚ùå ERROR: Branch no encontrada en Secci√≥n 3 (Tenant ID: %)', v_tenant_id;
+        raise exception '? ERROR: Branch no encontrada en SecciÛn 3 (Tenant ID: %)', v_tenant_id;
     end if;
 
     select user_id into v_user_id from general_schema.users where email = 'cajero@superdigital.com' limit 1;
@@ -430,13 +430,13 @@ BEGIN
 
     select coalesce(score, 0) into v_points_after from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
-    raise notice '  Puntos ganados: % (antes % -> despu√©s %)', (v_points_after - v_points_before), v_points_before, v_points_after;
-    raise notice '‚úÖ SECCI√ìN 3 COMPLETADA';
+    raise notice '  Puntos ganados: % (antes % -> despuÈs %)', (v_points_after - v_points_before), v_points_before, v_points_after;
+    raise notice '? SECCI”N 3 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 4: Venta con pago H√çBRIDO (efectivo + tarjeta)
+-- SECCI”N 4: Venta con pago HÕBRIDO (efectivo + tarjeta)
 -- ========================================
 DO $$
 declare
@@ -458,14 +458,14 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üíµüí≥ SECCI√ìN 4: Venta con pago H√çBRIDO (con impuestos)';
+    raise notice '???? SECCI”N 4: Venta con pago HÕBRIDO (con impuestos)';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
-    if v_tenant_id is null then raise exception '‚ùå ERROR: Tenant no encontrado en Secci√≥n 4'; end if;
+    if v_tenant_id is null then raise exception '? ERROR: Tenant no encontrado en SecciÛn 4'; end if;
 
     select branch_id into v_branch_id from general_schema.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro' limit 1;
-    if v_branch_id is null then raise exception '‚ùå ERROR: Branch no encontrada en Secci√≥n 4'; end if;
+    if v_branch_id is null then raise exception '? ERROR: Branch no encontrada en SecciÛn 4'; end if;
 
     select user_id into v_user_id from general_schema.users where email = 'cajero@superdigital.com' limit 1;
     select tenant_customer_id into v_customer_id from general_schema.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
@@ -501,13 +501,13 @@ BEGIN
 
     select coalesce(score, 0) into v_points_after from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
-    raise notice '  Puntos ganados: % (antes % -> despu√©s %)', (v_points_after - v_points_before), v_points_before, v_points_after;
-    raise notice '‚úÖ SECCI√ìN 4 COMPLETADA';
+    raise notice '  Puntos ganados: % (antes % -> despuÈs %)', (v_points_after - v_points_before), v_points_before, v_points_after;
+    raise notice '? SECCI”N 4 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 5: Resumen / Validaciones finales de puntos
+-- SECCI”N 5: Resumen / Validaciones finales de puntos
 -- ========================================
 DO $$
 declare
@@ -518,11 +518,11 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üìä SECCI√ìN 5: Estado actual del cliente';
+    raise notice '?? SECCI”N 5: Estado actual del cliente';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
-    if v_tenant_id is null then raise exception '‚ùå ERROR: Tenant no encontrado en Secci√≥n 5'; end if;
+    if v_tenant_id is null then raise exception '? ERROR: Tenant no encontrado en SecciÛn 5'; end if;
 
     select tenant_customer_id into v_customer_id from general_schema.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
     select * into v_score_record from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id limit 1;
@@ -534,12 +534,12 @@ BEGIN
     raise notice 'Puntos canjeados: %', coalesce(v_score_record.score_redeemed, 0);
     raise notice 'Ratio ganancia: % pts/$1', v_loyalty_program.points_earned_per_currency_unit;
     raise notice 'Ratio canje: % pts = $1', v_loyalty_program.points_redeemed_per_currency_unit;
-    raise notice '‚úÖ SECCI√ìN 5 COMPLETADA';
+    raise notice '? SECCI”N 5 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 6: Venta con canje PARCIAL de puntos
+-- SECCI”N 6: Venta con canje PARCIAL de puntos
 -- ========================================
 DO $$
 declare
@@ -564,14 +564,14 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üéÅ SECCI√ìN 6: Venta con canje PARCIAL de puntos (con impuestos)';
+    raise notice '?? SECCI”N 6: Venta con canje PARCIAL de puntos (con impuestos)';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
-    if v_tenant_id is null then raise exception '‚ùå ERROR: Tenant no encontrado en Secci√≥n 6'; end if;
+    if v_tenant_id is null then raise exception '? ERROR: Tenant no encontrado en SecciÛn 6'; end if;
 
     select branch_id into v_branch_id from general_schema.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro' limit 1;
-    if v_branch_id is null then raise exception '‚ùå ERROR: Branch no encontrada en Secci√≥n 6'; end if;
+    if v_branch_id is null then raise exception '? ERROR: Branch no encontrada en SecciÛn 6'; end if;
 
     select user_id into v_user_id from general_schema.users where email = 'cajero@superdigital.com' limit 1;
     select tenant_customer_id into v_customer_id from general_schema.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
@@ -584,12 +584,12 @@ BEGIN
     v_tax := round(v_subtotal * 0.13, 2);
     v_total := v_subtotal + v_tax;
 
-    -- Usar la mitad de los puntos disponibles (m√°ximo 5000)
+    -- Usar la mitad de los puntos disponibles (m·ximo 5000)
     v_points_to_redeem := least(v_points_before / 2, 5000);
     
     if v_points_to_redeem < v_redeem_rate then
-        raise notice '   ‚ö†Ô∏è No hay suficientes puntos para canjear (m√≠nimo % pts)', v_redeem_rate;
-        raise notice '‚úÖ SECCI√ìN 6 OMITIDA (puntos insuficientes)';
+        raise notice '   ?? No hay suficientes puntos para canjear (mÌnimo % pts)', v_redeem_rate;
+        raise notice '? SECCI”N 6 OMITIDA (puntos insuficientes)';
         return;
     end if;
 
@@ -623,13 +623,13 @@ BEGIN
 
     select coalesce(score, 0) into v_points_after from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
-    raise notice 'Puntos antes: %, despu√©s: %, neto: %', v_points_before, v_points_after, (v_points_after - v_points_before);
-    raise notice '‚úÖ SECCI√ìN 6 COMPLETADA';
+    raise notice 'Puntos antes: %, despuÈs: %, neto: %', v_points_before, v_points_after, (v_points_after - v_points_before);
+    raise notice '? SECCI”N 6 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 7: Venta con canje TOTAL de puntos
+-- SECCI”N 7: Venta con canje TOTAL de puntos
 -- ========================================
 DO $$
 declare
@@ -649,14 +649,14 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üéÅ SECCI√ìN 7: Venta con canje TOTAL de puntos';
+    raise notice '?? SECCI”N 7: Venta con canje TOTAL de puntos';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
-    if v_tenant_id is null then raise exception '‚ùå ERROR: Tenant no encontrado en Secci√≥n 7'; end if;
+    if v_tenant_id is null then raise exception '? ERROR: Tenant no encontrado en SecciÛn 7'; end if;
 
     select branch_id into v_branch_id from general_schema.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro' limit 1;
-    if v_branch_id is null then raise exception '‚ùå ERROR: Branch no encontrada en Secci√≥n 7'; end if;
+    if v_branch_id is null then raise exception '? ERROR: Branch no encontrada en SecciÛn 7'; end if;
 
     select user_id into v_user_id from general_schema.users where email = 'cajero@superdigital.com' limit 1;
     select tenant_customer_id into v_customer_id from general_schema.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
@@ -670,8 +670,8 @@ BEGIN
     v_cash_value := round(v_points_to_redeem / v_redeem_rate, 2);
 
     if v_points_before < v_points_to_redeem then
-        raise notice '   ‚ö†Ô∏è No hay suficientes puntos (disponibles: %, necesarios: %)', v_points_before, v_points_to_redeem;
-        raise notice '‚úÖ SECCI√ìN 7 OMITIDA (puntos insuficientes)';
+        raise notice '   ?? No hay suficientes puntos (disponibles: %, necesarios: %)', v_points_before, v_points_to_redeem;
+        raise notice '? SECCI”N 7 OMITIDA (puntos insuficientes)';
         return;
     end if;
 
@@ -693,13 +693,13 @@ BEGIN
 
     select coalesce(score, 0) into v_points_after from pos_schema.tenant_customer_score where tenant_customer_id = v_customer_id and tenant_id = v_tenant_id;
 
-    raise notice 'Puntos antes: %, despu√©s: %, cambio: %', v_points_before, v_points_after, (v_points_after - v_points_before);
-    raise notice '‚úÖ SECCI√ìN 7 COMPLETADA';
+    raise notice 'Puntos antes: %, despuÈs: %, cambio: %', v_points_before, v_points_after, (v_points_after - v_points_before);
+    raise notice '? SECCI”N 7 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 8: Intentar canjear m√°s puntos de los disponibles (debe fallar)
+-- SECCI”N 8: Intentar canjear m·s puntos de los disponibles (debe fallar)
 -- ========================================
 DO $$
 declare
@@ -711,19 +711,19 @@ declare
     v_sale_id uuid;
     v_payment_id uuid;
     v_points_available int;
-    v_points_to_redeem int := 999999; -- M√°s de los disponibles
+    v_points_to_redeem int := 999999; -- M·s de los disponibles
     v_redeem_rate numeric(10,2);
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '‚ö†Ô∏è  SECCI√ìN 8: Validaci√≥n - Puntos insuficientes';
+    raise notice '??  SECCI”N 8: ValidaciÛn - Puntos insuficientes';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
-    if v_tenant_id is null then raise exception '‚ùå ERROR: Tenant no encontrado en Secci√≥n 8'; end if;
+    if v_tenant_id is null then raise exception '? ERROR: Tenant no encontrado en SecciÛn 8'; end if;
 
     select branch_id into v_branch_id from general_schema.branch where tenant_id = v_tenant_id and branch_name = 'Sucursal Centro' limit 1;
-    if v_branch_id is null then raise exception '‚ùå ERROR: Branch no encontrada en Secci√≥n 8'; end if;
+    if v_branch_id is null then raise exception '? ERROR: Branch no encontrada en SecciÛn 8'; end if;
 
     select user_id into v_user_id from general_schema.users where email = 'cajero@superdigital.com' limit 1;
     select tenant_customer_id into v_customer_id from general_schema.tenant_customer where email = 'juan.perez@email.com' and tenant_id = v_tenant_id limit 1;
@@ -750,22 +750,22 @@ BEGIN
 
         call pos_schema.verify_customer_payment(v_payment_id);
 
-        raise exception '‚ùå ERROR: El sistema permiti√≥ canjear m√°s puntos de los disponibles';
+        raise exception '? ERROR: El sistema permitiÛ canjear m·s puntos de los disponibles';
     exception
         when others then
-            raise notice '‚úÖ VALIDACI√ìN EXITOSA: canje rechazado correctamente';
+            raise notice '? VALIDACI”N EXITOSA: canje rechazado correctamente';
             raise notice '   Mensaje: %', sqlerrm;
     end;
 
     -- Limpiar la venta fallida
     delete from pos_schema.sale where sale_id = v_sale_id;
 
-    raise notice '‚úÖ SECCI√ìN 8 COMPLETADA';
+    raise notice '? SECCI”N 8 COMPLETADA';
 end $$;
 
 
 -- ========================================
--- SECCI√ìN 9: Resumen final
+-- SECCI”N 9: Resumen final
 -- ========================================
 DO $$
 declare
@@ -775,11 +775,11 @@ declare
     v_loyalty_program record;
     v_total_sales int;
     v_total_revenue numeric(10,2);
-    v_total_bills int;
+    v_total_invoices int;
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice 'üìä SECCI√ìN 9: RESUMEN FINAL';
+    raise notice '?? SECCI”N 9: RESUMEN FINAL';
     raise notice '========================================';
 
     select tenant_id into v_tenant_id from general_schema.tenant where tenant_name = 'Super Comercio Digital' limit 1;
@@ -795,28 +795,28 @@ BEGIN
     join general_schema.branch b on s.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id and s.is_completed = true;
 
-    select count(*) into v_total_bills from pos_schema.bill bl
+    select count(*) into v_total_invoices from pos_schema.digital_sale_invoice bl
     join pos_schema.sale s on bl.sale_id = s.sale_id
     join general_schema.branch b on s.branch_id = b.branch_id
     where b.tenant_id = v_tenant_id;
 
     raise notice '';
-    raise notice 'üë§ CLIENTE:';
+    raise notice '?? CLIENTE:';
     raise notice '   ID: %', v_customer_id;
     raise notice '   Puntos disponibles: %', coalesce(v_score_record.score, 0);
     raise notice '   Puntos ganados totales: %', coalesce(v_score_record.lifetime_score, 0);
     raise notice '   Puntos canjeados: %', coalesce(v_score_record.score_redeemed, 0);
     raise notice '';
-    raise notice 'üè™ NEGOCIO:';
+    raise notice '?? NEGOCIO:';
     raise notice '   Ventas totales: %', v_total_sales;
     raise notice '   Ventas completadas: $%', v_total_revenue;
-    raise notice '   Facturas emitidas: %', v_total_bills;
+    raise notice '   Facturas emitidas: %', v_total_invoices;
     raise notice '';
-    raise notice 'üéØ PROGRAMA DE LEALTAD:';
+    raise notice '?? PROGRAMA DE LEALTAD:';
     raise notice '   Ratio ganancia: % pts/$1', v_loyalty_program.points_earned_per_currency_unit;
     raise notice '   Ratio canje: % pts = $1', v_loyalty_program.points_redeemed_per_currency_unit;
     raise notice '';
     raise notice '========================================';
-    raise notice '‚úÖ TEST COMPLETADO EXITOSAMENTE';
+    raise notice '? TEST COMPLETADO EXITOSAMENTE';
     raise notice '========================================';
 end $$;

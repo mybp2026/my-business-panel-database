@@ -1,15 +1,15 @@
-# Client pay in POS
+﻿# Client pay in POS
 
-This document explains the full customer payment flow in a POS (point-of-sale) environment: how a sale is created, how payments are recorded and verified, how the system issues a bill automatically, and how loyalty points are awarded. The explanations reference the database tables and server-side functions/triggers used in the system.
+This document explains the full customer payment flow in a POS (point-of-sale) environment: how a sale is created, how payments are recorded and verified, how the system issues a digital invoice automatically, and how loyalty points are awarded. The explanations reference the database tables and server-side functions/triggers used in the system.
 
-**Scope**: retail checkout where a customer pays in full at point of sale (single or hybrid payments). The same flow applies when a sale triggers bill generation and loyalty point accrual.
+**Scope**: retail checkout where a customer pays in full at point of sale (single or hybrid payments). The same flow applies when a sale triggers invoice generation and loyalty point accrual.
 
-**Terminology Note**: Throughout this document, the term _bill_ refers to customer invoices generated from tenant sales transactions. The term _invoice_ is reserved for purchase orders and supplier billing and is not covered in this guide.
+**Terminology Note**: Throughout this document, the term _digital sale invoice_ refers to the automatic invoice generated from tenant sales transactions. The term _electronic sale invoice_ refers to the Hacienda-compliant structured invoice used for Costa Rica tax reporting.
 
 ## Prerequisites
 
 - **Tenant, Branch, Products, and Customer**: these must exist in `general_schema.tenant`, `general_schema.branch`, `general_schema.product_variant`, and `general_schema.tenant_customer`.
-- **POS tables & functions**: `pos.sale`, `pos.sale_item`, `pos.customer_payment`, `pos.bill`, `pos.cash_register`, `pos.cash_register_session`, `pos.tenant_customer_score`, and functions such as `pos.verify_customer_payment`, `pos.create_bill`, `pos.link_sale_to_session`, and `pos.open_close_cash_register_session` must be present and deployed.
+- **POS tables & functions**: `pos.sale`, `pos.sale_item`, `pos.customer_payment`, `pos.digital_sale_invoice`, `pos.cash_register`, `pos.cash_register_session`, `pos.tenant_customer_score`, and functions such as `pos.verify_customer_payment`, `pos.create_digital_sale_invoice`, `pos.link_sale_to_session`, and `pos.open_close_cash_register_session` must be present and deployed.
 - **Loyalty Program**: A `pos.loyalty_program` record must exist for the tenant with configured earning and redemption rates.
 
 ---
@@ -107,7 +107,7 @@ ORDER BY crs.closed_at DESC;
 2. Cashier registers payments (single or multiple `customer_payment` rows) — payments can be cash, card, or hybrid.
 3. Each `customer_payment` is verified via `pos_schema.verify_customer_payment(payment_id)` (or automatically by a verification process). Verified payments update the sale's paid amount.
 4. When paid amount >= sale total, `sale.is_completed` becomes true. Triggers run to:
-   - create a `bill`/invoice (`pos_schema.create_bill`)
+   - create a `digital_sale_invoice`/invoice (`pos_schema.create_digital_sale_invoice`)
    - link the sale to the active `cash_register_session` (`pos_schema.link_sale_to_session`)
    - award loyalty points (via `pos_schema.tenant_customer_score` and `pos_schema.score_transaction`)
 
@@ -254,7 +254,7 @@ CALL pos_schema.verify_customer_payment('<payment_1_id>');
 CALL pos_schema.verify_customer_payment('<payment_2_id>');
 -- Verified total: $1,124.35 = $1,124.35 → Sale now is_completed = true
 -- Triggers fire automatically:
---   1. create_bill() → inserts bill record
+--   1. create_digital_sale_invoice() → inserts invoice record
 --   2. link_sale_to_session() → links to cash_register_session
 --   3. award_points() → grants loyalty points
 ```
@@ -275,47 +275,47 @@ GROUP BY s.sale_id;
 
 ### 4. Bill / Invoice Creation (trigger)
 
-When `sale.is_completed` transitions to `true`, the `pos_schema.create_bill()` trigger automatically generates an invoice.
+When `sale.is_completed` transitions to `true`, the `pos_schema.create_digital_sale_invoice()` trigger automatically generates an invoice.
 
 **What the trigger does:**
 
-1. Creates a `pos_schema.bill` record:
+1. Creates a `pos_schema.digital_sale_invoice` record:
    - `sale_id`: References the completed sale.
    - `tenant_customer_id`: Links to the customer.
    - `subtotal_amount`, `tax_amount`, `total_amount`: Copied from the sale.
-   - `billed_at`: Current timestamp.
+   - `invoiced_at`: Current timestamp.
    - `currency_id`: From the sale.
 
-2. Creates `pos_schema.bill_payment` records:
-   - For each verified `customer_payment`, inserts a `bill_payment` row linking the bill and payment.
+2. Creates `pos_schema.digital_sale_invoice_payment` records:
+   - For each verified `customer_payment`, inserts a `digital_sale_invoice_payment` row linking the invoice and payment.
    - This maintains an audit trail of which payments settled which invoices.
 
 **Example (automatic trigger result):**
 
 ```sql
--- After sale.is_completed = true, the bill is created automatically
-SELECT * FROM pos_schema.bill WHERE sale_id = '<sale_id>';
+-- After sale.is_completed = true, the invoice is created automatically
+SELECT * FROM pos_schema.digital_sale_invoice WHERE sale_id = '<sale_id>';
 -- Result:
---   bill_id: <uuid>
+--   digital_sale_invoice_id: <uuid>
 --   sale_id: <sale_id>
 --   tenant_customer_id: <customer_id>
 --   subtotal_amount: 995.00
 --   tax_amount: 129.35
 --   total_amount: 1124.35
---   billed_at: 2026-02-04 17:06:18
+--   invoiced_at: 2026-02-04 17:06:18
 
 -- Check linked payments
 SELECT bp.*, cp.payment_method_id, cp.payment_amount
-FROM pos_schema.bill_payment bp
+FROM pos_schema.digital_sale_invoice_payment bp
 JOIN pos_schema.customer_payment cp ON bp.customer_payment_id = cp.customer_payment_id
-WHERE bp.bill_id = '<bill_id>';
+WHERE bp.digital_sale_invoice_id = '<digital_sale_invoice_id>';
 ```
 
-**For manual bill creation (if needed):**
+**For manual Invoice creation (if needed):**
 
 ```sql
--- Use the utility function to fetch and review bill data
-SELECT * FROM pos_schema.get_bill('<sale_id>');
+-- Use the utility function to fetch and review invoice data
+SELECT * FROM pos_schema.get_digital_sale_invoice('<sale_id>');
 ```
 
 ### 5. Linking to Cash Register Session
@@ -545,7 +545,7 @@ RETURNING customer_payment_id;
 -- Verify payment (triggers cascade)
 CALL pos_schema.verify_customer_payment('<payment_id>');
 -- ✓ sale.is_completed = true
--- ✓ bill created automatically
+-- ✓ invoice created automatically
 -- ✓ points awarded
 -- ✓ linked to cash_register_session
 ```
@@ -574,7 +574,7 @@ CALL pos_schema.open_close_cash_register_session(
 
 ## Common Troubleshooting
 
-- If no bill is created after payment, confirm `pos_schema.verify_customer_payment` updated `sale.is_completed` and that the `create_bill` trigger exists on `pos_schema.sale`.
+- If no invoice is created after payment, confirm `pos_schema.verify_customer_payment` updated `sale.is_completed` and that the `create_digital_sale_invoice` trigger exists on `pos_schema.sale`.
 - If points are not awarded, check `pos_schema.loyalty_program` and `pos_schema.tenant_customer_score` existence and that `verify_customer_payment` calls the points logic.
 
 ## Quick Debugging Queries
@@ -599,17 +599,17 @@ WHERE cp.sale_id = '<sale_id>'
 ORDER BY cp.payment_date;
 ```
 
-- Verify bill created:
+- Verify invoice created:
 
 ```sql
 SELECT
-    b.bill_id,
+    b.digital_sale_invoice_id,
     b.sale_id,
     b.subtotal_amount,
     b.tax_amount,
     b.total_amount,
-    b.billed_at
-FROM pos_schema.bill b
+    b.invoiced_at
+FROM pos_schema.digital_sale_invoice b
 WHERE b.sale_id = '<sale_id>';
 ```
 
@@ -664,7 +664,7 @@ ORDER BY crs.closed_at DESC;
 
 ## Notes for Integrators / Developers
 
-- Keep client code to compute prices consistent with server-side triggers. Server-side functions (`calculate_total_price`, `calculate_bill_total`) will enforce totals if used.
+- Keep client code to compute prices consistent with server-side triggers. Server-side functions (`calculate_total_price`, `calculate_digital_sale_invoice_total`) will enforce totals if used.
 - When modifying payment flows (e.g., new payment methods), ensure that `verify_customer_payment` still recognizes and correctly aggregates verified payments.
 - **Product Variants**: All references to sellable items in `sale_item` must use `product_variant_id`, not `product_id`. Base products are templates only.
 - **Cash Register Reconciliation**: Always close the cash register session at day-end. The difference between closing and opening amounts should match the sum of all sales in that session (accounting for cash/coin handling).

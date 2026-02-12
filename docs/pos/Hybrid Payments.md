@@ -1,6 +1,6 @@
-# Hybrid payments
+﻿# Hybrid payments
 
-This document describes the end-to-end flow that allows a customer to pay a single sale using multiple payment methods (hybrid payment). The goal is to demonstrate that a customer can split payment across different methods (e.g., cash + card, points + cash) and that the system correctly reconciles sale, bill, payments and loyalty behavior.
+This document describes the end-to-end flow that allows a customer to pay a single sale using multiple payment methods (hybrid payment). The goal is to demonstrate that a customer can split payment across different methods (e.g., cash + card, points + cash) and that the system correctly reconciles sale, invoice, payments and loyalty behavior.
 
 **Scope:** retail checkout where partial payments are recorded as multiple customer_payment rows for the same sale and verified independently. The same flow applies when sales generate invoices and loyalty point adjustments.
 
@@ -8,8 +8,8 @@ This document describes the end-to-end flow that allows a customer to pay a sing
 
 - Tenant, Branch, Products, and Customer exist in `general_schema.tenant`, `general_schema.branch`, `general_schema.product`, and `general_schema.tenant_customer`.
 - pos_schema objects and functions deployed:
-  - Tables: `pos_schema.sale`, `pos_schema.sale_item`, `pos_schema.customer_payment`, `pos_schema.bill`, `pos_schema.bill_payment`, `pos_schema.tenant_customer_score`, `pos_schema.return_product`.
-  - Functions/procedures/triggers: `pos_schema.verify_customer_payment`, `pos_schema.check_sale_payment_completion`, `pos_schema.create_bill`, `pos_schema.link_sale_to_session`, and loyalty-related functions.
+  - Tables: `pos_schema.sale`, `pos_schema.sale_item`, `pos_schema.customer_payment`, `pos_schema.digital_sale_invoice`, `pos_schema.digital_sale_invoice_payment`, `pos_schema.tenant_customer_score`, `pos_schema.return_product`.
+  - Functions/procedures/triggers: `pos_schema.verify_customer_payment`, `pos_schema.check_sale_payment_completion`, `pos_schema.create_digital_sale_invoice`, `pos_schema.link_sale_to_session`, and loyalty-related functions.
 
 ## High-level Flow
 
@@ -18,10 +18,10 @@ This document describes the end-to-end flow that allows a customer to pay a sing
 3. Each `customer_payment` is verified with `pos_schema.verify_customer_payment(payment_id)`.
 4. After verification, the system aggregates verified payments. When verified payments >= sale.total_amount, `sale.is_completed` is set true.
 5. On completion triggers run to:
-   - create a `bill` (`pos_schema.create_bill`)
+   - create a `digital_sale_invoice` (`pos_schema.create_digital_sale_invoice`)
    - link sale to the active `cash_register_session` (`link_sale_to_session`)
    - award loyalty points only on the cash/card portion (not on points redemptions)
-6. All records (sale, bill, payments, loyalty) remain consistent and auditable.
+6. All records (sale, invoice, payments, loyalty) remain consistent and auditable.
 
 ## Detailed Steps & SQL snippets
 
@@ -84,24 +84,24 @@ CALL pos_schema.verify_customer_payment(<customer_payment_id>);
 
 Logs will show partial totals and a final "Sale is COMPLETED" once cumulative verified payments meet the sale total.
 
-### 4. Bill Creation and Linking
+### 4. Invoice creation and Linking
 
-When `sale.is_completed` toggles to true a trigger executes `pos_schema.create_bill`:
+When `sale.is_completed` toggles to true a trigger executes `pos_schema.create_digital_sale_invoice`:
 
-- Creates `pos_schema.bill` copying sale totals.
-- Inserts `pos_schema.bill_payment` rows linking verified `customer_payment` rows.
+- Creates `pos_schema.digital_sale_invoice` copying sale totals.
+- Inserts `pos_schema.digital_sale_invoice_payment` rows linking verified `customer_payment` rows.
 - Links sale to active `cash_register_session` via `link_sale_to_session`.
 
-Verify bill:
+Verify invoice:
 
 ```sql
-SELECT * FROM pos_schema.bill WHERE sale_id = <sale_id>;
-SELECT * FROM pos_schema.bill_payment WHERE bill_id = <bill_id>;
+SELECT * FROM pos_schema.digital_sale_invoice WHERE sale_id = <sale_id>;
+SELECT * FROM pos_schema.digital_sale_invoice_payment WHERE digital_sale_invoice_id = <digital_sale_invoice_id>;
 ```
 
 ### 5. Loyalty Points Behavior
 
-- Points are awarded only on the monetary portion (cash/card) recorded into `bill_payment` (the procedure `award_points` sums non-points payments).
+- Points are awarded only on the monetary portion (cash/card) recorded into `digital_sale_invoice_payment` (the procedure `award_points` sums non-points payments).
 - Points redemptions are processed at verification time and reduce customer balance (`tenant_customer_score`) and insert `score_transaction` rows.
 
 Important: hybrid flow ensures the part paid with points does not generate new points.
@@ -115,7 +115,7 @@ Important: hybrid flow ensures the part paid with points does not generate new p
 
 ## Common Troubleshooting
 
-- No bill created: verify that all required payments were marked `verified = true` and `pos_schema.check_sale_payment_completion` returned true leading to `sale.is_completed = true`.
+- No invoice created: verify that all required payments were marked `verified = true` and `pos_schema.check_sale_payment_completion` returned true leading to `sale.is_completed = true`.
 - Points not redeemed: verify `pos_schema.redeem_points` success and that `customer_payment.is_points_redemption` + `points_redeemed` were correct.
 - Overpayment/underpayment: logs in `verify_customer_payment` show sale total, payments total and difference.
 - Missing cash_register session link: ensure a session is open (`pos_schema.cash_register_session.is_active = true`) for the branch at billing time.
@@ -136,11 +136,11 @@ FROM pos_schema.customer_payment
 WHERE sale_id = '<sale_id>' ORDER BY payment_date;
 ```
 
-- List bill and linked payments:
+- List invoice and linked payments:
 
 ```sql
-SELECT * FROM pos_schema.bill WHERE sale_id = '<sale_id>';
-SELECT * FROM pos_schema.bill_payment WHERE bill_id = (SELECT bill_id FROM pos_schema.bill WHERE sale_id = '<sale_id>' LIMIT 1);
+SELECT * FROM pos_schema.digital_sale_invoice WHERE sale_id = '<sale_id>';
+SELECT * FROM pos_schema.digital_sale_invoice_payment WHERE digital_sale_invoice_id = (SELECT digital_sale_invoice_id FROM pos_schema.digital_sale_invoice WHERE sale_id = '<sale_id>' LIMIT 1);
 ```
 
 - Check customer points:
@@ -153,7 +153,7 @@ SELECT score, lifetime_score, score_redeemed FROM pos_schema.tenant_customer_sco
 
 - Hybrid payments are modeled as multiple `customer_payment` rows. The verification procedure aggregates verified payments — do not attempt to collapse hybrid payments into a single row.
 - For point redemptions, ensure UI shows both points and cash components and that amounts match server-side conversion (`points_redeemed_per_currency_unit`).
-- Maintain consistent tax calculation between frontend and backend. The backend recomputes totals on sale/bill updates.
-- For reporting, use `bill_payment` to determine which portion of a bill was cash/card vs points.
+- Maintain consistent tax calculation between frontend and backend. The backend recomputes totals on sale/invoice updates.
+- For reporting, use `digital_sale_invoice_payment` to determine which portion of an invoice was cash/card vs points.
 
 For a runnable example or idempotent test script demonstrating cash+card and points+cash hybrid payments, provide target environment details and the script will be prepared.

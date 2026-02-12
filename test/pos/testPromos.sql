@@ -1,4 +1,4 @@
--- ============================================
+﻿-- ============================================
 -- TEST DE PROMOCIONES (IDEMPOTENTE)
 -- Objetivo: demostrar promos por producto y por grupo (categoría)
 -- Requisitos: usar las funciones y triggers del esquema (main.sql)
@@ -19,15 +19,15 @@ BEGIN
         RAISE NOTICE '%', format('🧹 Cleaning previous test tenant: %s', v_tenant_id);
         
         -- eliminar dependencias en orden seguro (sale_item antes de product)
-        delete from pos_schema.bill_payment bp
-        where bp.bill_id in (
-            select b.bill_id from pos_schema.bill b
+        delete from pos_schema.digital_sale_invoice_payment bp
+        where bp.digital_sale_invoice_id in (
+            select b.digital_sale_invoice_id from pos_schema.digital_sale_invoice b
             join pos_schema.sale s on b.sale_id = s.sale_id
             join general_schema.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
         );
 
-        delete from pos_schema.bill where sale_id in (
+        delete from pos_schema.digital_sale_invoice where sale_id in (
             select s.sale_id from pos_schema.sale s
             join general_schema.branch br on s.branch_id = br.branch_id
             where br.tenant_id = v_tenant_id
@@ -210,8 +210,8 @@ BEGIN
     RAISE NOTICE '%', format('🛒 SECCIÓN 2: Creating base sale (no promo)');
 
     -- Remove any previous sales/payments for this tenant to keep idempotence at sale-level
-    delete from pos_schema.bill_payment bp where bp.bill_id in (select b.bill_id from pos_schema.bill b join pos_schema.sale s on b.sale_id = s.sale_id join general_schema.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id);
-    delete from pos_schema.bill where sale_id in (select s.sale_id from pos_schema.sale s join general_schema.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id);
+    delete from pos_schema.digital_sale_invoice_payment bp where bp.digital_sale_invoice_id in (select b.digital_sale_invoice_id from pos_schema.digital_sale_invoice b join pos_schema.sale s on b.sale_id = s.sale_id join general_schema.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id);
+    delete from pos_schema.digital_sale_invoice where sale_id in (select s.sale_id from pos_schema.sale s join general_schema.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id);
     delete from pos_schema.customer_payment where sale_id in (select s.sale_id from pos_schema.sale s join general_schema.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id);
     delete from pos_schema.sale_item where sale_id in (select s.sale_id from pos_schema.sale s join general_schema.branch br on s.branch_id = br.branch_id where br.tenant_id = v_tenant_id);
     delete from pos_schema.sale where branch_id in (select branch_id from general_schema.branch where tenant_id = v_tenant_id);
@@ -238,7 +238,7 @@ BEGIN
     VALUES (v_customer_id, v_sale_id, v_payment_method_id, v_total, v_currency_id, false)
     returning customer_payment_id into v_payment_id;
 
-    -- Use the existing procedure to verify (this will mark sale completed and create bill)
+    -- Use the existing procedure to verify (this will mark sale completed and create digital_sale_invoice)
     call pos_schema.verify_customer_payment(v_payment_id);
     perform pg_sleep(0.2);
 
@@ -460,7 +460,7 @@ end $$;
 -- ============================================
 -- SECCIÓN 4: Ejecutar ventas de control por cada promoción
 -- - Se reutiliza la canasta base pero se aplica el descuento calculado y se genera un pago por el monto final.
--- - Cada ejecución crea sale + payment + triggers => bill. Resultados se muestran.
+-- - Cada ejecución crea sale + payment + triggers => digital_sale_invoice. Resultados se muestran.
 -- ============================================
 DO $$
 declare
@@ -543,12 +543,12 @@ BEGIN
 
         RAISE NOTICE '%', format('  Sale created: %s Payment: %s Charged: $%s', v_sale_id, v_payment_id, v_total_after);
 
-        -- log resulting bill totals
-        RAISE NOTICE '%', format('  RESULTING BILL (latest):');
+        -- log RESULTING INVOICE totals
+        RAISE NOTICE '%', format('  RESULTING INVOICE (latest):');
         RAISE NOTICE '%', format('    subtotal=$%s tax=$%s total=$%s',
-            (select subtotal_amount from pos_schema.bill where sale_id = v_sale_id limit 1),
-            (select tax_amount from pos_schema.bill where sale_id = v_sale_id limit 1),
-            (select total_amount from pos_schema.bill where sale_id = v_sale_id limit 1));
+            (select subtotal_amount from pos_schema.digital_sale_invoice where sale_id = v_sale_id limit 1),
+            (select tax_amount from pos_schema.digital_sale_invoice where sale_id = v_sale_id limit 1),
+            (select total_amount from pos_schema.digital_sale_invoice where sale_id = v_sale_id limit 1));
 
         RAISE NOTICE '%', format('--- End Promo %s ---', v_promotion.promotion_code);
     end loop;
