@@ -98,11 +98,11 @@ CREATE TABLE IF NOT EXISTS bill(
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
     total_amount numeric(10,2) not null,    
+    due_date DATE,
     billed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-alter table pos_schema.bill
-    add column if not exists due_date date;
+
 CREATE INDEX IF NOT EXISTS idx_bill_sale_id on pos_schema.bill(sale_id);
 
 CREATE TABLE IF NOT EXISTS bill_payment(
