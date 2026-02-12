@@ -1086,7 +1086,7 @@ BEGIN
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_purchase_billed on pos_schema.bill_payment;
+drop trigger if exists on_purchase_billed on pos_schema.digital_sale_invoice_payment;
 drop trigger if exists on_purchase_billed on pos_schema.digital_sale_invoice_payment;
 drop trigger if exists on_invoice_payment_award_points on pos_schema.digital_sale_invoice_payment;
 create trigger on_invoice_payment_award_points
@@ -1354,7 +1354,7 @@ drop trigger if exists update_score_transaction_timestamp on pos_schema.score_tr
 create trigger update_score_transaction_timestamp before update on pos_schema.score_transaction
 for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_payment_timestamp on pos_schema.digital_sale_invoice_payment;
+drop trigger if exists update_digital_sale_invoice_payment_timestamp on pos_schema.digital_sale_invoice_payment;
 drop trigger if exists update_digital_sale_invoice_payment_timestamp on pos_schema.digital_sale_invoice_payment;
 create trigger update_digital_sale_invoice_payment_timestamp before update on pos_schema.digital_sale_invoice_payment
 for each row execute function general_schema.update_timestamp();

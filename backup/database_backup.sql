@@ -1,6 +1,6 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-02-12 00:54:46
+-- Generated: 2026-02-12 03:33:43
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
@@ -433,6 +433,7 @@ CREATE TABLE IF NOT EXISTS sale(
     tax_amount numeric(10,2) not null default 0 check (tax_amount >= 0),
     total_amount numeric(10,2) not null,
     is_completed BOOLEAN default false,
+    has_electronic_invoice BOOLEAN DEFAULT FALSE,
     created_at timestamp not null default current_timestamp,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -513,30 +514,37 @@ CREATE TABLE IF NOT EXISTS customer_payment(
     )
 );
 
-CREATE TABLE IF NOT EXISTS bill(
-    bill_id uuid PRIMARY KEY default gen_random_uuid(),
+CREATE TABLE IF NOT EXISTS digital_sale_invoice(
+    digital_sale_invoice_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
     total_amount numeric(10,2) not null,    
-    billed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    due_date DATE,
+    seller_name VARCHAR(150),
+    terminal_name VARCHAR(100),
+    points_accumulated INTEGER DEFAULT 0,
+    ad_message TEXT,
+    invoice_number VARCHAR(50),
+    amount_paid NUMERIC(10,2) DEFAULT 0,
+    change_amount NUMERIC(10,2) DEFAULT 0,
+    invoiced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-alter table pos_schema.bill
-    add column if not exists due_date date;
-CREATE INDEX IF NOT EXISTS idx_bill_sale_id on pos_schema.bill(sale_id);
 
-CREATE TABLE IF NOT EXISTS bill_payment(
-    bill_payment_id uuid PRIMARY KEY default gen_random_uuid(),
-    bill_id uuid not null REFERENCES pos_schema.bill(bill_id) on delete cascade,
+CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_sale_id on pos_schema.digital_sale_invoice(sale_id);
+
+CREATE TABLE IF NOT EXISTS digital_sale_invoice_payment(
+    digital_sale_invoice_payment_id uuid PRIMARY KEY default gen_random_uuid(),
+    digital_sale_invoice_id uuid not null REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) on delete cascade,
     customer_payment_id uuid not null REFERENCES pos_schema.customer_payment(customer_payment_id) on delete cascade,
     payment_amount numeric(10,2) not null check (payment_amount > 0),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    unique (bill_id, customer_payment_id)
+    unique (digital_sale_invoice_id, customer_payment_id)
 );
 
 CREATE TABLE IF NOT EXISTS return_reason(
@@ -557,7 +565,7 @@ CREATE TABLE IF NOT EXISTS return_status(
 
 CREATE TABLE IF NOT EXISTS return_transaction(
     return_transaction_id uuid PRIMARY KEY default gen_random_uuid(),
-    bill_id uuid not null REFERENCES pos_schema.bill(bill_id) on delete cascade,
+    digital_sale_invoice_id uuid not null REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) on delete cascade,
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     total_refund_amount numeric(10,2) not null check (total_refund_amount >= 0),
     refund_method int REFERENCES general_schema.payment_method(payment_method_id) on delete set null,
@@ -565,7 +573,7 @@ CREATE TABLE IF NOT EXISTS return_transaction(
     return_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_return_transaction_bill_id on pos_schema.return_transaction(bill_id);
+CREATE INDEX IF NOT EXISTS idx_return_transaction_digital_sale_invoice_id on pos_schema.return_transaction(digital_sale_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_return_transaction_date on pos_schema.return_transaction(return_date);
 
 CREATE TABLE IF NOT EXISTS return_product(
@@ -701,7 +709,7 @@ CREATE TABLE IF NOT EXISTS score_transaction(
     tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete cascade,
     transaction_type_id int REFERENCES pos_schema.score_transaction_type(score_transaction_type_id) on delete set null,
     points INTEGER not null,
-    bill_id uuid REFERENCES pos_schema.bill(bill_id) on delete set null,
+    digital_sale_invoice_id uuid REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) on delete set null,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -712,6 +720,107 @@ CREATE TABLE IF NOT EXISTS debtor (
     debt numeric(10, 2) not null default 0.00, -- ? Add check (debt >= 0) 
     missed_payments INTEGER not null default 0
 );
+
+CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
+    electronic_sale_invoice_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sale_id UUID NOT NULL REFERENCES pos_schema.sale(sale_id) ON DELETE CASCADE,
+    key_number VARCHAR(50) NOT NULL UNIQUE,
+    consecutive_number VARCHAR(20) NOT NULL,
+    issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    issuer_name VARCHAR(150) NOT NULL,
+    issuer_identification VARCHAR(20) NOT NULL,
+    issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
+    issuer_email VARCHAR(200),
+    issuer_phone VARCHAR(20),
+    receiver_name VARCHAR(150),
+    receiver_identification VARCHAR(20),
+    receiver_identification_type VARCHAR(2),
+    receiver_email VARCHAR(200),
+    sale_condition VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Credit, 03=Consignment
+    payment_method VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Card, 03=Check, 04=Transfer
+    credit_days VARCHAR(10),
+    -- Invoice summary
+    total_taxed_services NUMERIC(18,5) DEFAULT 0,
+    total_exempt_services NUMERIC(18,5) DEFAULT 0,
+    total_exonerated_services NUMERIC(18,5) DEFAULT 0,
+    total_taxed_goods NUMERIC(18,5) DEFAULT 0,
+    total_exempt_goods NUMERIC(18,5) DEFAULT 0,
+    total_exonerated_goods NUMERIC(18,5) DEFAULT 0,
+    total_taxable NUMERIC(18,5) DEFAULT 0,
+    total_exempt NUMERIC(18,5) DEFAULT 0,
+    total_exonerated NUMERIC(18,5) DEFAULT 0,
+    total_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
+    total_discounts NUMERIC(18,5) DEFAULT 0,
+    total_net_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
+    total_tax NUMERIC(18,5) DEFAULT 0,
+    total_voucher NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- XML digital signature
+    xml_signed TEXT,
+    -- Hacienda response
+    hacienda_status VARCHAR(20) DEFAULT 'pending',  -- pending, accepted, rejected
+    hacienda_response_xml TEXT,
+    hacienda_response_date TIMESTAMP,
+    -- Metadata
+    currency_id INTEGER REFERENCES general_schema.currency(currency_id) ON DELETE SET NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_sale_id 
+    ON pos_schema.electronic_sale_invoice(sale_id);
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number 
+    ON pos_schema.electronic_sale_invoice(key_number);
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_issue_date 
+    ON pos_schema.electronic_sale_invoice(issue_date);
+
+-- ======================================================
+-- Electronic Sale Invoice Items
+-- (References base product via cabys_code from product_variant)
+-- ======================================================
+
+CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
+    electronic_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
+    -- Line number in the invoice
+    line_number INTEGER NOT NULL,
+    -- Product info (resolved from product_variant → product via cabys_code)
+    cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
+    description VARCHAR(200) NOT NULL,  -- Product description
+    -- Quantity and units
+    quantity NUMERIC(16,3) NOT NULL,
+    unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'Unid',
+    commercial_unit_of_measure VARCHAR(20),
+    -- Pricing
+    unit_price NUMERIC(18,5) NOT NULL,
+    total_amount NUMERIC(18,5) NOT NULL,
+    -- Discounts (optional)
+    discount_amount NUMERIC(18,5) DEFAULT 0,
+    discount_nature VARCHAR(80),
+    -- Subtotal
+    subtotal NUMERIC(18,5) NOT NULL,
+    -- Tax (IVA)
+    tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
+    tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
+    tax_rate NUMERIC(5,2) DEFAULT 13.00,
+    tax_amount NUMERIC(18,5) DEFAULT 0,
+    tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
+    -- Exemption (optional)
+    exemption_document_type VARCHAR(2),
+    exemption_document_number VARCHAR(40),
+    exemption_institution VARCHAR(160),
+    exemption_date TIMESTAMP,
+    exemption_percentage NUMERIC(3,0),
+    -- Line total
+    total_line_amount NUMERIC(18,5) NOT NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice 
+    ON pos_schema.electronic_sale_invoice_items(electronic_sale_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_cabys 
+    ON pos_schema.electronic_sale_invoice_items(cabys_code);
 
 
 
@@ -990,13 +1099,11 @@ CREATE TABLE IF NOT EXISTS purchase_schema.purchase_order_payment(
     payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     payment_reference VARCHAR(100),
     notes TEXT,
-    verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_purchase_order_payment_payable ON purchase_schema.purchase_order_payment(purchase_account_payable_id);
-CREATE INDEX IF NOT EXISTS idx_purchase_order_payment_verified ON purchase_schema.purchase_order_payment(verified);
 CREATE INDEX IF NOT EXISTS idx_purchase_order_payment_date ON purchase_schema.purchase_order_payment(payment_date);
 
 CREATE TABLE IF NOT EXISTS purchase_order_payment_alert_type(
@@ -1706,7 +1813,7 @@ create trigger on_sale_completed_link_sale_to_session
     when (old.is_completed is false and new.is_completed is true)
     execute function link_sale_to_session();
 
-CREATE OR REPLACE FUNCTION calculate_bill_total()
+CREATE OR REPLACE FUNCTION calculate_digital_sale_invoice_total()
 returns trigger as $$
 BEGIN
     new.total_amount := new.subtotal_amount + new.tax_amount;
@@ -1714,11 +1821,11 @@ BEGIN
 end;
 $$ language plpgsql;
 
-drop trigger if exists calculate_bill_total_trigger on pos_schema.bill;
-create trigger calculate_bill_total_trigger
-    before insert or update on pos_schema.bill
+drop trigger if exists calculate_digital_sale_invoice_total_trigger on pos_schema.digital_sale_invoice;
+create trigger calculate_digital_sale_invoice_total_trigger
+    before insert or update on pos_schema.digital_sale_invoice
     for each row
-    execute function calculate_bill_total();
+    execute function calculate_digital_sale_invoice_total();
 
 CREATE OR REPLACE FUNCTION calculate_total_price()
 returns trigger as $$
@@ -1734,9 +1841,9 @@ create trigger calculate_total_price_return_product_trigger
     for each row
     execute function calculate_total_price();
 
-CREATE OR REPLACE FUNCTION pos_schema.get_bill(_sale_id uuid)
+CREATE OR REPLACE FUNCTION pos_schema.get_digital_sale_invoice(_sale_id uuid)
 returns table (
-    bill_id uuid,
+    digital_sale_invoice_id uuid,
     sale_id uuid,
     tenant_customer_id uuid,
     currency_id INTEGER,
@@ -1749,7 +1856,7 @@ returns table (
 BEGIN
     return query
     select 
-        b.bill_id,
+        b.digital_sale_invoice_id,
         b.sale_id,
         b.tenant_customer_id,
         b.currency_id,
@@ -1758,15 +1865,15 @@ BEGIN
         b.total_amount,
         b.created_at,
         b.updated_at
-    from pos_schema.bill b
+    from pos_schema.digital_sale_invoice b
     where b.sale_id = _sale_id;
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION create_bill()
+CREATE OR REPLACE FUNCTION create_digital_sale_invoice()
 returns trigger as $$
 declare
-    _bill_id uuid;
+    _digital_sale_invoice_id uuid;
     _tenant_customer_id uuid;
     _tenant_id uuid;
     _currency_id INTEGER;
@@ -1775,13 +1882,13 @@ declare
     _total numeric(10,2);
     _payment_ids uuid[];
 BEGIN
-        raise notice 'Creating bill for sale: %', new.sale_id;
+        raise notice 'Creating digital sale invoice for sale: %', new.sale_id;
         
         if exists(
-            select 1 from pos_schema.bill
+            select 1 from pos_schema.digital_sale_invoice
             where sale_id = new.sale_id
         ) then
-            raise notice 'Bill already exists for sale: %', new.sale_id;
+            raise notice 'Digital sale invoice already exists for sale: %', new.sale_id;
             return new;
         end if;
         
@@ -1807,7 +1914,7 @@ BEGIN
         raise notice '   Tax: $%', _tax;
         raise notice '   Total: $%', _total;
 
-        INSERT INTO pos_schema.bill (
+        INSERT INTO pos_schema.digital_sale_invoice (
             sale_id,              
             tenant_customer_id,
             currency_id,
@@ -1821,50 +1928,51 @@ BEGIN
             _subtotal,
             _tax,
             _total
-        ) returning bill_id into _bill_id;
+        ) returning digital_sale_invoice_id into _digital_sale_invoice_id;
         
-        raise notice '   Bill created: %', _bill_id;
+        raise notice '   Digital sale invoice created: %', _digital_sale_invoice_id;
         
         select array_agg(customer_payment_id) into _payment_ids
         from pos_schema.customer_payment
         where sale_id = new.sale_id
         and verified = true;
         
-        INSERT INTO pos_schema.bill_payment(bill_id, customer_payment_id, payment_amount)
+        INSERT INTO pos_schema.digital_sale_invoice_payment(digital_sale_invoice_id, customer_payment_id, payment_amount)
         select 
-            _bill_id,
+            _digital_sale_invoice_id,
             customer_payment_id,
             payment_amount
         from pos_schema.customer_payment
         where customer_payment_id = any(_payment_ids);
         
-        raise notice '   % payment(s) linked to bill', array_length(_payment_ids, 1);
+        raise notice '   % payment(s) linked to digital sale invoice', array_length(_payment_ids, 1);
         raise notice '';
-        raise notice 'Bill creation completed successfully';
-        raise notice '   Bill ID: %', _bill_id;
+        raise notice 'Digital sale invoice creation completed successfully';
+        raise notice '   Invoice ID: %', _digital_sale_invoice_id;
         raise notice '   Sale ID: %', new.sale_id;
 
         return new;
         
     exception
         when others then
-            raise notice 'Error creating bill: %', sqlerrm;
+            raise notice 'Error creating digital sale invoice: %', sqlerrm;
             return new;
 end;
 $$ language plpgsql;
 
 drop trigger if exists on_sale_completed_create_bill on pos_schema.sale;
-create trigger on_sale_completed_create_bill
+drop trigger if exists on_sale_completed_create_digital_sale_invoice on pos_schema.sale;
+create trigger on_sale_completed_create_digital_sale_invoice
     after update of is_completed on pos_schema.sale
     for each row
     when (old.is_completed is false and new.is_completed is true)
-    execute function create_bill();
+    execute function create_digital_sale_invoice();
 
 CREATE OR REPLACE FUNCTION update_on_return()
 returns trigger as $$
 declare
     _sale_item_record record;
-    _bill_id uuid;
+    _digital_sale_invoice_id uuid;
     _sale_id uuid;
     _total_returned numeric(10,2) := 0;
     _original_subtotal numeric(10,2);
@@ -1897,13 +2005,13 @@ BEGIN
 
     _sale_id := _sale_item_record.sale_id;
 
-    -- get bill for sale
-    select bill_id into _bill_id from pos_schema.bill where sale_id = _sale_id limit 1;
-    if _bill_id is null then
-        raise exception 'Bill not found for sale: %', _sale_id;
+    -- get digital sale invoice for sale
+    select digital_sale_invoice_id into _digital_sale_invoice_id from pos_schema.digital_sale_invoice where sale_id = _sale_id limit 1;
+    if _digital_sale_invoice_id is null then
+        raise exception 'Digital sale invoice not found for sale: %', _sale_id;
     end if;
 
-    raise notice 'Bill ID: %', _bill_id;
+    raise notice 'Digital Sale Invoice ID: %', _digital_sale_invoice_id;
     raise notice 'Original sale item: qty=% unit=$% total=$%', _sale_item_record.quantity, _sale_item_record.unit_price, _sale_item_record.total_price;
 
     if new.quantity > _sale_item_record.quantity then
@@ -1927,9 +2035,9 @@ BEGIN
         raise notice 'Sale item quantity updated from % to %', _sale_item_record.quantity, _quantity_remaining;
     end if;
 
-    -- Update bill totals
+    -- Update digital sale invoice totals
     select subtotal_amount, tax_amount, total_amount into _original_subtotal, _original_tax, _original_total
-    from pos_schema.bill where bill_id = _bill_id;
+    from pos_schema.digital_sale_invoice where digital_sale_invoice_id = _digital_sale_invoice_id;
 
     _total_returned := new.quantity * new.unit_price;
     raise notice 'Amount returned (line): $%', _total_returned;
@@ -1952,14 +2060,14 @@ BEGIN
     _new_tax := round(_new_subtotal * (_tax_rate / 100), 2);
     _new_total := round(_new_subtotal + _new_tax, 2);
 
-    update pos_schema.bill
+    update pos_schema.digital_sale_invoice
     set subtotal_amount = _new_subtotal,
         tax_amount = _new_tax,
         total_amount = _new_total,
         updated_at = current_timestamp
-    where bill_id = _bill_id;
+    where digital_sale_invoice_id = _digital_sale_invoice_id;
 
-    raise notice 'Bill updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
+    raise notice 'Digital sale invoice updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
 
     select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_schema.sale_item si where si.sale_id = _sale_id;
     _new_tax := round(_sale_subtotal_after * (_tax_rate / 100), 2);
@@ -2579,32 +2687,32 @@ returns trigger as $$
 declare
     _tenant_id uuid;
     _tenant_customer_id uuid;
-    _bill_id uuid;
+    _digital_sale_invoice_id uuid;
     _points_earned INTEGER;
     _current_balance INTEGER;
     _cash_payments_total numeric(10,2);
     _points_already_awarded BOOLEAN;
 BEGIN
-        _bill_id := new.bill_id;
+        _digital_sale_invoice_id := new.digital_sale_invoice_id;
         
         select exists(
             select 1 
             from pos_schema.score_transaction 
-            where bill_id = _bill_id 
+            where digital_sale_invoice_id = _digital_sale_invoice_id 
             and transaction_type_id = 1  
         ) into _points_already_awarded;
         
         if _points_already_awarded then
-            raise notice 'Points already awarded for bill %', _bill_id;
+            raise notice 'Points already awarded for digital sale invoice %', _digital_sale_invoice_id;
             return new;
         end if;
         
         select tenant_customer_id into _tenant_customer_id
-        from pos_schema.bill
-        where bill_id = _bill_id;
+        from pos_schema.digital_sale_invoice
+        where digital_sale_invoice_id = _digital_sale_invoice_id;
         
         if _tenant_customer_id is null then
-            raise notice 'No customer found for bill %', _bill_id;
+            raise notice 'No customer found for digital sale invoice %', _digital_sale_invoice_id;
             return new;
         end if;
         
@@ -2618,9 +2726,9 @@ BEGIN
         end if;
         
         select coalesce(sum(cp.payment_amount), 0) into _cash_payments_total
-        from pos_schema.bill_payment bp
+        from pos_schema.digital_sale_invoice_payment bp
         join pos_schema.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
-        where bp.bill_id = _bill_id
+        where bp.digital_sale_invoice_id = _digital_sale_invoice_id
         and cp.is_points_redemption = false;
         
         raise notice 'Cash/card payments total: $%', _cash_payments_total;
@@ -2632,7 +2740,7 @@ BEGIN
         );
         
         if _points_earned <= 0 then
-            raise notice 'No points earned for this purchase (Bill: %)', _bill_id;
+            raise notice 'No points earned for this purchase (Invoice: %)', _digital_sale_invoice_id;
             return new;
         end if;
         
@@ -2661,19 +2769,19 @@ BEGIN
             tenant_customer_id,
             transaction_type_id,
             points,
-            bill_id,
+            digital_sale_invoice_id,
             created_at
         ) VALUES (
             _tenant_id,
             _tenant_customer_id,
             1,  
             _points_earned,
-            _bill_id,
+            _digital_sale_invoice_id,
             current_timestamp
         );
         
         raise notice 'Awarded % points to customer %', _points_earned, _tenant_customer_id;
-        raise notice 'Bill: %', _bill_id;
+        raise notice 'Invoice: %', _digital_sale_invoice_id;
         raise notice 'New balance: % points', _current_balance;
         
         return new;
@@ -2685,9 +2793,11 @@ BEGIN
 end;
 $$ language plpgsql;
 
-drop trigger if exists on_purchase_billed on pos_schema.bill_payment;
-create trigger on_purchase_billed
-    after insert on pos_schema.bill_payment
+drop trigger if exists on_purchase_billed on pos_schema.digital_sale_invoice_payment;
+drop trigger if exists on_purchase_billed on pos_schema.digital_sale_invoice_payment;
+drop trigger if exists on_invoice_payment_award_points on pos_schema.digital_sale_invoice_payment;
+create trigger on_invoice_payment_award_points
+    after insert on pos_schema.digital_sale_invoice_payment
     for each row
     execute function pos_schema.award_points();
 
@@ -2914,8 +3024,9 @@ drop trigger if exists update_customer_payment_timestamp on pos_schema.customer_
 create trigger update_customer_payment_timestamp before update on pos_schema.customer_payment
 for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_timestamp on pos_schema.bill;
-create trigger update_bill_timestamp before update on pos_schema.bill
+drop trigger if exists update_bill_timestamp on pos_schema.digital_sale_invoice;
+drop trigger if exists update_digital_sale_invoice_timestamp on pos_schema.digital_sale_invoice;
+create trigger update_digital_sale_invoice_timestamp before update on pos_schema.digital_sale_invoice
 for each row execute function general_schema.update_timestamp();
 
 drop trigger if exists update_return_transaction_timestamp on pos_schema.return_transaction;
@@ -2950,8 +3061,9 @@ drop trigger if exists update_score_transaction_timestamp on pos_schema.score_tr
 create trigger update_score_transaction_timestamp before update on pos_schema.score_transaction
 for each row execute function general_schema.update_timestamp();
 
-drop trigger if exists update_bill_payment_timestamp on pos_schema.bill_payment;
-create trigger update_bill_payment_timestamp before update on pos_schema.bill_payment
+drop trigger if exists update_digital_sale_invoice_payment_timestamp on pos_schema.digital_sale_invoice_payment;
+drop trigger if exists update_digital_sale_invoice_payment_timestamp on pos_schema.digital_sale_invoice_payment;
+create trigger update_digital_sale_invoice_payment_timestamp before update on pos_schema.digital_sale_invoice_payment
 for each row execute function general_schema.update_timestamp();
 
 drop trigger if exists update_sale_timestamp on pos_schema.sale;
@@ -3197,7 +3309,6 @@ DECLARE
     _current_amount_paid NUMERIC(12,3);
     _payments_total NUMERIC(12,3);
     _balance NUMERIC(12,3);
-    _pending_payments INT;
     _target_purchase_ap_id UUID;
 BEGIN
     SELECT 
@@ -3221,19 +3332,9 @@ BEGIN
         RAISE EXCEPTION 'Account payable not found: %', _account_payable_id;
     END IF;
 
-    SELECT COUNT(*) INTO _pending_payments
-    FROM purchase_schema.purchase_order_payment sop
-    WHERE sop.purchase_account_payable_id = _target_purchase_ap_id
-    AND sop.verified = FALSE;
-
-    IF _pending_payments > 0 THEN
-        RETURN FALSE;
-    END IF;
-
     SELECT COALESCE(SUM(sop.amount_paid), 0) INTO _payments_total
     FROM purchase_schema.purchase_order_payment sop
-    WHERE sop.purchase_account_payable_id = _target_purchase_ap_id
-    AND sop.verified = TRUE;
+    WHERE sop.purchase_account_payable_id = _target_purchase_ap_id;
 
     _balance := _amount_due - _payments_total;
 
@@ -3272,20 +3373,18 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION recalc_account_payable_on_payment()
 returns trigger as $$
 BEGIN
-    if new.verified = true and (old.verified is null or old.verified = false) then
-        perform purchase_schema.check_account_payable_completion(
-            (select account_payable_id 
-             from purchase_schema.purchase_account_payable 
-             where purchase_account_payable_id = new.purchase_account_payable_id)
-        );
-    end if;
+    perform purchase_schema.check_account_payable_completion(
+        (select account_payable_id 
+         from purchase_schema.purchase_account_payable 
+         where purchase_account_payable_id = new.purchase_account_payable_id)
+    );
     return new;
 end;
 $$ language plpgsql;
 
 drop trigger if exists recalc_account_payable_on_payment_trigger on purchase_schema.purchase_order_payment;
 create trigger recalc_account_payable_on_payment_trigger
-    after update of verified on purchase_schema.purchase_order_payment
+    after insert or update of amount_paid on purchase_schema.purchase_order_payment
     for each row
     execute function recalc_account_payable_on_payment();
 

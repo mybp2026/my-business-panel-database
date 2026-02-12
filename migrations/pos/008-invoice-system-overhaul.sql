@@ -4,7 +4,7 @@
 -- Author: David
 -- Description: Overhauls the POS invoice system:
 --   1. Renames `bill` → `digital_sale_invoice` with new fields
---   2. Renames `bill_payment` → `digital_sale_invoice_payment`
+--   2. Renames `digital_sale_invoice_payment` → `digital_sale_invoice_payment`
 --   3. Creates `electronic_sale_invoice` table (Costa Rica Hacienda format)
 --   4. Creates `electronic_sale_invoice_items` table
 --   5. Adds `has_electronic_invoice` flag to `sale` table
@@ -47,10 +47,10 @@ CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_sale_id
     ON pos_schema.digital_sale_invoice(sale_id);
 
 -- ======================================================
--- STEP 2: Rename bill_payment → digital_sale_invoice_payment
+-- STEP 2: Rename digital_sale_invoice_payment → digital_sale_invoice_payment
 -- ======================================================
 
-ALTER TABLE pos_schema.bill_payment RENAME TO digital_sale_invoice_payment;
+ALTER TABLE pos_schema.digital_sale_invoice_payment RENAME TO digital_sale_invoice_payment;
 
 -- Rename the bill_id column to digital_sale_invoice_id
 ALTER TABLE pos_schema.digital_sale_invoice_payment 
@@ -221,7 +221,7 @@ CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_cabys
 
 -- Drop old bill triggers
 DROP TRIGGER IF EXISTS update_bill_timestamp ON pos_schema.digital_sale_invoice;
-DROP TRIGGER IF EXISTS update_bill_payment_timestamp ON pos_schema.digital_sale_invoice_payment;
+DROP TRIGGER IF EXISTS update_digital_sale_invoice_payment_timestamp ON pos_schema.digital_sale_invoice_payment;
 
 -- Create new timestamp triggers for renamed tables
 CREATE TRIGGER update_digital_sale_invoice_timestamp 
@@ -289,12 +289,12 @@ COMMIT;
 -- 
 -- -- Revert timestamp triggers
 -- DROP TRIGGER IF EXISTS update_digital_sale_invoice_timestamp ON pos_schema.bill;
--- DROP TRIGGER IF EXISTS update_digital_sale_invoice_payment_timestamp ON pos_schema.bill_payment;
+-- DROP TRIGGER IF EXISTS update_digital_sale_invoice_payment_timestamp ON pos_schema.digital_sale_invoice_payment;
 -- DROP TRIGGER IF EXISTS update_electronic_sale_invoice_timestamp ON pos_schema.electronic_sale_invoice;
 -- DROP TRIGGER IF EXISTS update_electronic_sale_invoice_items_timestamp ON pos_schema.electronic_sale_invoice_items;
 -- CREATE TRIGGER update_bill_timestamp BEFORE UPDATE ON pos_schema.bill
 --     FOR EACH ROW EXECUTE FUNCTION general_schema.update_timestamp();
--- CREATE TRIGGER update_bill_payment_timestamp BEFORE UPDATE ON pos_schema.bill_payment
+-- CREATE TRIGGER update_digital_sale_invoice_payment_timestamp BEFORE UPDATE ON pos_schema.digital_sale_invoice_payment
 --     FOR EACH ROW EXECUTE FUNCTION general_schema.update_timestamp();
 -- 
 -- COMMIT;
