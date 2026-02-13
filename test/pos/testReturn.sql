@@ -90,6 +90,10 @@ BEGIN
 
         delete from general_schema.product_variant where tenant_id = v_tenant_id;
         DELETE FROM general_schema.product WHERE cabys_code LIKE 'RTTEST%';
+
+        -- Limpiar tax_rate de prueba
+        DELETE FROM general_schema.tax_rate WHERE rate_code = 'IVA-10-TEST-RT';
+
         delete from general_schema.tenant_customer where tenant_id = v_tenant_id;
         delete from general_schema.users where tenant_id = v_tenant_id;
         delete from general_schema.branch where tenant_id = v_tenant_id;
@@ -118,6 +122,7 @@ declare
     v_prod_b uuid;
     v_prod_c uuid;
     v_cash_reg uuid;
+    v_tax_rate_id INTEGER;
 BEGIN
     raise notice '';
     raise notice '========================================';
@@ -155,6 +160,16 @@ BEGIN
     INSERT INTO general_schema.product (cabys_code, product_name)
     VALUES ('RTTEST0000001', 'Productos de prueba devoluciones')
     ON CONFLICT (cabys_code) DO NOTHING;
+
+    -- Crear tasa de impuesto 10% y asignar al producto
+    INSERT INTO general_schema.tax_rate (rate_percentage, rate_code, rate_name)
+    VALUES (10.00, 'I-10-TEST', 'IVA 10% (Test Devoluciones)')
+    RETURNING tax_rate_id INTO v_tax_rate_id;
+
+    UPDATE general_schema.product SET tax_rate_id = v_tax_rate_id
+    WHERE cabys_code = 'RTTEST0000001';
+
+    raise notice '✅ Tasa IVA 10%% asignada a producto (tax_rate_id: %)', v_tax_rate_id;
 
     select product_variant_id into v_prod_a from general_schema.product_variant where tenant_id = v_tenant_id and sku = 'RT-A' limit 1;
     if v_prod_a is null then
@@ -232,7 +247,9 @@ BEGIN
     select product_variant_id into v_prod_c from general_schema.product_variant where tenant_id = v_tenant_id and sku = 'RT-C' limit 1;
 
     v_subtotal := 140.00; -- A x5 (50) + B x3 (60) + C x2 (30)
-    v_tax := round(v_subtotal * 0.10, 2); -- assume 10% tax rate in test setup
+    -- Tax is computed per-item by create_digital_sale_invoice trigger from product -> tax_rate
+    -- For the sale itself, we set 10% to match the product's tax_rate (IVA-10-TEST-RT)
+    v_tax := round(v_subtotal * 0.10, 2); -- 10% matching product tax_rate
     v_total := v_subtotal + v_tax;
 
     INSERT INTO pos_schema.sale (branch_id, currency_id, subtotal_amount, tax_amount, total_amount, is_completed)
@@ -379,11 +396,11 @@ BEGIN
     select coalesce(quantity,0) into v_qty_b from pos_schema.sale_item si join general_schema.product_variant pv on si.tenant_id = pv.tenant_id and si.product_variant_id = pv.product_variant_id where pv.sku = 'RT-B' and si.tenant_id = v_tenant_id limit 1;
     select coalesce(quantity,0) into v_qty_c from pos_schema.sale_item si join general_schema.product_variant pv on si.tenant_id = pv.tenant_id and si.product_variant_id = pv.product_variant_id where pv.sku = 'RT-C' and si.tenant_id = v_tenant_id limit 1;
 
-    select rate_percentage into v_tax_rate
-    from general_schema.tax_rate tr
-    join general_schema.region r on tr.region = r.region_name
-    join general_schema.tenant t on t.region_id = r.region_id
-    where t.tenant_id = v_tenant_id
+    -- Per-item tax: get from product's tax_rate (set in Section 1 as 10%)
+    select tr.rate_percentage into v_tax_rate
+    from general_schema.product p
+    join general_schema.tax_rate tr on p.tax_rate_id = tr.tax_rate_id
+    where p.cabys_code = 'RTTEST0000001'
     limit 1;
 
     if v_tax_rate is null then v_tax_rate := 0; end if;

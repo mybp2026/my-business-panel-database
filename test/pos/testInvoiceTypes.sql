@@ -171,6 +171,9 @@ BEGIN
     -- Limpiar product (CABYS entries de test)
     DELETE FROM general_schema.product WHERE cabys_code IN ('2314001000100', '4323002010100');
 
+    -- Limpiar tax_rate de prueba
+    DELETE FROM general_schema.tax_rate WHERE rate_code = 'IVA-13-TEST-FE';
+
     -- Limpiar users
     DELETE FROM general_schema.users
     WHERE tenant_id IN (
@@ -208,6 +211,7 @@ DECLARE
     v_variant_b_id UUID;
     v_cash_register_id UUID;
     v_loyalty_program_id UUID;
+    v_tax_rate_id INTEGER;
 BEGIN
     RAISE NOTICE '========================================';
     RAISE NOTICE '🏗️  SECCIÓN 1: Configuración inicial';
@@ -261,6 +265,16 @@ BEGIN
     RAISE NOTICE '✅ Entradas CABYS creadas:';
     RAISE NOTICE '  - 2314001000100: Computadoras portátiles';
     RAISE NOTICE '  - 4323002010100: Teclados para computadora';
+
+    -- 1.5b Crear tasa de impuesto IVA 13%
+    INSERT INTO general_schema.tax_rate (rate_percentage, rate_code, rate_name)
+    VALUES (13.00, 'I-13-TEST', 'IVA 13% (Test Facturación Electrónica)')
+    RETURNING tax_rate_id INTO v_tax_rate_id;
+
+    UPDATE general_schema.product SET tax_rate_id = v_tax_rate_id
+    WHERE cabys_code IN ('2314001000100', '4323002010100');
+
+    RAISE NOTICE '✅ Tasa IVA 13%% asignada a productos (tax_rate_id: %)', v_tax_rate_id;
 
     -- 1.6 Crear variantes vendibles (cada una con su CABYS)
     INSERT INTO general_schema.product_variant (
@@ -606,10 +620,14 @@ BEGIN
     )
     RETURNING electronic_sale_invoice_id INTO v_electronic_invoice_id;
 
+    -- Actualizar bandera has_electronic_invoice
+    UPDATE pos_schema.sale SET has_electronic_invoice = true WHERE sale_id = v_sale_id;
+
     RAISE NOTICE '✅ Factura electrónica creada: %', v_electronic_invoice_id;
     RAISE NOTICE '  Key Number: %', v_key_number;
     RAISE NOTICE '  Consecutive: %', v_consecutive_number;
     RAISE NOTICE '  Total: ₡%.2f', v_total;
+    RAISE NOTICE '✅ Bandera has_electronic_invoice actualizada a true';
     RAISE NOTICE '✅ SECCIÓN 5 COMPLETADA';
     RAISE NOTICE '========================================';
 END $section_5$;
@@ -625,6 +643,8 @@ DECLARE
     v_sale_id UUID;
     v_variant_a_name VARCHAR(255);
     v_variant_b_name VARCHAR(255);
+    v_variant_a_id UUID;
+    v_variant_b_id UUID;
 BEGIN
     RAISE NOTICE '========================================';
     RAISE NOTICE '📦 SECCIÓN 6: Vincular ítems a factura electrónica';
@@ -646,16 +666,18 @@ BEGIN
     WHERE e.sale_id = v_sale_id
     LIMIT 1;
 
-    SELECT pv.variant_name INTO v_variant_a_name
+    SELECT pv.variant_name, pv.product_variant_id INTO v_variant_a_name, v_variant_a_id
     FROM general_schema.product_variant pv
     WHERE pv.tenant_id = v_tenant_id AND pv.sku = 'FE-LAPTOP-001';
 
-    SELECT pv.variant_name INTO v_variant_b_name
+    SELECT pv.variant_name, pv.product_variant_id INTO v_variant_b_name, v_variant_b_id
     FROM general_schema.product_variant pv
     WHERE pv.tenant_id = v_tenant_id AND pv.sku = 'FE-TEC-001';
 
     INSERT INTO pos_schema.electronic_sale_invoice_items (
         electronic_sale_invoice_id,
+        tenant_id,
+        product_variant_id,
         line_number,
         cabys_code,
         description,
@@ -673,6 +695,8 @@ BEGIN
     )
     VALUES (
         v_electronic_invoice_id,
+        v_tenant_id,
+        v_variant_a_id,
         1,
         '2314001000100',
         v_variant_a_name,
@@ -693,6 +717,8 @@ BEGIN
 
     INSERT INTO pos_schema.electronic_sale_invoice_items (
         electronic_sale_invoice_id,
+        tenant_id,
+        product_variant_id,
         line_number,
         cabys_code,
         description,
@@ -710,6 +736,8 @@ BEGIN
     )
     VALUES (
         v_electronic_invoice_id,
+        v_tenant_id,
+        v_variant_b_id,
         2,
         '4323002010100',
         v_variant_b_name,
@@ -823,6 +851,41 @@ BEGIN
         RAISE NOTICE '❌ [ERROR] CABYS codes inválidos encontrados: %', invalid_cabys;
         v_all_ok := false;
     END IF;
+
+    -- Validar digital_sale_invoice_item
+    DECLARE
+        v_dsii_count INTEGER;
+        v_variant_linked INTEGER;
+    BEGIN
+        SELECT COUNT(*) INTO v_dsii_count
+        FROM pos_schema.digital_sale_invoice_item dsii
+        JOIN pos_schema.digital_sale_invoice dsi ON dsii.digital_sale_invoice_id = dsi.digital_sale_invoice_id
+        WHERE dsi.sale_id = v_sale_id;
+
+        IF v_dsii_count = 2 THEN
+            RAISE NOTICE '✅ [OK] Ítems de factura digital existen (2 registros)';
+        ELSE
+            RAISE NOTICE '❌ [ERROR] Ítems de factura digital: esperados 2, encontrados %', v_dsii_count;
+            v_all_ok := false;
+        END IF;
+
+        -- Validar que electronic_sale_invoice_items tienen product_variant vinculado
+        SELECT COUNT(*) INTO v_variant_linked
+        FROM pos_schema.electronic_sale_invoice_items esi
+        WHERE esi.electronic_sale_invoice_id IN (
+            SELECT electronic_sale_invoice_id FROM pos_schema.electronic_sale_invoice
+            WHERE sale_id = v_sale_id
+        )
+        AND esi.tenant_id IS NOT NULL
+        AND esi.product_variant_id IS NOT NULL;
+
+        IF v_variant_linked = 2 THEN
+            RAISE NOTICE '✅ [OK] Ítems electrónicos vinculados a product_variant (2 registros)';
+        ELSE
+            RAISE NOTICE '❌ [ERROR] Ítems electrónicos vinculados: esperados 2, encontrados %', v_variant_linked;
+            v_all_ok := false;
+        END IF;
+    END;
 
     IF v_all_ok = true THEN
         RAISE NOTICE '🎉 TODAS LAS VALIDACIONES PASARON';

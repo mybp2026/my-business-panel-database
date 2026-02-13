@@ -1,26 +1,26 @@
 -- =====================================
--- TEST: PAGO DE CONTADO CON FACTURACIÓN
+-- TEST: PAGO DE CONTADO CON FACTURACIï¿½N
 -- =====================================
 -- Este script prueba el flujo completo:
--- 1. Configuración inicial (tenant, productos, cliente)
--- 2. Apertura de sesión de caja
--- 3. Creación de venta con productos
+-- 1. Configuraciï¿½n inicial (tenant, productos, cliente)
+-- 2. Apertura de sesiï¿½n de caja
+-- 3. Creaciï¿½n de venta con productos
 -- 4. Registro de pago de contado
--- 5. Verificación de pago (dispara cascada de triggers)
--- 6. Generación automática de factura
--- 7. Vinculación a sesión de caja
+-- 5. Verificaciï¿½n de pago (dispara cascada de triggers)
+-- 6. Generaciï¿½n automï¿½tica de factura
+-- 7. Vinculaciï¿½n a sesiï¿½n de caja
 -- 8. Otorgamiento de puntos de lealtad
--- 9. Cierre de sesión de caja
+-- 9. Cierre de sesiï¿½n de caja
 -- =====================================
 
 -- ========================================
--- SECCIÓN 0: Limpieza inicial
+-- SECCIï¿½N 0: Limpieza inicial
 -- ========================================
 DO $$
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 0: Limpieza inicial';
+    raise notice '?? SECCIï¿½N 0: Limpieza inicial';
     raise notice '========================================';
     raise notice '';
     
@@ -130,6 +130,9 @@ BEGIN
     );
 
     DELETE FROM general_schema.product WHERE cabys_code LIKE 'CPTEST%';
+
+    -- Limpiar tax_rate de prueba
+    DELETE FROM general_schema.tax_rate WHERE rate_code = 'IVA-13-TEST-CP';
     
     delete from general_schema.users 
     where tenant_id in (
@@ -146,20 +149,20 @@ BEGIN
     delete from general_schema.tenant 
     where tenant_name = 'Super Comercio Digital';
     
-    raise notice '? Estado después de limpieza:';
+    raise notice '? Estado despuï¿½s de limpieza:';
     raise notice '  Tenants: %', (select count(*) from general_schema.tenant);
     raise notice '  Clientes: %', (select count(*) from general_schema.tenant_customer);
     raise notice '  Productos (variants): %', (select count(*) from general_schema.product_variant);
     raise notice '  Ventas: %', (select count(*) from pos_schema.sale);
     raise notice '  Facturas: %', (select count(*) from pos_schema.digital_sale_invoice);
     raise notice '';
-    raise notice '? SECCIÓN 0 COMPLETADA';
+    raise notice '? SECCIï¿½N 0 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 1: Configuración inicial
+-- SECCIï¿½N 1: Configuraciï¿½n inicial
 -- ========================================
 DO $$
 declare
@@ -175,7 +178,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '???  SECCIÓN 1: Configuración inicial';
+    raise notice '???  SECCIï¿½N 1: Configuraciï¿½n inicial';
     raise notice '========================================';
     raise notice '';
 
@@ -206,18 +209,18 @@ BEGIN
         email, phone, customer_segment_id
     )
     VALUES (
-        v_tenant_id, 'Juan', 'Pérez', 'DNI-12345678',
+        v_tenant_id, 'Juan', 'Pï¿½rez', 'DNI-12345678',
         'juan.perez@email.com', '+506-8888-9999', 3
     )
     returning tenant_customer_id into v_customer_id;
     
     raise notice '? Cliente creado: %', v_customer_id;
-    raise notice '  Nombre: Juan Pérez';
+    raise notice '  Nombre: Juan Pï¿½rez';
     raise notice '  Segmento: Regular';
 
     -- 1.5 Crear entrada CABYS
     INSERT INTO general_schema.product (cabys_code, product_name)
-    VALUES ('CPTEST0000001', 'Productos Electrónicos')
+    VALUES ('CPTEST0000001', 'Productos Electrï¿½nicos')
     ON CONFLICT (cabys_code) DO NOTHING;
     
     raise notice '? Entrada CABYS creada: CPTEST0000001';
@@ -243,14 +246,14 @@ BEGIN
         tenant_id, cabys_code, sku, variant_name, unit_price, is_active
     )
     VALUES (
-        v_tenant_id, 'CPTEST0000001', 'PROD-003', 'Teclado Mecánico', 120.00, true
+        v_tenant_id, 'CPTEST0000001', 'PROD-003', 'Teclado Mecï¿½nico', 120.00, true
     )
     returning product_variant_id into v_variant_c_id;
     
     raise notice '? Variantes creadas: 3';
     raise notice '  - Laptop HP: $850.00';
     raise notice '  - Mouse Logitech: $25.00';
-    raise notice '  - Teclado Mecánico: $120.00';
+    raise notice '  - Teclado Mecï¿½nico: $120.00';
 
     -- 1.7 Crear caja registradora
     INSERT INTO pos_schema.cash_register (branch_id, is_active)
@@ -281,13 +284,13 @@ BEGIN
     raise notice '  Canje: 100 puntos = $1';
     raise notice '';
     
-    raise notice '? SECCIÓN 1 COMPLETADA';
+    raise notice '? SECCIï¿½N 1 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 2: Abrir sesión de caja
+-- SECCIï¿½N 2: Abrir sesiï¿½n de caja
 -- ========================================
 DO $$
 declare
@@ -297,7 +300,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 2: Abrir sesión de caja';
+    raise notice '?? SECCIï¿½N 2: Abrir sesiï¿½n de caja';
     raise notice '========================================';
     raise notice '';
 
@@ -315,7 +318,7 @@ BEGIN
     limit 1;
 
     if v_cash_register_id is null then
-        raise exception 'No se encontró caja registradora para el tenant';
+        raise exception 'No se encontrï¿½ caja registradora para el tenant';
     end if;
 
     -- Obtener user_id del cajero
@@ -324,7 +327,7 @@ BEGIN
     where tenant_id = v_tenant_id
     limit 1;
 
-    -- Abrir sesión con $500 de fondo y user_id
+    -- Abrir sesiï¿½n con $500 de fondo y user_id
     call pos_schema.open_close_cash_register_session(
         v_cash_register_id,
         'open',
@@ -333,13 +336,13 @@ BEGIN
     );
     
     raise notice '';
-    raise notice '? SECCIÓN 2 COMPLETADA';
+    raise notice '? SECCIï¿½N 2 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 3: Crear venta con productos
+-- SECCIï¿½N 3: Crear venta con productos
 -- ========================================
 DO $$
 declare
@@ -359,7 +362,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 3: Crear venta con productos';
+    raise notice '?? SECCIï¿½N 3: Crear venta con productos';
     raise notice '========================================';
     raise notice '';
 
@@ -408,7 +411,7 @@ BEGIN
 
     -- Verificar que se encontraron todos
     if v_branch_id is null or v_user_id is null or v_customer_id is null then
-        raise exception 'No se encontraron datos básicos del tenant';
+        raise exception 'No se encontraron datos bï¿½sicos del tenant';
     end if;
 
     if v_variant_a_id is null or v_variant_b_id is null or v_variant_c_id is null then
@@ -420,7 +423,7 @@ BEGIN
     -- ? CALCULAR SUBTOTAL + IMPUESTO
     v_subtotal := 850.00 + 25.00 + 120.00;  -- $995.00
     
-    -- Obtener región del tenant
+    -- Obtener regiï¿½n del tenant
     select region_id into v_region_id
     from general_schema.tenant
     where tenant_id = v_tenant_id;
@@ -433,13 +436,13 @@ BEGIN
     
     if v_tax_rate is null then
         v_tax_rate := 0;
-        raise warning 'No se encontró tasa de impuesto para región %, usando 0%%', v_region_id;
+        raise warning 'No se encontrï¿½ tasa de impuesto para regiï¿½n %, usando 0%%', v_region_id;
     end if;
     
     v_tax_amount := round(v_subtotal * (v_tax_rate / 100), 2);
     v_total_amount := v_subtotal + v_tax_amount;
 
-    raise notice '? Cálculo de venta:';
+    raise notice '? Cï¿½lculo de venta:';
     raise notice '  Subtotal (productos): $%', v_subtotal;
     raise notice '  Impuesto (% percent): $%', v_tax_rate, v_tax_amount;
     raise notice '  TOTAL (con impuesto): $%', v_total_amount;
@@ -476,7 +479,7 @@ BEGIN
         v_sale_id, v_tenant_id, v_variant_a_id, 1, 850.00, 850.00
     );
     
-    raise notice '? Producto agregado: Laptop HP × 1 = $850.00';
+    raise notice '? Producto agregado: Laptop HP ï¿½ 1 = $850.00';
 
     INSERT INTO pos_schema.sale_item (
         sale_id, tenant_id, product_variant_id, quantity, unit_price, total_price
@@ -485,7 +488,7 @@ BEGIN
         v_sale_id, v_tenant_id, v_variant_b_id, 1, 25.00, 25.00
     );
     
-    raise notice '? Producto agregado: Mouse Logitech × 1 = $25.00';
+    raise notice '? Producto agregado: Mouse Logitech ï¿½ 1 = $25.00';
 
     INSERT INTO pos_schema.sale_item (
         sale_id, tenant_id, product_variant_id, quantity, unit_price, total_price
@@ -494,16 +497,16 @@ BEGIN
         v_sale_id, v_tenant_id, v_variant_c_id, 1, 120.00, 120.00
     );
     
-    raise notice '? Producto agregado: Teclado Mecánico × 1 = $120.00';
+    raise notice '? Producto agregado: Teclado Mecï¿½nico ï¿½ 1 = $120.00';
     raise notice '';
     
-    raise notice '? SECCIÓN 3 COMPLETADA';
+    raise notice '? SECCIï¿½N 3 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 4: Registrar pago de contado
+-- SECCIï¿½N 4: Registrar pago de contado
 -- ========================================
 DO $$
 declare
@@ -518,7 +521,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 4: Registrar pago de contado';
+    raise notice '?? SECCIï¿½N 4: Registrar pago de contado';
     raise notice '========================================';
     raise notice '';
 
@@ -552,7 +555,7 @@ BEGIN
     limit 1;
 
     if v_customer_id is null or v_sale_id is null then
-        raise exception 'No se encontró cliente o venta del tenant';
+        raise exception 'No se encontrï¿½ cliente o venta del tenant';
     end if;
 
     -- ? Mostrar desglose (sin recalcular)
@@ -586,20 +589,20 @@ BEGIN
     where payment_method_id = 3;
     
     raise notice '? Pago registrado: %', v_payment_id;
-    raise notice '  Cliente: Juan Pérez';
+    raise notice '  Cliente: Juan Pï¿½rez';
     raise notice '  Venta: %', v_sale_id;
-    raise notice '  Método: % ??', v_payment_method;
+    raise notice '  Mï¿½todo: % ??', v_payment_method;
     raise notice '  Monto: $%', v_sale_total;  -- ? Monto correcto
-    raise notice '  Estado: Pendiente de verificación ?';
+    raise notice '  Estado: Pendiente de verificaciï¿½n ?';
     raise notice '';
     
-    raise notice '? SECCIÓN 4 COMPLETADA';
+    raise notice '? SECCIï¿½N 4 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 5: Verificar pago (TRIGGER CASCADE)
+-- SECCIï¿½N 5: Verificar pago (TRIGGER CASCADE)
 -- ========================================
 DO $$
 declare
@@ -613,7 +616,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 5: Verificar pago';
+    raise notice '?? SECCIï¿½N 5: Verificar pago';
     raise notice '========================================';
     raise notice '';
 
@@ -633,7 +636,7 @@ BEGIN
     limit 1;
 
     if v_payment_id is null then
-        raise exception 'No se encontró pago pendiente del tenant';
+        raise exception 'No se encontrï¿½ pago pendiente del tenant';
     end if;
 
     raise notice '?? Verificando pago %...', v_payment_id;
@@ -649,7 +652,7 @@ BEGIN
     raise notice '----------------------------------------';
     raise notice '';
 
-    -- Verificar que la venta se completó
+    -- Verificar que la venta se completï¿½
     select is_completed into v_sale_completed
     from pos_schema.sale
     where sale_id = v_sale_id;
@@ -657,10 +660,10 @@ BEGIN
     if v_sale_completed then
         raise notice '? Venta marcada como COMPLETADA';
     else
-        raise exception '? ERROR: Venta NO se completó';
+        raise exception '? ERROR: Venta NO se completï¿½';
     end if;
 
-    -- Verificar que se creó la factura
+    -- Verificar que se creï¿½ la factura
     select digital_sale_invoice_id into v_digital_sale_invoice_id
     from pos_schema.digital_sale_invoice
     where sale_id = v_sale_id;
@@ -668,18 +671,18 @@ BEGIN
     if v_digital_sale_invoice_id is not null then
         raise notice '? Factura creada: %', v_digital_sale_invoice_id;
     else
-        raise exception '? ERROR: Factura NO se creó';
+        raise exception '? ERROR: Factura NO se creï¿½';
     end if;
 
-    -- Verificar vinculación a sesión de caja
+    -- Verificar vinculaciï¿½n a sesiï¿½n de caja
     select cash_register_session_id into v_session_id
     from pos_schema.cash_register_sale
     where sale_id = v_sale_id;
     
     if v_session_id is not null then
-        raise notice '? Venta vinculada a sesión de caja: %', v_session_id;
+        raise notice '? Venta vinculada a sesiï¿½n de caja: %', v_session_id;
     else
-        raise warning '??  Venta NO vinculada a sesión de caja';
+        raise warning '??  Venta NO vinculada a sesiï¿½n de caja';
     end if;
 
     -- Verificar puntos ganados
@@ -696,13 +699,13 @@ BEGIN
     end if;
     
     raise notice '';
-    raise notice '? SECCIÓN 5 COMPLETADA';
+    raise notice '? SECCIï¿½N 5 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 6: Consultar factura completa
+-- SECCIï¿½N 6: Consultar factura completa
 -- ========================================
 DO $$
 declare
@@ -713,7 +716,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 6: Detalle de factura';
+    raise notice '?? SECCIï¿½N 6: Detalle de factura';
     raise notice '========================================';
     raise notice '';
 
@@ -739,11 +742,11 @@ BEGIN
     order by b.invoiced_at desc
     limit 1;
 
-    if v_bill.digital_sale_invoice_id is null then
-        raise exception 'No se encontró factura del tenant';
+    if v_invoice.digital_sale_invoice_id is null then
+        raise exception 'No se encontrï¿½ factura del tenant';
     end if;
 
-    raise notice '?? FACTURA: %', v_bill.digital_sale_invoice_id;
+    raise notice '?? FACTURA: %', v_invoice.digital_sale_invoice_id;
     raise notice '---------------------------------------';
     raise notice '  Cliente: %', v_invoice.customer_name;
     raise notice '  Fecha: %', v_invoice.invoiced_at;
@@ -769,10 +772,10 @@ BEGIN
                             and si.product_variant_id = pv.product_variant_id
         join pos_schema.sale s on si.sale_id = s.sale_id
         join pos_schema.digital_sale_invoice b on s.sale_id = b.sale_id
-        where b.digital_sale_invoice_id = v_bill.digital_sale_invoice_id
+        where b.digital_sale_invoice_id = v_invoice.digital_sale_invoice_id
         order by pv.variant_name
     loop
-        raise notice '  • % × % = $%',
+        raise notice '  ï¿½ % ï¿½ % = $%',
             v_item.variant_name,
             v_item.quantity,
             v_item.total_price;
@@ -791,9 +794,9 @@ BEGIN
         from pos_schema.digital_sale_invoice_payment bp
         join pos_schema.customer_payment cp on bp.customer_payment_id = cp.customer_payment_id
         join general_schema.payment_method pm on cp.payment_method_id = pm.payment_method_id
-        where bp.digital_sale_invoice_id = v_bill.digital_sale_invoice_id
+        where bp.digital_sale_invoice_id = v_invoice.digital_sale_invoice_id
     loop
-        raise notice '  • %: $% ?',
+        raise notice '  ï¿½ %: $% ?',
             v_payment.method_name,
             v_payment.payment_amount;
     end loop;
@@ -801,12 +804,12 @@ BEGIN
     raise notice '---------------------------------------';
     raise notice '';
     
-    raise notice '? SECCIÓN 6 COMPLETADA';
+    raise notice '? SECCIï¿½N 6 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 -- ========================================
--- SECCIÓN 7: Cerrar sesión de caja
+-- SECCIï¿½N 7: Cerrar sesiï¿½n de caja
 -- ========================================
 DO $$
 declare
@@ -816,7 +819,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 7: Cerrar sesión de caja';
+    raise notice '?? SECCIï¿½N 7: Cerrar sesiï¿½n de caja';
     raise notice '========================================';
     raise notice '';
 
@@ -836,13 +839,13 @@ BEGIN
     limit 1;
 
     if v_cash_register_id is null then
-        raise exception 'No se encontró sesión de caja activa del tenant';
+        raise exception 'No se encontrï¿½ sesiï¿½n de caja activa del tenant';
     end if;
 
     -- Calcular monto de cierre: $500 (apertura) + $995 (venta) = $1,495
     v_closing_amount := 1495.00;
 
-    -- Cerrar sesión
+    -- Cerrar sesiï¿½n
     call pos_schema.open_close_cash_register_session(
         v_cash_register_id,
         'close',
@@ -851,13 +854,13 @@ BEGIN
     );
     
     raise notice '';
-    raise notice '? SECCIÓN 7 COMPLETADA';
+    raise notice '? SECCIï¿½N 7 COMPLETADA';
     raise notice '========================================';
 end $$;
 
 
 -- ========================================
--- SECCIÓN 8: Resumen final
+-- SECCIï¿½N 8: Resumen final
 -- ========================================
 DO $$
 declare
@@ -870,7 +873,7 @@ declare
 BEGIN
     raise notice '';
     raise notice '========================================';
-    raise notice '?? SECCIÓN 8: Resumen final';
+    raise notice '?? SECCIï¿½N 8: Resumen final';
     raise notice '========================================';
     raise notice '';
 
@@ -879,7 +882,7 @@ BEGIN
     from general_schema.tenant
     where tenant_name = 'Super Comercio Digital';
 
-    -- Estadísticas del tenant
+    -- Estadï¿½sticas del tenant
     select count(*) into v_total_sales
     from pos_schema.sale s
     join general_schema.branch b on s.branch_id = b.branch_id
@@ -908,7 +911,7 @@ BEGIN
     join general_schema.tenant_customer tc on tcs.tenant_customer_id = tc.tenant_customer_id
     where tc.tenant_id = v_tenant_id;
 
-    raise notice '?? ESTADÍSTICAS (Tenant: Super Comercio Digital):';
+    raise notice '?? ESTADï¿½STICAS (Tenant: Super Comercio Digital):';
     raise notice '  ? Ventas completadas: %', v_total_sales;
     raise notice '  ? Facturas generadas: %', v_total_invoices;
     raise notice '  ? Pagos verificados: %', v_total_payments;
@@ -916,17 +919,17 @@ BEGIN
     raise notice '  ? Puntos otorgados: % pts', v_total_points;
     raise notice '';
 
-    raise notice '? TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO';
+    raise notice '? TODAS LAS PRUEBAS COMPLETADAS CON ï¿½XITO';
     raise notice '';
     raise notice '?? El flujo completo funciona correctamente:';
     raise notice '  1. ? Tenant y datos iniciales creados';
-    raise notice '  2. ? Sesión de caja abierta';
+    raise notice '  2. ? Sesiï¿½n de caja abierta';
     raise notice '  3. ? Venta registrada con productos';
     raise notice '  4. ? Pago de contado verificado';
-    raise notice '  5. ? Factura creada automáticamente';
+    raise notice '  5. ? Factura creada automï¿½ticamente';
     raise notice '  6. ? Venta vinculada a caja';
     raise notice '  7. ? Puntos de lealtad otorgados';
-    raise notice '  8. ? Sesión de caja cerrada';
+    raise notice '  8. ? Sesiï¿½n de caja cerrada';
     raise notice '';
     raise notice '========================================';
 end $$;
@@ -969,7 +972,7 @@ join general_schema.branch b on s.branch_id = b.branch_id
 join general_schema.tenant t on b.tenant_id = t.tenant_id
 left join pos_schema.cash_register_sale crs on s.sale_id = crs.sale_id
 left join pos_schema.cash_register_session crss on crs.cash_register_session_id = crss.cash_register_session_id
-left join general_schema.users u on crss.user_id = u.user_id  -- ? user desde sesión
+left join general_schema.users u on crss.user_id = u.user_id  -- ? user desde sesiï¿½n
 where t.tenant_name = 'Super Comercio Digital'
 order by s.sale_date desc;
 

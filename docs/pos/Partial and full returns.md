@@ -67,13 +67,16 @@ On each return_product insert, update_on_return should:
 
 - Verify returned quantity <= original sale_item.quantity, otherwise raise.
 - Decrease sale_item.quantity (or delete sale_item if remaining quantity = 0).
-- Subtract returned line amount from digital_sale_invoice.subtotal; recompute tax and total using tenant/region tax rate.
-- Update pos.digital_sale_invoice totals and pos.sale totals to keep them consistent.
+  - Deleting a sale_item CASCADE deletes the corresponding `digital_sale_invoice_item`.
+- For partial returns: update `digital_sale_invoice_item` quantities, subtotals, tax, and totals using the stored `tax_rate_percentage`.
+- Recalculate `digital_sale_invoice` totals by aggregating remaining `digital_sale_invoice_item` rows (subtotal, tax, total).
+- Recalculate `pos.sale` totals using per-item tax from `product_variant` → `product` → `tax_rate` join chain.
 - Optionally record inventory adjustments or refund movements.
 
 Example checks (pseudocode):
 
-- If return reduces all items: digital_sale_invoice.subtotal -> 0, tax -> 0, total -> 0; sale_item rows removed; sale totals updated.
+- If return reduces all items: digital_sale_invoice items CASCADE deleted; invoice subtotal → 0, tax → 0, total → 0; sale_item rows removed; sale totals updated.
+- If partial return: digital_sale_invoice_item quantities and amounts adjusted; invoice totals recomputed from remaining items.
 
 ### 4. Update return_transaction.total_refund_amount
 

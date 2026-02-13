@@ -120,12 +120,19 @@ CREATE TABLE IF NOT EXISTS currency(
 -- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
 CREATE TABLE IF NOT EXISTS tax_rate(
     tax_rate_id SERIAL PRIMARY KEY,
-    region VARCHAR(100) unique not null,
+    region VARCHAR(100),
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
     rate_percentage numeric(5,2) not null check (rate_percentage >= 0 and rate_percentage <= 100),
+    rate_code VARCHAR(10),
+    rate_name VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+COMMENT ON TABLE general_schema.tax_rate IS
+    'Stores tax rate entries for both regional taxes and CABYS product-level IVA rates.
+     - Regional rates: region + region_id populated.
+     - CABYS IVA rates: rate_code + rate_name populated, region nullable.';
 
 CREATE TABLE IF NOT EXISTS subscription_type ( 
     subscription_type_id SERIAL PRIMARY KEY,

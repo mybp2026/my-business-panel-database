@@ -279,14 +279,26 @@ When `sale.is_completed` transitions to `true`, the `pos_schema.create_digital_s
 
 **What the trigger does:**
 
-1. Creates a `pos_schema.digital_sale_invoice` record:
+1. Resolves `cash_register_id` from the active cash register session for the sale's branch.
+
+2. Creates a `pos_schema.digital_sale_invoice` record:
    - `sale_id`: References the completed sale.
    - `tenant_customer_id`: Links to the customer.
-   - `subtotal_amount`, `tax_amount`, `total_amount`: Copied from the sale.
+   - `cash_register_id`: Resolved from the active session.
+   - `subtotal_amount`, `tax_amount`, `total_amount`: Initially copied from the sale, then recomputed from items.
    - `invoiced_at`: Current timestamp.
    - `currency_id`: From the sale.
 
-2. Creates `pos_schema.digital_sale_invoice_payment` records:
+3. Creates `pos_schema.digital_sale_invoice_item` records:
+   - For each `sale_item`, inserts a `digital_sale_invoice_item` row resolving per-item tax from the product's `tax_rate` (`product_variant` → `product` → `tax_rate`).
+   - Each item stores: `cabys_code`, `tax_rate_id`, `tax_rate_percentage`, `tax_amount`, and computed `total_price`.
+
+4. Recomputes the invoice header totals:
+   - `subtotal_amount` = SUM of item subtotals.
+   - `tax_amount` = SUM of item tax amounts.
+   - `total_amount` = subtotal + tax (via `calculate_digital_sale_invoice_total` trigger).
+
+5. Creates `pos_schema.digital_sale_invoice_payment` records:
    - For each verified `customer_payment`, inserts a `digital_sale_invoice_payment` row linking the invoice and payment.
    - This maintains an audit trail of which payments settled which invoices.
 

@@ -42,6 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_sale_item_sale_variant
 CREATE TABLE IF NOT EXISTS cash_register(
     cash_register_id uuid PRIMARY KEY default gen_random_uuid(),
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
+    register_name VARCHAR(100),
     is_active BOOLEAN default true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -95,13 +96,14 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
     digital_sale_invoice_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
+    -- currency_id viene dado por la venta. es redundante tenerlo aqui. eliminarlo.
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
     total_amount numeric(10,2) not null,    
     due_date DATE,
     seller_name VARCHAR(150),
-    terminal_name VARCHAR(100),
+    cash_register_id UUID REFERENCES pos_schema.cash_register(cash_register_id) ON DELETE SET NULL,
     points_accumulated INTEGER DEFAULT 0,
     ad_message TEXT,
     invoice_number VARCHAR(50),
@@ -112,6 +114,44 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
 );
 
 CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_sale_id on pos_schema.digital_sale_invoice(sale_id);
+CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_cash_register
+    ON pos_schema.digital_sale_invoice(cash_register_id);
+
+CREATE TABLE IF NOT EXISTS digital_sale_invoice_item(
+    digital_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    digital_sale_invoice_id UUID NOT NULL
+        REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) ON DELETE CASCADE,
+    sale_item_id UUID NOT NULL
+        REFERENCES pos_schema.sale_item(sale_item_id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL,
+    product_variant_id UUID NOT NULL,
+    cabys_code VARCHAR(13)
+        REFERENCES general_schema.product(cabys_code) ON DELETE SET NULL,
+    tax_rate_id INTEGER
+        REFERENCES general_schema.tax_rate(tax_rate_id) ON DELETE SET NULL,
+    description VARCHAR(255),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+    subtotal NUMERIC(10,2) NOT NULL,
+    tax_rate_percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
+    tax_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+    total_price NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_invoice
+    ON pos_schema.digital_sale_invoice_item(digital_sale_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_sale_item
+    ON pos_schema.digital_sale_invoice_item(sale_item_id);
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_variant
+    ON pos_schema.digital_sale_invoice_item(tenant_id, product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_tax_rate
+    ON pos_schema.digital_sale_invoice_item(tax_rate_id);
 
 CREATE TABLE IF NOT EXISTS digital_sale_invoice_payment(
     digital_sale_invoice_payment_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -303,20 +343,23 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     sale_id UUID NOT NULL REFERENCES pos_schema.sale(sale_id) ON DELETE CASCADE,
     key_number VARCHAR(50) NOT NULL UNIQUE,
     consecutive_number VARCHAR(20) NOT NULL,
+    -- Issuer information (required)
     issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     issuer_name VARCHAR(150) NOT NULL,
     issuer_identification VARCHAR(20) NOT NULL,
     issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
     issuer_email VARCHAR(200),
     issuer_phone VARCHAR(20),
+    -- Receiver information (optional for consumer final)
     receiver_name VARCHAR(150),
     receiver_identification VARCHAR(20),
     receiver_identification_type VARCHAR(2),
     receiver_email VARCHAR(200),
+    -- sale details
     sale_condition VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Credit, 03=Consignment
     payment_method VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Card, 03=Check, 04=Transfer
     credit_days VARCHAR(10),
-    -- Invoice summary
+    -- Tax breakdown (required)
     total_taxed_services NUMERIC(18,5) DEFAULT 0,
     total_exempt_services NUMERIC(18,5) DEFAULT 0,
     total_exonerated_services NUMERIC(18,5) DEFAULT 0,
@@ -350,17 +393,12 @@ CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number
 CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_issue_date 
     ON pos_schema.electronic_sale_invoice(issue_date);
 
--- ======================================================
--- Electronic Sale Invoice Items
--- (References base product via cabys_code from product_variant)
--- ======================================================
-
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
-    -- Line number in the invoice
+    tenant_id UUID NOT NULL,
+    product_variant_id UUID NOT NULL,
     line_number INTEGER NOT NULL,
-    -- Product info (resolved from product_variant → product via cabys_code)
     cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
     description VARCHAR(200) NOT NULL,  -- Product description
     -- Quantity and units
@@ -391,10 +429,16 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     total_line_amount NUMERIC(18,5) NOT NULL,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+        ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice 
     ON pos_schema.electronic_sale_invoice_items(electronic_sale_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_cabys 
     ON pos_schema.electronic_sale_invoice_items(cabys_code);
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
+    ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);

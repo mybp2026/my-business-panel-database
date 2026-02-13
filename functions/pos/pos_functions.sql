@@ -174,6 +174,8 @@ declare
     _tax numeric(10,2);
     _total numeric(10,2);
     _payment_ids uuid[];
+    _cash_register_id uuid;
+    _items_count int;
 BEGIN
         raise notice 'Creating digital sale invoice for sale: %', new.sale_id;
         
@@ -197,34 +199,97 @@ BEGIN
         where tenant_customer_id = _tenant_customer_id;
         
         _currency_id := new.currency_id;
-        _subtotal := new.subtotal_amount;  
-        _tax := new.tax_amount;            
-        _total := new.total_amount;        
-        
-        raise notice '   Customer: %', _tenant_customer_id;
-        raise notice '   Tenant: %', _tenant_id;
-        raise notice '   Subtotal: $%', _subtotal;
-        raise notice '   Tax: $%', _tax;
-        raise notice '   Total: $%', _total;
 
+        -- Resolve cash register from active session in the branch
+        SELECT cr.cash_register_id INTO _cash_register_id
+        FROM pos_schema.cash_register_session crs
+        JOIN pos_schema.cash_register cr ON crs.cash_register_id = cr.cash_register_id
+        WHERE cr.branch_id = new.branch_id
+        AND crs.is_active = true
+        LIMIT 1;
+
+        -- Insert invoice with placeholder totals (will be updated from items)
         INSERT INTO pos_schema.digital_sale_invoice (
             sale_id,              
             tenant_customer_id,
             currency_id,
             subtotal_amount,
             tax_amount,
-            total_amount
+            total_amount,
+            cash_register_id
         ) VALUES (
             new.sale_id,         
             _tenant_customer_id,
             _currency_id,
-            _subtotal,
-            _tax,
-            _total
+            0,
+            0,
+            0,
+            _cash_register_id
         ) returning digital_sale_invoice_id into _digital_sale_invoice_id;
         
         raise notice '   Digital sale invoice created: %', _digital_sale_invoice_id;
+        raise notice '   Cash Register: %', _cash_register_id;
+
+        INSERT INTO pos_schema.digital_sale_invoice_item (
+            digital_sale_invoice_id,
+            sale_item_id,
+            tenant_id,
+            product_variant_id,
+            cabys_code,
+            tax_rate_id,
+            description,
+            quantity,
+            unit_price,
+            subtotal,
+            tax_rate_percentage,
+            tax_amount,
+            total_price
+        )
+        SELECT
+            _digital_sale_invoice_id,
+            si.sale_item_id,
+            si.tenant_id,
+            si.product_variant_id,
+            pv.cabys_code,
+            p.tax_rate_id,
+            COALESCE(pv.variant_name, p.product_name, 'Product'),
+            si.quantity,
+            si.unit_price,
+            si.total_price,
+            COALESCE(tr.rate_percentage, 0),
+            ROUND(si.total_price * COALESCE(tr.rate_percentage, 0) / 100, 2),
+            si.total_price + ROUND(si.total_price * COALESCE(tr.rate_percentage, 0) / 100, 2)
+        FROM pos_schema.sale_item si
+        JOIN general_schema.product_variant pv 
+            ON si.tenant_id = pv.tenant_id AND si.product_variant_id = pv.product_variant_id
+        LEFT JOIN general_schema.product p ON pv.cabys_code = p.cabys_code
+        LEFT JOIN general_schema.tax_rate tr ON p.tax_rate_id = tr.tax_rate_id
+        WHERE si.sale_id = new.sale_id;
+
+        GET DIAGNOSTICS _items_count = ROW_COUNT;
+        raise notice '   % invoice item(s) created', _items_count;
+
+        -- Update invoice totals from items (per-item tax)
+        SELECT
+            COALESCE(SUM(dsii.subtotal), 0),
+            COALESCE(SUM(dsii.tax_amount), 0)
+        INTO _subtotal, _tax
+        FROM pos_schema.digital_sale_invoice_item dsii
+        WHERE dsii.digital_sale_invoice_id = _digital_sale_invoice_id;
+
+        _total := _subtotal + _tax;
+
+        UPDATE pos_schema.digital_sale_invoice
+        SET subtotal_amount = _subtotal,
+            tax_amount = _tax,
+            total_amount = _total
+        WHERE digital_sale_invoice_id = _digital_sale_invoice_id;
+
+        raise notice '   Subtotal: $%', _subtotal;
+        raise notice '   Tax (per-item): $%', _tax;
+        raise notice '   Total: $%', _total;
         
+        -- Link verified payments
         select array_agg(customer_payment_id) into _payment_ids
         from pos_schema.customer_payment
         where sale_id = new.sale_id
@@ -268,17 +333,12 @@ declare
     _digital_sale_invoice_id uuid;
     _sale_id uuid;
     _total_returned numeric(10,2) := 0;
-    _original_subtotal numeric(10,2);
-    _original_tax numeric(10,2);
-    _original_total numeric(10,2);
     _new_subtotal numeric(10,2);
     _new_tax numeric(10,2);
     _new_total numeric(10,2);
-    _tax_rate numeric(5,2);
     _quantity_remaining INTEGER;
     _sale_subtotal_after numeric(10,2);
-    _region_name VARCHAR;
-    _tenant_id uuid;
+    _sale_tax_after numeric(10,2);
 BEGIN
     select 
         si.sale_item_id,
@@ -315,8 +375,13 @@ BEGIN
     _quantity_remaining := _sale_item_record.quantity - new.quantity;
     raise notice 'Return quantity: %  Remaining qty: %', new.quantity, _quantity_remaining;
 
-    -- Update or remove sale_item to reconcile sale
+    -- Update or remove sale_item (CASCADE deletes digital_sale_invoice_item if qty = 0)
     if _quantity_remaining = 0 then
+        -- First, explicitly delete the corresponding digital_sale_invoice_item to ensure clean state
+        delete from pos_schema.digital_sale_invoice_item 
+        where digital_sale_invoice_id = _digital_sale_invoice_id
+        and sale_item_id = _sale_item_record.sale_item_id;
+        
         delete from pos_schema.sale_item where sale_item_id = _sale_item_record.sale_item_id;
         raise notice 'Sale item removed (quantity = 0)';
     else
@@ -326,32 +391,34 @@ BEGIN
             updated_at = current_timestamp
         where sale_item_id = _sale_item_record.sale_item_id;
         raise notice 'Sale item quantity updated from % to %', _sale_item_record.quantity, _quantity_remaining;
+
+        -- Update corresponding digital_sale_invoice_item with correct tax rate
+        -- Resolve tax_rate the same way as create_digital_sale_invoice
+        update pos_schema.digital_sale_invoice_item dii
+        set quantity = _quantity_remaining,
+            subtotal = _quantity_remaining * dii.unit_price,
+            tax_rate_percentage = COALESCE(tr.rate_percentage, 0),
+            tax_amount = ROUND((_quantity_remaining * dii.unit_price) * COALESCE(tr.rate_percentage, 0) / 100, 2),
+            total_price = (_quantity_remaining * dii.unit_price)
+                + ROUND((_quantity_remaining * dii.unit_price) * COALESCE(tr.rate_percentage, 0) / 100, 2),
+            updated_at = current_timestamp
+        from general_schema.product_variant pv
+        left join general_schema.product p ON pv.cabys_code = p.cabys_code
+        left join general_schema.tax_rate tr ON p.tax_rate_id = tr.tax_rate_id
+        where dii.digital_sale_invoice_id = _digital_sale_invoice_id
+        and dii.sale_item_id = _sale_item_record.sale_item_id
+        and dii.tenant_id = pv.tenant_id
+        and dii.product_variant_id = pv.product_variant_id;
     end if;
 
-    -- Update digital sale invoice totals
-    select subtotal_amount, tax_amount, total_amount into _original_subtotal, _original_tax, _original_total
-    from pos_schema.digital_sale_invoice where digital_sale_invoice_id = _digital_sale_invoice_id;
-
-    _total_returned := new.quantity * new.unit_price;
-    raise notice 'Amount returned (line): $%', _total_returned;
-
-    _new_subtotal := _original_subtotal - _total_returned;
-    if _new_subtotal < 0 then _new_subtotal := 0; end if;
-
-    -- determine tax rate by tenant -> region (fallback to 0 if not found)
-    select t.tenant_id, r.region_name into _tenant_id, _region_name
-    from general_schema.tenant t
-    join general_schema.branch b on b.tenant_id = t.tenant_id
-    join pos_schema.sale s on s.branch_id = b.branch_id
-    join general_schema.region r on r.region_id = t.region_id
-    where s.sale_id = _sale_id
-    limit 1;
-
-    select rate_percentage into _tax_rate from general_schema.tax_rate where region = coalesce(_region_name, 'US Federal') limit 1;
-    if _tax_rate is null then _tax_rate := 0; end if;
-
-    _new_tax := round(_new_subtotal * (_tax_rate / 100), 2);
-    _new_total := round(_new_subtotal + _new_tax, 2);
+    -- Recalculate digital sale invoice totals from remaining items
+    SELECT
+        COALESCE(SUM(dsii.subtotal), 0),
+        COALESCE(SUM(dsii.tax_amount), 0),
+        COALESCE(SUM(dsii.total_price), 0)
+    INTO _new_subtotal, _new_tax, _new_total
+    FROM pos_schema.digital_sale_invoice_item dsii
+    WHERE dsii.digital_sale_invoice_id = _digital_sale_invoice_id;
 
     update pos_schema.digital_sale_invoice
     set subtotal_amount = _new_subtotal,
@@ -362,18 +429,28 @@ BEGIN
 
     raise notice 'Digital sale invoice updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
 
-    select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_schema.sale_item si where si.sale_id = _sale_id;
-    _new_tax := round(_sale_subtotal_after * (_tax_rate / 100), 2);
-    _new_total := round(_sale_subtotal_after + _new_tax, 2);
+    -- Recalculate sale totals from remaining sale_items with per-item tax
+    SELECT
+        COALESCE(SUM(si.total_price), 0),
+        COALESCE(SUM(ROUND(si.total_price * COALESCE(tr.rate_percentage, 0) / 100, 2)), 0)
+    INTO _sale_subtotal_after, _sale_tax_after
+    FROM pos_schema.sale_item si
+    JOIN general_schema.product_variant pv
+        ON si.tenant_id = pv.tenant_id AND si.product_variant_id = pv.product_variant_id
+    LEFT JOIN general_schema.product p ON pv.cabys_code = p.cabys_code
+    LEFT JOIN general_schema.tax_rate tr ON p.tax_rate_id = tr.tax_rate_id
+    WHERE si.sale_id = _sale_id;
+
+    _new_total := _sale_subtotal_after + _sale_tax_after;
 
     update pos_schema.sale
     set subtotal_amount = _sale_subtotal_after,
-        tax_amount = _new_tax,
+        tax_amount = _sale_tax_after,
         total_amount = _new_total,
         updated_at = current_timestamp
     where sale_id = _sale_id;
 
-    raise notice 'Sale updated: subtotal $% tax $% total $%', _sale_subtotal_after, _new_tax, _new_total;
+    raise notice 'Sale updated: subtotal $% tax $% total $%', _sale_subtotal_after, _sale_tax_after, _new_total;
 
     return new;
 end;
@@ -1320,6 +1397,10 @@ for each row execute function general_schema.update_timestamp();
 drop trigger if exists update_bill_timestamp on pos_schema.digital_sale_invoice;
 drop trigger if exists update_digital_sale_invoice_timestamp on pos_schema.digital_sale_invoice;
 create trigger update_digital_sale_invoice_timestamp before update on pos_schema.digital_sale_invoice
+for each row execute function general_schema.update_timestamp();
+
+drop trigger if exists update_digital_sale_invoice_item_timestamp on pos_schema.digital_sale_invoice_item;
+create trigger update_digital_sale_invoice_item_timestamp before update on pos_schema.digital_sale_invoice_item
 for each row execute function general_schema.update_timestamp();
 
 drop trigger if exists update_return_transaction_timestamp on pos_schema.return_transaction;

@@ -4,14 +4,14 @@ This document describes the two invoice types in the POS system: the **digital s
 
 ## Overview
 
-| Aspect                | Digital Sale Invoice                              | Electronic Sale Invoice                            |
-| --------------------- | ------------------------------------------------- | -------------------------------------------------- |
-| **Table**             | `pos_schema.digital_sale_invoice`                 | `pos_schema.electronic_sale_invoice`               |
-| **Creation**          | Automatic (trigger on `sale.is_completed = true`) | Manual (application creates after digital invoice) |
-| **Purpose**           | Internal sales record and payment audit trail     | Tax compliance with Costa Rica Hacienda            |
-| **Items table**       | N/A (references sale_item indirectly)             | `pos_schema.electronic_sale_invoice_items`         |
-| **CABYS integration** | Indirect via `sale_item` → `product_variant`      | Direct FK to `general_schema.product(cabys_code)`  |
-| **Sale flag**         | Always created on sale completion                 | `sale.has_electronic_invoice = true` when created  |
+| Aspect                | Digital Sale Invoice                                                         | Electronic Sale Invoice                            |
+| --------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------- |
+| **Table**             | `pos_schema.digital_sale_invoice`                                            | `pos_schema.electronic_sale_invoice`               |
+| **Creation**          | Automatic (trigger on `sale.is_completed = true`)                            | Manual (application creates after digital invoice) |
+| **Purpose**           | Internal sales record and payment audit trail                                | Tax compliance with Costa Rica Hacienda            |
+| **Items table**       | `pos_schema.digital_sale_invoice_item`                                       | `pos_schema.electronic_sale_invoice_items`         |
+| **CABYS integration** | Via `digital_sale_invoice_item` → `product_variant` → `product` → `tax_rate` | Direct FK to `general_schema.product(cabys_code)`  |
+| **Sale flag**         | Always created on sale completion                                            | `sale.has_electronic_invoice = true` when created  |
 
 ## Digital Sale Invoice
 
@@ -21,10 +21,13 @@ The `digital_sale_invoice` is an internal invoice record automatically generated
 
 ### When it is created
 
-A PostgreSQL trigger (`on_sale_completed_create_digital_sale_invoice`) fires when `pos_schema.sale.is_completed` transitions to `true`. The trigger function `pos_schema.create_digital_sale_invoice()` performs two actions:
+A PostgreSQL trigger (`on_sale_completed_create_digital_sale_invoice`) fires when `pos_schema.sale.is_completed` transitions to `true`. The trigger function `pos_schema.create_digital_sale_invoice()` performs these actions:
 
-1. Inserts a `digital_sale_invoice` row copying sale totals.
-2. Inserts `digital_sale_invoice_payment` rows for each verified `customer_payment`.
+1. Resolves `cash_register_id` from the active cash register session for the sale's branch.
+2. Inserts a `digital_sale_invoice` row with aggregate totals.
+3. Inserts `digital_sale_invoice_item` rows for each `sale_item`, resolving per-item tax from `product_variant` → `product` → `tax_rate`.
+4. Recomputes the invoice’s `subtotal_amount`, `tax_amount`, and `total_amount` from the aggregated item totals.
+5. Inserts `digital_sale_invoice_payment` rows for each verified `customer_payment`.
 
 ### Schema
 
@@ -211,6 +214,9 @@ Each line item in the electronic invoice references a CABYS code directly, linki
 pos_schema.electronic_sale_invoice_items
 ├── electronic_sale_invoice_item_id  UUID PK
 ├── electronic_sale_invoice_id       UUID FK → electronic_sale_invoice
+├── tenant_id                        UUID NOT NULL
+├── product_variant_id               UUID NOT NULL
+├──   (tenant_id, product_variant_id) FK → general_schema.product_variant
 ├── line_number                      INTEGER (line number)
 ├── cabys_code                       VARCHAR(13) FK → general_schema.product
 ├── description                      VARCHAR(200) (product description)
@@ -233,17 +239,59 @@ pos_schema.electronic_sale_invoice_items
 └── total_line_amount                NUMERIC(18,5) (subtotal + tax_amount)
 ```
 
+### Digital Sale Invoice Items
+
+Each line item in the digital invoice is automatically created by the `create_digital_sale_invoice()` trigger. It resolves per-item tax dynamically via FK references to `general_schema.tax_rate`.
+
+#### Schema
+
+```sql
+pos_schema.digital_sale_invoice_item
+├── digital_sale_invoice_item_id  UUID PK
+├── digital_sale_invoice_id       UUID FK → digital_sale_invoice (ON DELETE CASCADE)
+├── sale_item_id                  UUID FK → sale_item (ON DELETE CASCADE)
+├── tenant_id                     UUID NOT NULL
+├── product_variant_id            UUID NOT NULL
+├──   (tenant_id, product_variant_id) FK → general_schema.product_variant
+├── cabys_code                    VARCHAR(13) FK → general_schema.product
+├── tax_rate_id                   INTEGER FK → general_schema.tax_rate (nullable)
+├── description                   VARCHAR(200) (resolved from product_variant.variant_name)
+├── quantity                      INTEGER
+├── unit_price                    NUMERIC(10,2)
+├── subtotal                      NUMERIC(10,2) (quantity × unit_price)
+├── tax_rate_percentage           NUMERIC(5,2) (resolved from tax_rate.rate_percentage; 0 if null)
+├── tax_amount                    NUMERIC(10,2) (subtotal × tax_rate_percentage / 100)
+├── total_price                   NUMERIC(10,2) (subtotal + tax_amount)
+├── created_at                    TIMESTAMP
+└── updated_at                    TIMESTAMP
+```
+
+**Key differences from `electronic_sale_invoice_items`:**
+
+| Aspect               | `digital_sale_invoice_item`                    | `electronic_sale_invoice_items`               |
+| -------------------- | ---------------------------------------------- | --------------------------------------------- |
+| **Creation**         | Automatic (trigger)                            | Manual (application)                          |
+| **Tax values**       | Dynamic FK to `tax_rate` table                 | Static values (copied at creation time)       |
+| **Cascade behavior** | ON DELETE CASCADE from `sale_item` and invoice | No cascade                                    |
+| **Product link**     | FK to `product_variant` + `product`            | FK to `product_variant` + direct `cabys_code` |
+
 #### CABYS Resolution Flow
 
 Items are resolved from the sale through the product catalog:
 
 ```
-pos_schema.sale_item.product_variant_id
-    → general_schema.product_variant.cabys_code
-        → general_schema.product.cabys_code (PK, used in electronic_sale_invoice_items FK)
+pos_schema.sale_item
+    └── (tenant_id, product_variant_id)
+        → general_schema.product_variant.cabys_code
+            → general_schema.product.cabys_code (PK, used in electronic_sale_invoice_items FK)
+            → general_schema.product.tax_rate_id
+                → general_schema.tax_rate.rate_percentage (used for per-item tax in digital_sale_invoice_item)
 ```
 
-This two-step lookup ensures that even though `sale_item` references a tenant-specific `product_variant`, the electronic invoice line items reference the national CABYS catalog directly.
+This lookup chain ensures that:
+
+- The `electronic_sale_invoice_items` reference the national CABYS catalog directly (static tax values).
+- The `digital_sale_invoice_item` rows store resolved per-item tax rates from the `tax_rate` table (dynamic FK references).
 
 ---
 
@@ -258,7 +306,9 @@ This two-step lookup ensures that even though `sale_item` references a tenant-sp
    │  sale.is_completed = true
    │
    ├─── TRIGGER: create_digital_sale_invoice()
-   │    ├── INSERT digital_sale_invoice (sale totals)
+   │    ├── INSERT digital_sale_invoice (initial totals from sale)
+   │    ├── INSERT digital_sale_invoice_item (per sale_item, with per-item tax from product → tax_rate)
+   │    ├── UPDATE digital_sale_invoice (recompute totals from item aggregates)
    │    └── INSERT digital_sale_invoice_payment (per verified payment)
    │
    ├─── TRIGGER: link_sale_to_session()
