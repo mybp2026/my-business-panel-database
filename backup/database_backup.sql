@@ -136,7 +136,9 @@ CREATE TABLE IF NOT EXISTS users(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
+-- insert into general_schema.users (tenant_id, email, password_hash, role_id) values 
+--     ('55d2d454-13ab-4ae5-88ca-8b9ab3c23636', 'david@amh.com', '$2a$12$RNOmpH99N5Mto3f2zYXJBumFP2jIL2pTq7a7USp5cGLMwu/y9ptk2', 1);
+-- select * from hr_schema.contract
 CREATE TABLE IF NOT EXISTS currency(
     currency_id SERIAL PRIMARY KEY,
     currency_code char(3) unique not null,
@@ -149,12 +151,19 @@ CREATE TABLE IF NOT EXISTS currency(
 -- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
 CREATE TABLE IF NOT EXISTS tax_rate(
     tax_rate_id SERIAL PRIMARY KEY,
-    region VARCHAR(100) unique not null,
+    region VARCHAR(100),
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
     rate_percentage numeric(5,2) not null check (rate_percentage >= 0 and rate_percentage <= 100),
+    rate_code VARCHAR(10),
+    rate_name VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+COMMENT ON TABLE general_schema.tax_rate IS
+    'Stores tax rate entries for both regional taxes and CABYS product-level IVA rates.
+     - Regional rates: region + region_id populated.
+     - CABYS IVA rates: rate_code + rate_name populated, region nullable.';
 
 CREATE TABLE IF NOT EXISTS subscription_type ( 
     subscription_type_id SERIAL PRIMARY KEY,
@@ -200,9 +209,9 @@ CREATE TABLE IF NOT EXISTS subscription(
 );
 
 CREATE TABLE IF NOT EXISTS product_category(
-    product_category_id SERIAL PRIMARY KEY,
+    product_category_id VARCHAR(13) PRIMARY KEY NOT NULL,
     category_name VARCHAR(100) unique not null,
-    parent_category_id INTEGER                                    
+    parent_category_id VARCHAR(13)                                    
         REFERENCES general_schema.product_category(product_category_id)
         ON DELETE CASCADE,
     hierarchy_level INTEGER DEFAULT 0 CHECK (hierarchy_level >= 0),  
@@ -240,7 +249,7 @@ CREATE TABLE IF NOT EXISTS product(
     cabys_code VARCHAR(13) PRIMARY KEY,
     product_name VARCHAR(255) NOT NULL,
     product_name_tsv tsvector GENERATED ALWAYS AS (to_tsvector('spanish', product_name)) STORED,
-    product_category_id INT REFERENCES general_schema.product_category(product_category_id) ON DELETE SET NULL,
+    product_category_id VARCHAR(13) REFERENCES general_schema.product_category(product_category_id) ON DELETE SET NULL,
     tax_rate_id INT REFERENCES general_schema.tax_rate(tax_rate_id) ON DELETE SET NULL,
     unit_measure_id INT REFERENCES general_schema.unit_measure(unit_measure_id) ON DELETE SET NULL,
     commercial_unit_measure_id INT REFERENCES general_schema.commercial_unit_measure(commercial_unit_measure_id) ON DELETE SET NULL,
@@ -465,6 +474,7 @@ CREATE INDEX IF NOT EXISTS idx_sale_item_sale_variant
 CREATE TABLE IF NOT EXISTS cash_register(
     cash_register_id uuid PRIMARY KEY default gen_random_uuid(),
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
+    register_name VARCHAR(100),
     is_active BOOLEAN default true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -518,13 +528,14 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
     digital_sale_invoice_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
+    -- currency_id viene dado por la venta. es redundante tenerlo aqui. eliminarlo.
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
     total_amount numeric(10,2) not null,    
     due_date DATE,
     seller_name VARCHAR(150),
-    terminal_name VARCHAR(100),
+    cash_register_id UUID REFERENCES pos_schema.cash_register(cash_register_id) ON DELETE SET NULL,
     points_accumulated INTEGER DEFAULT 0,
     ad_message TEXT,
     invoice_number VARCHAR(50),
@@ -535,6 +546,44 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
 );
 
 CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_sale_id on pos_schema.digital_sale_invoice(sale_id);
+CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_cash_register
+    ON pos_schema.digital_sale_invoice(cash_register_id);
+
+CREATE TABLE IF NOT EXISTS digital_sale_invoice_item(
+    digital_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    digital_sale_invoice_id UUID NOT NULL
+        REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) ON DELETE CASCADE,
+    sale_item_id UUID NOT NULL
+        REFERENCES pos_schema.sale_item(sale_item_id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL,
+    product_variant_id UUID NOT NULL,
+    cabys_code VARCHAR(13)
+        REFERENCES general_schema.product(cabys_code) ON DELETE SET NULL,
+    tax_rate_id INTEGER
+        REFERENCES general_schema.tax_rate(tax_rate_id) ON DELETE SET NULL,
+    description VARCHAR(255),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+    subtotal NUMERIC(10,2) NOT NULL,
+    tax_rate_percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
+    tax_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+    total_price NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_invoice
+    ON pos_schema.digital_sale_invoice_item(digital_sale_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_sale_item
+    ON pos_schema.digital_sale_invoice_item(sale_item_id);
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_variant
+    ON pos_schema.digital_sale_invoice_item(tenant_id, product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_tax_rate
+    ON pos_schema.digital_sale_invoice_item(tax_rate_id);
 
 CREATE TABLE IF NOT EXISTS digital_sale_invoice_payment(
     digital_sale_invoice_payment_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -726,20 +775,23 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     sale_id UUID NOT NULL REFERENCES pos_schema.sale(sale_id) ON DELETE CASCADE,
     key_number VARCHAR(50) NOT NULL UNIQUE,
     consecutive_number VARCHAR(20) NOT NULL,
+    -- Issuer information (required)
     issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     issuer_name VARCHAR(150) NOT NULL,
     issuer_identification VARCHAR(20) NOT NULL,
     issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
     issuer_email VARCHAR(200),
     issuer_phone VARCHAR(20),
+    -- Receiver information (optional for consumer final)
     receiver_name VARCHAR(150),
     receiver_identification VARCHAR(20),
     receiver_identification_type VARCHAR(2),
     receiver_email VARCHAR(200),
+    -- sale details
     sale_condition VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Credit, 03=Consignment
     payment_method VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Card, 03=Check, 04=Transfer
     credit_days VARCHAR(10),
-    -- Invoice summary
+    -- Tax breakdown (required)
     total_taxed_services NUMERIC(18,5) DEFAULT 0,
     total_exempt_services NUMERIC(18,5) DEFAULT 0,
     total_exonerated_services NUMERIC(18,5) DEFAULT 0,
@@ -773,17 +825,12 @@ CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number
 CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_issue_date 
     ON pos_schema.electronic_sale_invoice(issue_date);
 
--- ======================================================
--- Electronic Sale Invoice Items
--- (References base product via cabys_code from product_variant)
--- ======================================================
-
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
-    -- Line number in the invoice
+    tenant_id UUID NOT NULL,
+    product_variant_id UUID NOT NULL,
     line_number INTEGER NOT NULL,
-    -- Product info (resolved from product_variant → product via cabys_code)
     cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
     description VARCHAR(200) NOT NULL,  -- Product description
     -- Quantity and units
@@ -814,13 +861,19 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     total_line_amount NUMERIC(18,5) NOT NULL,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+        ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice 
     ON pos_schema.electronic_sale_invoice_items(electronic_sale_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_cabys 
     ON pos_schema.electronic_sale_invoice_items(cabys_code);
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
+    ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);
 
 
 
@@ -1176,6 +1229,21 @@ CREATE TABLE IF NOT EXISTS payment_schedule(
 	daycount INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS hr_schema.config (
+  branch_id UUID PRIMARY KEY REFERENCES general_schema.branch(branch_id),
+  foul_expiration_months INTEGER DEFAULT 6,
+  updated_at TIMESTAMP DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS hr_schema.turn (
+  turn_id SERIAL PRIMARY KEY,
+  branch_id UUID REFERENCES general_schema.branch(branch_id) NOT NULL,
+  entry TIMESTAMP NOT NULL,
+  out TIMESTAMP NOT NULL
+);
+
+CREATE INDEX branch_turn_idx ON hr_schema.turn(branch_id);
+
 CREATE TABLE IF NOT EXISTS contract(
 	contract_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id),
@@ -1183,7 +1251,9 @@ CREATE TABLE IF NOT EXISTS contract(
 	end_date DATE NOT NULL,
 	hours INTEGER NOT NULL,
 	base_salary NUMERIC(19, 4) NOT NULL,
-	duties TEXT
+	duties TEXT,
+	turn_type INTEGER,
+	turn_id INTEGER REFERENCES hr_schema.turn(turn_id) NOT NULL
 );
 --Indice para filtracion o busqueda por rango de precios
 CREATE INDEX idx_contract_base_salary ON hr_schema.contract (base_salary);
@@ -1192,6 +1262,7 @@ CREATE TABLE IF NOT EXISTS employee(
 	employee_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	user_id UUID NOT NULL REFERENCES general_schema.users(user_id) ON DELETE CASCADE,
 	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id),
+	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
 	first_name VARCHAR(100) NOT NULL,
 	last_name VARCHAR(100) NOT NULL,
 	doc_number VARCHAR(100) NOT NULL UNIQUE,
@@ -1217,6 +1288,34 @@ CREATE INDEX idx_employee_scheduled_id ON hr_schema.employee (schedule_id);
 
 --Indice que se utilizara unicamente para el proceso de nomina y generacion de reportes
 CREATE INDEX idx_employee_is_active ON hr_schema.employee (is_active);
+CREATE TABLE IF NOT EXISTS hr_schema.foul(
+  foul_id SERIAL PRIMARY KEY,
+  employee_id UUID NOT NULL REFERENCES hr_schema.employee(employee_id),
+  branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+  identificator VARCHAR(50) UNIQUE NOT NULL, 
+  foul_date DATE NOT NULL,
+  foul_hour TIME NOT NULL,
+  description TEXT
+);
+
+CREATE INDEX idx_look_employee ON hr_schema.foul(employee_id);
+CREATE INDEX idx_look_period_fouls ON hr_schema.foul(foul_date);
+CREATE INDEX idx_identificator_foul ON hr_schema.foul(identificator);
+
+CREATE TABLE IF NOT EXISTS hr_schema.suspention (
+  suspention_id SERIAL PRIMARY KEY,
+  employee_id UUID REFERENCES hr_schema.employee(employee_id),
+	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+  suspention_start DATE NOT NULL,
+  suspention_end DATE NOT NULL,
+  reason TEXT NOT NULL,
+	is_active BOOLEAN DEFAULT TRUE,
+	created_at TIMESTAMP DEFAULT current_timestamp
+);
+
+CREATE INDEX get_employee_suspention_idx ON hr_schema.suspention(employee_id);
+CREATE INDEX get_suspentions_period_idx ON hr_schema.suspention(suspention_start, suspention_end);
+CREATE INDEX idx_branch_suspention ON hr_schema.suspention(branch_id);
 
 CREATE TABLE IF NOT EXISTS clocking(
 	clocking_id SERIAL PRIMARY KEY NOT NULL,
@@ -1232,6 +1331,43 @@ CREATE INDEX idx_track_employee_hours_in ON hr_schema.clocking (employee_id, clo
 -- Indice para ubicar turnos por sucursal
 CREATE INDEX idx_track_hours_branch_id ON hr_schema.clocking (branch_id);
 
+CREATE TABLE IF NOT EXISTS hr_schema.tardiness (
+  tardiness_id SERIAL PRIMARY KEY,
+  employee_id UUID REFERENCES hr_schema.employee(employee_id),
+  branch_id UUID REFERENCES general_schema.branch(branch_id),
+  type VARCHAR(20) NOT NULL, -- "late" | "early"
+  log TEXT,
+  registered_at DATE DEFAULT NOW()
+);
+
+CREATE INDEX idx_emp_tardiness_srch ON hr_schema.tardiness(employee_id);
+CREATE INDEX idx_brnch_tardiness_srch ON hr_schema.tardiness(branch_id);
+CREATE INDEX idx_register_srch ON hr_schema.tardiness(registered_at);
+
+CREATE TABLE IF NOT EXISTS hr_schema.holiday (
+  holiday_id SERIAL PRIMARY KEY NOT NULL,
+  date TIMESTAMP NOT NULL,
+  holiday_name VARCHAR(150) NOT NULL,
+  is_freeday BOOLEAN NOT NULL DEFAULT TRUE,
+  is_payable BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS hr_schema.incapacity (
+    incapacity_id SERIAL PRIMARY KEY,
+    branch_id UUID  REFERENCES general_schema.branch(branch_id),
+    employee_id UUID  REFERENCES hr_schema.employee(employee_id),
+    type VARCHAR(50),
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    percentage_to_pay DECIMAL(5, 2) NOT NULL,
+    days_paying INTEGER DEFAULT 3,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+CREATE INDEX search_branch_index ON hr_schema.incapacity(branch_id);
+CREATE INDEX incapacity_search_idx ON hr_schema.incapacity(employee_id);
+CREATE INDEX filter_by_periods_idx ON hr_schema.incapacity(period_start, period_end);
+
 -- MODULO DE NOMINA
 
 CREATE TABLE IF NOT EXISTS paysheet_status(
@@ -1246,7 +1382,9 @@ CREATE TABLE IF NOT EXISTS payroll_concept(
 	type VARCHAR(20) NOT NULL, -- 'earning' o 'deduction'
 	calculation_method VARCHAR(30) NOT NULL, -- 'fixed', 'percentage', 'fromula', 'manual'
 	is_taxable BOOLEAN DEFAULT TRUE,
-	is_active BOOLEAN DEFAULT TRUE
+	is_active BOOLEAN DEFAULT TRUE,
+	base_value NUMERIC(19, 4) DEFAULT 0,
+	code VARCHAR(10) NOT NULL
 );
 
 -- Indice para filtracion por conceptos
@@ -1263,7 +1401,7 @@ CREATE TABLE IF NOT EXISTS paysheet(
 	total_earnings NUMERIC(19, 4) NOT NULL DEFAULT 0,
 	total_deductions NUMERIC(19, 4) NOT NULL DEFAULT 0,
 	net_total NUMERIC(19, 4) NOT NULL DEFAULT 0,
-	paysheet_status_id INTEGER NOT NULL REFERENCES hr_schema.paysheet_status(status_id),
+	status_id INTEGER NOT NULL REFERENCES hr_schema.paysheet_status(status_id),
 	created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -1881,6 +2019,8 @@ declare
     _tax numeric(10,2);
     _total numeric(10,2);
     _payment_ids uuid[];
+    _cash_register_id uuid;
+    _items_count int;
 BEGIN
         raise notice 'Creating digital sale invoice for sale: %', new.sale_id;
         
@@ -1904,34 +2044,97 @@ BEGIN
         where tenant_customer_id = _tenant_customer_id;
         
         _currency_id := new.currency_id;
-        _subtotal := new.subtotal_amount;  
-        _tax := new.tax_amount;            
-        _total := new.total_amount;        
-        
-        raise notice '   Customer: %', _tenant_customer_id;
-        raise notice '   Tenant: %', _tenant_id;
-        raise notice '   Subtotal: $%', _subtotal;
-        raise notice '   Tax: $%', _tax;
-        raise notice '   Total: $%', _total;
 
+        -- Resolve cash register from active session in the branch
+        SELECT cr.cash_register_id INTO _cash_register_id
+        FROM pos_schema.cash_register_session crs
+        JOIN pos_schema.cash_register cr ON crs.cash_register_id = cr.cash_register_id
+        WHERE cr.branch_id = new.branch_id
+        AND crs.is_active = true
+        LIMIT 1;
+
+        -- Insert invoice with placeholder totals (will be updated from items)
         INSERT INTO pos_schema.digital_sale_invoice (
             sale_id,              
             tenant_customer_id,
             currency_id,
             subtotal_amount,
             tax_amount,
-            total_amount
+            total_amount,
+            cash_register_id
         ) VALUES (
             new.sale_id,         
             _tenant_customer_id,
             _currency_id,
-            _subtotal,
-            _tax,
-            _total
+            0,
+            0,
+            0,
+            _cash_register_id
         ) returning digital_sale_invoice_id into _digital_sale_invoice_id;
         
         raise notice '   Digital sale invoice created: %', _digital_sale_invoice_id;
+        raise notice '   Cash Register: %', _cash_register_id;
+
+        INSERT INTO pos_schema.digital_sale_invoice_item (
+            digital_sale_invoice_id,
+            sale_item_id,
+            tenant_id,
+            product_variant_id,
+            cabys_code,
+            tax_rate_id,
+            description,
+            quantity,
+            unit_price,
+            subtotal,
+            tax_rate_percentage,
+            tax_amount,
+            total_price
+        )
+        SELECT
+            _digital_sale_invoice_id,
+            si.sale_item_id,
+            si.tenant_id,
+            si.product_variant_id,
+            pv.cabys_code,
+            p.tax_rate_id,
+            COALESCE(pv.variant_name, p.product_name, 'Product'),
+            si.quantity,
+            si.unit_price,
+            si.total_price,
+            COALESCE(tr.rate_percentage, 0),
+            ROUND(si.total_price * COALESCE(tr.rate_percentage, 0) / 100, 2),
+            si.total_price + ROUND(si.total_price * COALESCE(tr.rate_percentage, 0) / 100, 2)
+        FROM pos_schema.sale_item si
+        JOIN general_schema.product_variant pv 
+            ON si.tenant_id = pv.tenant_id AND si.product_variant_id = pv.product_variant_id
+        LEFT JOIN general_schema.product p ON pv.cabys_code = p.cabys_code
+        LEFT JOIN general_schema.tax_rate tr ON p.tax_rate_id = tr.tax_rate_id
+        WHERE si.sale_id = new.sale_id;
+
+        GET DIAGNOSTICS _items_count = ROW_COUNT;
+        raise notice '   % invoice item(s) created', _items_count;
+
+        -- Update invoice totals from items (per-item tax)
+        SELECT
+            COALESCE(SUM(dsii.subtotal), 0),
+            COALESCE(SUM(dsii.tax_amount), 0)
+        INTO _subtotal, _tax
+        FROM pos_schema.digital_sale_invoice_item dsii
+        WHERE dsii.digital_sale_invoice_id = _digital_sale_invoice_id;
+
+        _total := _subtotal + _tax;
+
+        UPDATE pos_schema.digital_sale_invoice
+        SET subtotal_amount = _subtotal,
+            tax_amount = _tax,
+            total_amount = _total
+        WHERE digital_sale_invoice_id = _digital_sale_invoice_id;
+
+        raise notice '   Subtotal: $%', _subtotal;
+        raise notice '   Tax (per-item): $%', _tax;
+        raise notice '   Total: $%', _total;
         
+        -- Link verified payments
         select array_agg(customer_payment_id) into _payment_ids
         from pos_schema.customer_payment
         where sale_id = new.sale_id
@@ -1975,17 +2178,12 @@ declare
     _digital_sale_invoice_id uuid;
     _sale_id uuid;
     _total_returned numeric(10,2) := 0;
-    _original_subtotal numeric(10,2);
-    _original_tax numeric(10,2);
-    _original_total numeric(10,2);
     _new_subtotal numeric(10,2);
     _new_tax numeric(10,2);
     _new_total numeric(10,2);
-    _tax_rate numeric(5,2);
     _quantity_remaining INTEGER;
     _sale_subtotal_after numeric(10,2);
-    _region_name VARCHAR;
-    _tenant_id uuid;
+    _sale_tax_after numeric(10,2);
 BEGIN
     select 
         si.sale_item_id,
@@ -2022,8 +2220,13 @@ BEGIN
     _quantity_remaining := _sale_item_record.quantity - new.quantity;
     raise notice 'Return quantity: %  Remaining qty: %', new.quantity, _quantity_remaining;
 
-    -- Update or remove sale_item to reconcile sale
+    -- Update or remove sale_item (CASCADE deletes digital_sale_invoice_item if qty = 0)
     if _quantity_remaining = 0 then
+        -- First, explicitly delete the corresponding digital_sale_invoice_item to ensure clean state
+        delete from pos_schema.digital_sale_invoice_item 
+        where digital_sale_invoice_id = _digital_sale_invoice_id
+        and sale_item_id = _sale_item_record.sale_item_id;
+        
         delete from pos_schema.sale_item where sale_item_id = _sale_item_record.sale_item_id;
         raise notice 'Sale item removed (quantity = 0)';
     else
@@ -2033,32 +2236,34 @@ BEGIN
             updated_at = current_timestamp
         where sale_item_id = _sale_item_record.sale_item_id;
         raise notice 'Sale item quantity updated from % to %', _sale_item_record.quantity, _quantity_remaining;
+
+        -- Update corresponding digital_sale_invoice_item with correct tax rate
+        -- Resolve tax_rate the same way as create_digital_sale_invoice
+        update pos_schema.digital_sale_invoice_item dii
+        set quantity = _quantity_remaining,
+            subtotal = _quantity_remaining * dii.unit_price,
+            tax_rate_percentage = COALESCE(tr.rate_percentage, 0),
+            tax_amount = ROUND((_quantity_remaining * dii.unit_price) * COALESCE(tr.rate_percentage, 0) / 100, 2),
+            total_price = (_quantity_remaining * dii.unit_price)
+                + ROUND((_quantity_remaining * dii.unit_price) * COALESCE(tr.rate_percentage, 0) / 100, 2),
+            updated_at = current_timestamp
+        from general_schema.product_variant pv
+        left join general_schema.product p ON pv.cabys_code = p.cabys_code
+        left join general_schema.tax_rate tr ON p.tax_rate_id = tr.tax_rate_id
+        where dii.digital_sale_invoice_id = _digital_sale_invoice_id
+        and dii.sale_item_id = _sale_item_record.sale_item_id
+        and dii.tenant_id = pv.tenant_id
+        and dii.product_variant_id = pv.product_variant_id;
     end if;
 
-    -- Update digital sale invoice totals
-    select subtotal_amount, tax_amount, total_amount into _original_subtotal, _original_tax, _original_total
-    from pos_schema.digital_sale_invoice where digital_sale_invoice_id = _digital_sale_invoice_id;
-
-    _total_returned := new.quantity * new.unit_price;
-    raise notice 'Amount returned (line): $%', _total_returned;
-
-    _new_subtotal := _original_subtotal - _total_returned;
-    if _new_subtotal < 0 then _new_subtotal := 0; end if;
-
-    -- determine tax rate by tenant -> region (fallback to 0 if not found)
-    select t.tenant_id, r.region_name into _tenant_id, _region_name
-    from general_schema.tenant t
-    join general_schema.branch b on b.tenant_id = t.tenant_id
-    join pos_schema.sale s on s.branch_id = b.branch_id
-    join general_schema.region r on r.region_id = t.region_id
-    where s.sale_id = _sale_id
-    limit 1;
-
-    select rate_percentage into _tax_rate from general_schema.tax_rate where region = coalesce(_region_name, 'US Federal') limit 1;
-    if _tax_rate is null then _tax_rate := 0; end if;
-
-    _new_tax := round(_new_subtotal * (_tax_rate / 100), 2);
-    _new_total := round(_new_subtotal + _new_tax, 2);
+    -- Recalculate digital sale invoice totals from remaining items
+    SELECT
+        COALESCE(SUM(dsii.subtotal), 0),
+        COALESCE(SUM(dsii.tax_amount), 0),
+        COALESCE(SUM(dsii.total_price), 0)
+    INTO _new_subtotal, _new_tax, _new_total
+    FROM pos_schema.digital_sale_invoice_item dsii
+    WHERE dsii.digital_sale_invoice_id = _digital_sale_invoice_id;
 
     update pos_schema.digital_sale_invoice
     set subtotal_amount = _new_subtotal,
@@ -2069,18 +2274,28 @@ BEGIN
 
     raise notice 'Digital sale invoice updated: subtotal $% tax $% total $%', _new_subtotal, _new_tax, _new_total;
 
-    select coalesce(sum(si.total_price),0) into _sale_subtotal_after from pos_schema.sale_item si where si.sale_id = _sale_id;
-    _new_tax := round(_sale_subtotal_after * (_tax_rate / 100), 2);
-    _new_total := round(_sale_subtotal_after + _new_tax, 2);
+    -- Recalculate sale totals from remaining sale_items with per-item tax
+    SELECT
+        COALESCE(SUM(si.total_price), 0),
+        COALESCE(SUM(ROUND(si.total_price * COALESCE(tr.rate_percentage, 0) / 100, 2)), 0)
+    INTO _sale_subtotal_after, _sale_tax_after
+    FROM pos_schema.sale_item si
+    JOIN general_schema.product_variant pv
+        ON si.tenant_id = pv.tenant_id AND si.product_variant_id = pv.product_variant_id
+    LEFT JOIN general_schema.product p ON pv.cabys_code = p.cabys_code
+    LEFT JOIN general_schema.tax_rate tr ON p.tax_rate_id = tr.tax_rate_id
+    WHERE si.sale_id = _sale_id;
+
+    _new_total := _sale_subtotal_after + _sale_tax_after;
 
     update pos_schema.sale
     set subtotal_amount = _sale_subtotal_after,
-        tax_amount = _new_tax,
+        tax_amount = _sale_tax_after,
         total_amount = _new_total,
         updated_at = current_timestamp
     where sale_id = _sale_id;
 
-    raise notice 'Sale updated: subtotal $% tax $% total $%', _sale_subtotal_after, _new_tax, _new_total;
+    raise notice 'Sale updated: subtotal $% tax $% total $%', _sale_subtotal_after, _sale_tax_after, _new_total;
 
     return new;
 end;
@@ -3029,6 +3244,10 @@ drop trigger if exists update_digital_sale_invoice_timestamp on pos_schema.digit
 create trigger update_digital_sale_invoice_timestamp before update on pos_schema.digital_sale_invoice
 for each row execute function general_schema.update_timestamp();
 
+drop trigger if exists update_digital_sale_invoice_item_timestamp on pos_schema.digital_sale_invoice_item;
+create trigger update_digital_sale_invoice_item_timestamp before update on pos_schema.digital_sale_invoice_item
+for each row execute function general_schema.update_timestamp();
+
 drop trigger if exists update_return_transaction_timestamp on pos_schema.return_transaction;
 create trigger update_return_transaction_timestamp before update on pos_schema.return_transaction
 for each row execute function general_schema.update_timestamp();
@@ -3921,25 +4140,26 @@ for each row execute function general_schema.update_timestamp();
 SET SEARCH_PATH = hr_schema;
 
 CREATE OR REPLACE FUNCTION hr_schema.create_new_employee(
-  -- Parametros para la creacion del contrato
-  p_start_date DATE,
-  p_end_date DATE,
-  p_hours INTEGER,
-  p_base_salary DECIMAL(10, 2),
-  p_duties TEXT,
-
-  -- Parametros para la crecaion del empleado
-  p_user_id UUID,
-  p_tenant_id UUID,
-  p_branch_id UUID,  
-  p_first_name VARCHAR(100),
-  p_last_name VARCHAR(100),
-  p_doc_number VARCHAR(100),
-  p_phone VARCHAR(100),
-  p_email VARCHAR(100),
-  p_schedule_id INTEGER
-)
-RETURNS UUID AS $$
+    p_start_date DATE,
+    p_end_date DATE,
+    p_hours INTEGER,
+    p_base_salary NUMERIC,
+    p_duties TEXT,
+    p_turn_type INTEGER,
+    p_turn_id INTEGER,
+    p_user_id UUID,
+    p_tenant_id UUID,
+    p_first_name CHARACTER VARYING,
+    p_last_name CHARACTER VARYING,
+    p_doc_number CHARACTER VARYING,
+    p_phone CHARACTER VARYING,
+    p_email CHARACTER VARYING,
+    p_schedule_id INTEGER,
+    p_branch_id UUID
+  )
+ RETURNS UUID
+ LANGUAGE plpgsql
+AS $function$
 
 DECLARE
   v_new_contract_id UUID;
@@ -3950,13 +4170,13 @@ BEGIN
     RAISE EXCEPTION 'Integrity error: schedule_id (schedule_id: %) doesnt exists', p_schedule_id;
   END IF;
 
-  INSERT INTO hr_schema.contract (tenant_id, start_date, end_date, hours, base_salary, duties)
-  VALUES (p_tenant_id, p_start_date, p_end_date, p_hours, p_base_salary, p_duties)
+  INSERT INTO hr_schema.contract (tenant_id, start_date, end_date, hours, base_salary, duties, turn_type, turn_id)
+  VALUES (p_tenant_id, p_start_date, p_end_date, p_hours, p_base_salary, p_duties, p_turn_type, p_turn_id)
   RETURNING contract_id INTO v_new_contract_id;
 
   v_new_employee_id := gen_random_uuid();
 
-  INSERT INTO hr_schema.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id)
+  INSERT INTO hr_schema.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, schedule_id, tenant_id, branch_id)
   VALUES (
     v_new_employee_id,
     p_user_id,
@@ -3967,7 +4187,8 @@ BEGIN
     p_email,
     v_new_contract_id,
     p_schedule_id,
-    p_tenant_id
+    p_tenant_id,
+    p_branch_id
   );
 
   RETURN v_new_employee_id;
@@ -3980,40 +4201,7 @@ EXCEPTION
   WHEN others THEN
     RAISE EXCEPTION 'Error creating employee or contract: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql; 
-
-CREATE OR REPLACE FUNCTION update_gross_salary()
-RETURNS TRIGGER AS $$
-DECLARE
-	v_detail_id UUID;
-	v_new_gross_salary DECIMAL(10, 2);
-BEGIN
-	IF(TG_OP = 'DELETE') THEN 
-		v_detail_id := OLD.detail_id;
-	ELSE
-		v_detail_id := NEW.detail_id;
-	END IF;
-
-	SELECT COALESCE(SUM(calculated_amount), 0)
-	INTO v_new_gross_salary
-	FROM hr_schema.income_register
-	WHERE detail_id = v_detail_id;
-
-	UPDATE hr_schema.paysheet_detail
-	SET gross_salary = v_new_gross_salary,
-  recalc_needed = TRUE
-	WHERE detail_id = v_detail_id;
-
-	RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- FIXME: relation "hr_schema.income_register" does not exist
--- DROP TRIGGER IF EXISTS update_gross_salary on hr_schema.income_register;
--- CREATE TRIGGER update_gross_salary
--- 	AFTER INSERT OR UPDATE OR DELETE ON hr_schema.income_register
--- 	FOR EACH ROW
--- 	EXECUTE FUNCTION update_gross_salary();
+$function$; 
 
 CREATE OR REPLACE FUNCTION hr_schema.update_paysheet_state (
     p_paysheet_id UUID
@@ -4035,7 +4223,7 @@ BEGIN
     END IF;
 
     -- Obtenemos el id de estado actual de la nómina
-    SELECT paysheet_status_id INTO v_current_status_id
+    SELECT status_id INTO v_current_status_id
     FROM hr_schema.paysheet
     WHERE paysheet_id = p_paysheet_id;
 
@@ -4063,7 +4251,7 @@ BEGIN
     --Si no hay pendientes, actualizamos el estado a 'Completed'
     UPDATE hr_schema.paysheet
     SET
-        paysheet_status_id = v_completed_status_id
+      status_id = v_completed_status_id
     WHERE paysheet_id = p_paysheet_id;
 
     RETURN 'Paysheet finished ' || p_paysheet_id;
@@ -4104,7 +4292,7 @@ BEGIN
 	WHERE
 		EXTRACT(YEAR FROM p.payment_day) = p_year
 		AND EXTRACT(MONTH FROM p.payment_day) = p_month
-		AND p.paysheet_status_id = v_status_completed_id;
+		AND p.status_id = v_status_completed_id;
 
 END;
 $$ LANGUAGE plpgsql;
@@ -4131,7 +4319,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.net_salary IS DISTINCT FROM NEW.net_salary THEN
         PERFORM 1 FROM hr_schema.paysheet p
-        	INNER JOIN hr_schema.paysheet_status ps ON p.paysheet_status_id = ps.status_id
+        	INNER JOIN hr_schema.paysheet_status ps ON p.status_id = ps.status_id
         	WHERE p.paysheet_id = NEW.paysheet_id AND ps.status_description = 'Completed';
         
         IF FOUND THEN
@@ -4148,6 +4336,40 @@ CREATE TRIGGER protect_net_salary
 BEFORE INSERT OR UPDATE ON hr_schema.paysheet_detail
 FOR EACH ROW
 EXECUTE FUNCTION hr_schema.protect_net_salary();
+
+CREATE OR REPLACE FUNCTION hr_schema.close_suspention()
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+  v_count INTEGER := 0;
+BEGIN
+  UPDATE hr_schema.suspention
+  SET is_active = false
+  WHERE suspention_end IS NOT NULL
+    AND suspention_end <= NOW()
+    AND is_active = TRUE
+  RETURNING 1 INTO v_count;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION hr_schema.close_suspention_trigger()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  
+  IF NEW.suspention_end IS NOT NULL AND NEW.suspention_end <= NOW() THEN
+    NEW.is_active := FALSE;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_close_suspention_on_write
+BEFORE INSERT OR UPDATE ON hr_schema.suspention
+FOR EACH ROW
+EXECUTE FUNCTION hr_schema.close_suspention_trigger();
 
 
 
