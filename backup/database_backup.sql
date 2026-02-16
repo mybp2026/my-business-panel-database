@@ -1,10 +1,10 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-02-12 03:33:43
+-- Generated: 2026-02-16 13:21:34
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
-
+-- ROLLBACK
 BEGIN;
 
 DROP SCHEMA IF EXISTS general_schema CASCADE;
