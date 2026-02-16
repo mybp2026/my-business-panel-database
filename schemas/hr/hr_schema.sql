@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS hr_schema.config (
 CREATE TABLE IF NOT EXISTS hr_schema.turn (
   turn_id SERIAL PRIMARY KEY,
   branch_id UUID REFERENCES general_schema.branch(branch_id) NOT NULL,
-  entry TIMESTAMP NOT NULL,
-  out TIMESTAMP NOT NULL
+  entry TIME NOT NULL,
+  out TIME NOT NULL
 );
 
 CREATE INDEX branch_turn_idx ON hr_schema.turn(branch_id);
