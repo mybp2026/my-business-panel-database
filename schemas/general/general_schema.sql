@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS users(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+insert into general_schema.users (tenant_id, email, password_hash, role_id) values
+('035dddb4-bcda-42a1-99bb-c7adebb1310f', 'user@amh.com', '$2a$10$iRvRfw5T0wd/vULsEsnKGeqAUoxYpaGuhjtA3KqfVZ3Aw4FQmRWdq', 1);
 
 CREATE TABLE IF NOT EXISTS currency(
     currency_id SERIAL PRIMARY KEY,
@@ -179,7 +181,7 @@ CREATE TABLE IF NOT EXISTS subscription(
 
 CREATE TABLE IF NOT EXISTS product_category(
     product_category_id VARCHAR(13) PRIMARY KEY NOT NULL,
-    category_name VARCHAR(100) unique not null,
+    category_name VARCHAR(100) not null,
     parent_category_id VARCHAR(13)                                    
         REFERENCES general_schema.product_category(product_category_id)
         ON DELETE CASCADE,
@@ -324,6 +326,9 @@ CREATE INDEX IF NOT EXISTS idx_product_variant_active
 COMMENT ON TABLE general_schema.product_variant IS 
     'Tenant-specific sellable product variants linked to a CABYS catalog entry. 
     Variants have unique SKUs and prices per tenant.';
+
+INSERT INTO general_schema.product_variant (tenant_id, cabys_code, sku, variant_name, unit_price) VALUES
+('035dddb4-bcda-42a1-99bb-c7adebb1310f', '0101010101010', 'SKU-001', 'Producto de Ejemplo - Variante 1', 9.99);
 
 CREATE TABLE IF NOT EXISTS attribute_assignation (
     tenant_id uuid NOT NULL,

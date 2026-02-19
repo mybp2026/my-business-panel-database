@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS hr_schema.turn (
   entry TIME NOT NULL,
   out TIME NOT NULL
 );
+-- insert into hr_schema.turn (branch_id, entry, out) values
+-- ('64ff2bad-4012-42a6-8aa9-48dd67bfb8c6', '08:00:00', '16:00:00');
 
 CREATE INDEX branch_turn_idx ON hr_schema.turn(branch_id);
 
