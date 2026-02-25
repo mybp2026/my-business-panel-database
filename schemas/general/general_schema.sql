@@ -8,12 +8,13 @@ CREATE TABLE IF NOT EXISTS region(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- TODO: AGREGAR CAMPOS:
---      CODIGO DE ACTIVIDAD ECONOMICA
 CREATE TABLE IF NOT EXISTS tenant(
     tenant_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_name VARCHAR(100) unique not null,
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
+    identification VARCHAR(21) unique not null,
+    econ_activity VARCHAR(10),
+    sign text,
     contact_email VARCHAR(100) not null,
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
@@ -21,11 +22,18 @@ CREATE TABLE IF NOT EXISTS tenant(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Catalogo de exenciones
+CREATE TABLE IF NOT EXISTS exemption(
+    exemption_id SERIAL PRIMARY KEY,
+    description TEXT NOT NULL
+)
+
 CREATE TABLE IF NOT EXISTS branch(
     branch_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
     branch_name VARCHAR(100) not null,
     branch_address text,
+    branch_number VARCHAR(4),   
     contact_email VARCHAR(100),
     is_main_branch BOOLEAN default false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -39,6 +47,7 @@ CREATE TABLE IF NOT EXISTS document_type(
     document_type_id SERIAL PRIMARY KEY, 
     type_name VARCHAR(50) unique not null,
     description text,
+    ident_code VARCHAR(3) not null, -- Campo requerido para la facturacion
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,6 +85,7 @@ CREATE TABLE IF NOT EXISTS tenant_customer(
     last_name VARCHAR(100) not null,
     document_type_id INTEGER REFERENCES general_schema.document_type(document_type_id) on delete set null,  
     document_number VARCHAR(50) not null,
+    econ_activity VARCHAR(6), -- Requerido para la factura
     email VARCHAR(255) not null,
     phone VARCHAR(50) not null,
     birthdate date,
@@ -216,6 +226,7 @@ CREATE TABLE IF NOT EXISTS commercial_unit_measure(
 
 CREATE TABLE IF NOT EXISTS product(
     cabys_code VARCHAR(13) PRIMARY KEY,
+    exemption_id INTEGER NOT NULL REFERENCES general_schema.exemption(exemption_id)
     product_name VARCHAR(255) NOT NULL,
     product_name_tsv tsvector GENERATED ALWAYS AS (to_tsvector('spanish', product_name)) STORED,
     product_category_id INT REFERENCES general_schema.product_category(product_category_id) ON DELETE SET NULL,
