@@ -72,7 +72,7 @@ CREATE INDEX idx_employee_is_active ON hr_schema.employee (is_active);
 
 CREATE TABLE IF NOT EXISTS hr_schema.foul(
   foul_id SERIAL PRIMARY KEY,
-  employee_id UUID n NOT NULL REFERENCES hr_schema.employee(employee_id),
+  employee_id UUID NOT NULL REFERENCES hr_schema.employee(employee_id),
   branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
   identificator VARCHAR(50) UNIQUE NOT NULL, 
   foul_date DATE NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS hr_schema.suspention (
 
 CREATE INDEX get_employee_suspention_idx ON hr_schema.suspention(employee_id);
 CREATE INDEX get_suspentions_period_idx ON hr_schema.suspention(suspention_start, suspention_end);
-CREATE INDEX idx_branch_suspention ON hr_schema.suspention(branch_id)
+CREATE INDEX idx_branch_suspention ON hr_schema.suspention(branch_id);
 
 CREATE TABLE IF NOT EXISTS clocking(
 	clocking_id SERIAL PRIMARY KEY NOT NULL,

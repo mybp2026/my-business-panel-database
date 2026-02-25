@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS users(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- insert into general_schema.users (tenant_id, email, password_hash, role_id) values 
+--     ('dcc97d64-a2e8-42af-8dec-3bee77413ba8', 'david@amh.com', '$2a$12$RNOmpH99N5Mto3f2zYXJBumFP2jIL2pTq7a7USp5cGLMwu/y9ptk2', 1);
 
 CREATE TABLE IF NOT EXISTS currency(
     currency_id SERIAL PRIMARY KEY,
@@ -188,9 +190,9 @@ CREATE TABLE IF NOT EXISTS subscription(
 );
 
 CREATE TABLE IF NOT EXISTS product_category(
-    product_category_id SERIAL PRIMARY KEY,
+    product_category_id VARCHAR(13) PRIMARY KEY NOT NULL,
     category_name VARCHAR(100) unique not null,
-    parent_category_id INTEGER                                    
+    parent_category_id VARCHAR(13)                                    
         REFERENCES general_schema.product_category(product_category_id)
         ON DELETE CASCADE,
     hierarchy_level INTEGER DEFAULT 0 CHECK (hierarchy_level >= 0),  
@@ -229,7 +231,7 @@ CREATE TABLE IF NOT EXISTS product(
     exemption_id INTEGER NOT NULL REFERENCES general_schema.exemption(exemption_id)
     product_name VARCHAR(255) NOT NULL,
     product_name_tsv tsvector GENERATED ALWAYS AS (to_tsvector('spanish', product_name)) STORED,
-    product_category_id INT REFERENCES general_schema.product_category(product_category_id) ON DELETE SET NULL,
+    product_category_id VARCHAR(13) REFERENCES general_schema.product_category(product_category_id) ON DELETE SET NULL,
     tax_rate_id INT REFERENCES general_schema.tax_rate(tax_rate_id) ON DELETE SET NULL,
     unit_measure_id INT REFERENCES general_schema.unit_measure(unit_measure_id) ON DELETE SET NULL,
     commercial_unit_measure_id INT REFERENCES general_schema.commercial_unit_measure(commercial_unit_measure_id) ON DELETE SET NULL,
