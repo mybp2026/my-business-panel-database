@@ -426,17 +426,19 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     -- Subtotal
     -- subtotal NUMERIC(18,5) NOT NULL,
     -- Tax (IVA)
-    tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
-    tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
-    tax_rate NUMERIC(5,2) DEFAULT 13.00,
-    tax_amount NUMERIC(18,5) DEFAULT 0,
-    tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
+    tax_rate_id INTEGER REFERENCES general_schema.tax_rate(tax_rate_id),
+    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(tax_exoneration_id),
+    -- tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
+    -- tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
+    -- tax_rate NUMERIC(5,2) DEFAULT 13.00,
+    -- tax_amount NUMERIC(18,5) DEFAULT 0,
+    -- tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
     -- Exemption (optional)
-    exemption_document_type VARCHAR(2),
-    exemption_document_number VARCHAR(40),
-    exemption_institution VARCHAR(160),
-    exemption_date TIMESTAMP,
-    exemption_percentage NUMERIC(3,0),
+    -- exemption_document_type VARCHAR(2),
+    -- exemption_document_number VARCHAR(40),
+    -- exemption_institution VARCHAR(160),
+    -- exemption_date TIMESTAMP,
+    -- exemption_percentage NUMERIC(3,0),
     -- Line total
     -- total_line_amount NUMERIC(18,5) NOT NULL,
 
