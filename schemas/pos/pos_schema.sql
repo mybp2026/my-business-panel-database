@@ -1,9 +1,16 @@
 CREATE SCHEMA IF NOT EXISTS pos_schema;
 SET SEARCH_PATH TO pos_schema;
 
+CREATE TABLE IF NOT EXISTS sale_condition (
+    condition_code VARCHAR(3) PRIMARY KEY,
+    condition_desc TEXT,
+)
+
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,  
+    tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id),
+    sale_condition VARCHAR(3) not null REFERENCES pos_schema.sale_condition(condition_code),
     sale_date timestamp not null default current_timestamp,
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null default 0 check (subtotal_amount >= 0),
@@ -338,50 +345,54 @@ CREATE TABLE IF NOT EXISTS debtor (
     missed_payments INTEGER not null default 0
 );
 
+CREATE TABLE IF NOT EXISTS invoice_status (
+    status_id INTEGER PRIMARY KEY,
+    description VARCHAR(50) NOT NULL
+)
+
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     electronic_sale_invoice_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sale_id UUID NOT NULL REFERENCES pos_schema.sale(sale_id) ON DELETE CASCADE,
+    status_id INTEGER REFERENCES pos_schema.invoice_status(status_id),
     key_number VARCHAR(50) NOT NULL UNIQUE,
     consecutive_number VARCHAR(20) NOT NULL,
     -- Issuer information (required)
-    issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    issuer_name VARCHAR(150) NOT NULL,
-    issuer_identification VARCHAR(20) NOT NULL,
-    issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
-    issuer_email VARCHAR(200),
-    issuer_phone VARCHAR(20),
+    -- issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- issuer_name VARCHAR(150) NOT NULL,
+    -- issuer_identification VARCHAR(20) NOT NULL,
+    -- issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
+    -- issuer_email VARCHAR(200),
+    -- issuer_phone VARCHAR(20),
     -- Receiver information (optional for consumer final)
-    receiver_name VARCHAR(150),
-    receiver_identification VARCHAR(20),
-    receiver_identification_type VARCHAR(2),
-    receiver_email VARCHAR(200),
+    -- receiver_name VARCHAR(150),
+    -- receiver_identification VARCHAR(20),
+    -- receiver_identification_type VARCHAR(2),
+    -- receiver_email VARCHAR(200),
     -- sale details
-    sale_condition VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Credit, 03=Consignment
     payment_method VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Card, 03=Check, 04=Transfer
     credit_days VARCHAR(10),
     -- Tax breakdown (required)
-    total_taxed_services NUMERIC(18,5) DEFAULT 0,
-    total_exempt_services NUMERIC(18,5) DEFAULT 0,
-    total_exonerated_services NUMERIC(18,5) DEFAULT 0,
-    total_taxed_goods NUMERIC(18,5) DEFAULT 0,
-    total_exempt_goods NUMERIC(18,5) DEFAULT 0,
-    total_exonerated_goods NUMERIC(18,5) DEFAULT 0,
-    total_taxable NUMERIC(18,5) DEFAULT 0,
-    total_exempt NUMERIC(18,5) DEFAULT 0,
-    total_exonerated NUMERIC(18,5) DEFAULT 0,
-    total_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
-    total_discounts NUMERIC(18,5) DEFAULT 0,
-    total_net_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
-    total_tax NUMERIC(18,5) DEFAULT 0,
-    total_voucher NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- total_taxed_services NUMERIC(18,5) DEFAULT 0,
+    -- total_exempt_services NUMERIC(18,5) DEFAULT 0,
+    -- total_exonerated_services NUMERIC(18,5) DEFAULT 0,
+    -- total_taxed_goods NUMERIC(18,5) DEFAULT 0,
+    -- total_exempt_goods NUMERIC(18,5) DEFAULT 0,
+    -- total_exonerated_goods NUMERIC(18,5) DEFAULT 0,
+    -- total_taxable NUMERIC(18,5) DEFAULT 0,
+    -- total_exempt NUMERIC(18,5) DEFAULT 0,
+    -- total_exonerated NUMERIC(18,5) DEFAULT 0,
+    -- total_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- total_discounts NUMERIC(18,5) DEFAULT 0,
+    -- total_net_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- total_tax NUMERIC(18,5) DEFAULT 0,
+    -- total_voucher NUMERIC(18,5) NOT NULL DEFAULT 0,
     -- XML digital signature
     xml_signed TEXT,
     -- Hacienda response
-    hacienda_status VARCHAR(20) DEFAULT 'pending',  -- pending, accepted, rejected
     hacienda_response_xml TEXT,
     hacienda_response_date TIMESTAMP,
     -- Metadata
-    currency_id INTEGER REFERENCES general_schema.currency(currency_id) ON DELETE SET NULL,
+    -- currency_id INTEGER REFERENCES general_schema.currency(currency_id) ON DELETE SET NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -398,35 +409,38 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
     product_variant_id UUID NOT NULL,
+    sale_item_id uuid NOT NULL REFERENCES pos_schema.sale_item(sale_item_id), 
     line_number INTEGER NOT NULL,
-    cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
-    description VARCHAR(200) NOT NULL,  -- Product description
+    -- cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
+    -- description VARCHAR(200) NOT NULL,  -- Product description
     -- Quantity and units
-    quantity NUMERIC(16,3) NOT NULL,
-    unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'Unid',
-    commercial_unit_of_measure VARCHAR(20),
+    -- quantity NUMERIC(16,3) NOT NULL,
+    -- unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'Unid',
+    -- commercial_unit_of_measure VARCHAR(20),
     -- Pricing
-    unit_price NUMERIC(18,5) NOT NULL,
-    total_amount NUMERIC(18,5) NOT NULL,
+    -- unit_price NUMERIC(18,5) NOT NULL,
+    -- total_amount NUMERIC(18,5) NOT NULL,
     -- Discounts (optional)
     discount_amount NUMERIC(18,5) DEFAULT 0,
     discount_nature VARCHAR(80),
     -- Subtotal
-    subtotal NUMERIC(18,5) NOT NULL,
+    -- subtotal NUMERIC(18,5) NOT NULL,
     -- Tax (IVA)
-    tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
-    tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
-    tax_rate NUMERIC(5,2) DEFAULT 13.00,
-    tax_amount NUMERIC(18,5) DEFAULT 0,
-    tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
+    tax_rate_id INTEGER REFERENCES general_schema.tax_rate(tax_rate_id),
+    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(tax_exoneration_id),
+    -- tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
+    -- tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
+    -- tax_rate NUMERIC(5,2) DEFAULT 13.00,
+    -- tax_amount NUMERIC(18,5) DEFAULT 0,
+    -- tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
     -- Exemption (optional)
-    exemption_document_type VARCHAR(2),
-    exemption_document_number VARCHAR(40),
-    exemption_institution VARCHAR(160),
-    exemption_date TIMESTAMP,
-    exemption_percentage NUMERIC(3,0),
+    -- exemption_document_type VARCHAR(2),
+    -- exemption_document_number VARCHAR(40),
+    -- exemption_institution VARCHAR(160),
+    -- exemption_date TIMESTAMP,
+    -- exemption_percentage NUMERIC(3,0),
     -- Line total
-    total_line_amount NUMERIC(18,5) NOT NULL,
+    -- total_line_amount NUMERIC(18,5) NOT NULL,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

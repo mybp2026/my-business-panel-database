@@ -8,12 +8,13 @@ CREATE TABLE IF NOT EXISTS region(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- TODO: AGREGAR CAMPOS:
---      CODIGO DE ACTIVIDAD ECONOMICA
 CREATE TABLE IF NOT EXISTS tenant(
     tenant_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_name VARCHAR(100) unique not null,
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
+    identification VARCHAR(21) unique not null,
+    econ_activity VARCHAR(10),
+    sign text,
     contact_email VARCHAR(100) not null,
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS branch(
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
     branch_name VARCHAR(100) not null,
     branch_address text,
+    branch_number VARCHAR(4),   
     contact_email VARCHAR(100),
     is_main_branch BOOLEAN default false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS document_type(
     document_type_id SERIAL PRIMARY KEY, 
     type_name VARCHAR(50) unique not null,
     description text,
+    ident_code VARCHAR(3) not null, -- Campo requerido para la facturacion
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,6 +79,7 @@ CREATE TABLE IF NOT EXISTS tenant_customer(
     last_name VARCHAR(100) not null,
     document_type_id INTEGER REFERENCES general_schema.document_type(document_type_id) on delete set null,  
     document_number VARCHAR(50) not null,
+    econ_activity VARCHAR(6), -- Requerido para la factura
     email VARCHAR(255) not null,
     phone VARCHAR(50) not null,
     birthdate date,
@@ -118,8 +122,9 @@ CREATE TABLE IF NOT EXISTS currency(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
+ 
 -- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
+-- DONE: Ya en el cabys_loader se agregan
 CREATE TABLE IF NOT EXISTS tax_rate(
     tax_rate_id SERIAL PRIMARY KEY,
     region VARCHAR(100),
@@ -135,6 +140,8 @@ COMMENT ON TABLE general_schema.tax_rate IS
     'Stores tax rate entries for both regional taxes and CABYS product-level IVA rates.
      - Regional rates: region + region_id populated.
      - CABYS IVA rates: rate_code + rate_name populated, region nullable.';
+
+
 
 CREATE TABLE IF NOT EXISTS subscription_type ( 
     subscription_type_id SERIAL PRIMARY KEY,
@@ -397,3 +404,32 @@ CREATE TABLE IF NOT EXISTS general_schema.account_payable (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
+CREATE TABLE IF NOT EXISTS general_schema.exoneration_type (
+    code VARCHAR(2) PRIMARY KEY,
+    description VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS general_schema.exoneration_institution (
+    code VARCHAR(2) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS general_schema.tax_exoneration (
+    exoneration_id SERIAL PRIMARY KEY,
+    
+    exoneration_type_code VARCHAR(2) NOT NULL REFERENCES general_schema.exoneration_type(code),
+    other_document_type VARCHAR(100) NULL,
+    document_number VARCHAR(40) NOT NULL,
+    
+    article INTEGER NULL,
+    clause INTEGER NULL,
+    
+    institution_code VARCHAR(2) NOT NULL REFERENCES general_schema.exoneration_institution(code),
+    other_institution_name VARCHAR(160) NULL,
+    
+    issue_date TIMESTAMP NOT NULL,
+    exonerated_rate NUMERIC(4,2) NOT NULL,
+    exoneration_amount NUMERIC(18,5) NOT NULL
+);
