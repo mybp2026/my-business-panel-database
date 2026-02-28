@@ -1,6 +1,6 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-02-16 17:16:12
+-- Generated: 2026-02-28 12:47:12
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
@@ -37,12 +37,13 @@ CREATE TABLE IF NOT EXISTS region(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- TODO: AGREGAR CAMPOS:
---      CODIGO DE ACTIVIDAD ECONOMICA
 CREATE TABLE IF NOT EXISTS tenant(
     tenant_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_name VARCHAR(100) unique not null,
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
+    identification VARCHAR(21) unique not null,
+    econ_activity VARCHAR(10),
+    sign text,
     contact_email VARCHAR(100) not null,
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS branch(
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
     branch_name VARCHAR(100) not null,
     branch_address text,
+    branch_number VARCHAR(4),   
     contact_email VARCHAR(100),
     is_main_branch BOOLEAN default false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -68,6 +70,7 @@ CREATE TABLE IF NOT EXISTS document_type(
     document_type_id SERIAL PRIMARY KEY, 
     type_name VARCHAR(50) unique not null,
     description text,
+    ident_code VARCHAR(3) not null, -- Campo requerido para la facturacion
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -105,6 +108,7 @@ CREATE TABLE IF NOT EXISTS tenant_customer(
     last_name VARCHAR(100) not null,
     document_type_id INTEGER REFERENCES general_schema.document_type(document_type_id) on delete set null,  
     document_number VARCHAR(50) not null,
+    econ_activity VARCHAR(6), -- Requerido para la factura
     email VARCHAR(255) not null,
     phone VARCHAR(50) not null,
     birthdate date,
@@ -136,6 +140,8 @@ CREATE TABLE IF NOT EXISTS users(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+insert into general_schema.users (tenant_id, email, password_hash, role_id) values
+('035dddb4-bcda-42a1-99bb-c7adebb1310f', 'user@amh.com', '$2a$10$iRvRfw5T0wd/vULsEsnKGeqAUoxYpaGuhjtA3KqfVZ3Aw4FQmRWdq', 1);
 
 CREATE TABLE IF NOT EXISTS currency(
     currency_id SERIAL PRIMARY KEY,
@@ -145,8 +151,9 @@ CREATE TABLE IF NOT EXISTS currency(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
+ 
 -- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
+-- DONE: Ya en el cabys_loader se agregan
 CREATE TABLE IF NOT EXISTS tax_rate(
     tax_rate_id SERIAL PRIMARY KEY,
     region VARCHAR(100),
@@ -162,6 +169,8 @@ COMMENT ON TABLE general_schema.tax_rate IS
     'Stores tax rate entries for both regional taxes and CABYS product-level IVA rates.
      - Regional rates: region + region_id populated.
      - CABYS IVA rates: rate_code + rate_name populated, region nullable.';
+
+
 
 CREATE TABLE IF NOT EXISTS subscription_type ( 
     subscription_type_id SERIAL PRIMARY KEY,
@@ -354,6 +363,9 @@ COMMENT ON TABLE general_schema.product_variant IS
     'Tenant-specific sellable product variants linked to a CABYS catalog entry. 
     Variants have unique SKUs and prices per tenant.';
 
+INSERT INTO general_schema.product_variant (tenant_id, cabys_code, sku, variant_name, unit_price) VALUES
+('035dddb4-bcda-42a1-99bb-c7adebb1310f', '0101010101010', 'SKU-001', 'Producto de Ejemplo - Variante 1', 9.99);
+
 CREATE TABLE IF NOT EXISTS attribute_assignation (
     tenant_id uuid NOT NULL,
     product_variant_id uuid NOT NULL,
@@ -422,6 +434,35 @@ CREATE TABLE IF NOT EXISTS general_schema.account_payable (
 );
 
 
+CREATE TABLE IF NOT EXISTS general_schema.exoneration_type (
+    code VARCHAR(2) PRIMARY KEY,
+    description VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS general_schema.exoneration_institution (
+    code VARCHAR(2) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS general_schema.tax_exoneration (
+    exoneration_id SERIAL PRIMARY KEY,
+    
+    exoneration_type_code VARCHAR(2) NOT NULL REFERENCES general_schema.exoneration_type(code),
+    other_document_type VARCHAR(100) NULL,
+    document_number VARCHAR(40) NOT NULL,
+    
+    article INTEGER NULL,
+    clause INTEGER NULL,
+    
+    institution_code VARCHAR(2) NOT NULL REFERENCES general_schema.exoneration_institution(code),
+    other_institution_name VARCHAR(160) NULL,
+    
+    issue_date TIMESTAMP NOT NULL,
+    exonerated_rate NUMERIC(4,2) NOT NULL,
+    exoneration_amount NUMERIC(18,5) NOT NULL
+);
+
 
 
 -- =============================================
@@ -431,9 +472,16 @@ CREATE TABLE IF NOT EXISTS general_schema.account_payable (
 CREATE SCHEMA IF NOT EXISTS pos_schema;
 SET SEARCH_PATH TO pos_schema;
 
+CREATE TABLE IF NOT EXISTS sale_condition (
+    condition_code VARCHAR(3) PRIMARY KEY,
+    condition_desc TEXT,
+)
+
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,  
+    tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id),
+    sale_condition VARCHAR(3) not null REFERENCES pos_schema.sale_condition(condition_code),
     sale_date timestamp not null default current_timestamp,
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null default 0 check (subtotal_amount >= 0),
@@ -768,50 +816,54 @@ CREATE TABLE IF NOT EXISTS debtor (
     missed_payments INTEGER not null default 0
 );
 
+CREATE TABLE IF NOT EXISTS invoice_status (
+    status_id INTEGER PRIMARY KEY,
+    description VARCHAR(50) NOT NULL
+)
+
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     electronic_sale_invoice_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sale_id UUID NOT NULL REFERENCES pos_schema.sale(sale_id) ON DELETE CASCADE,
+    status_id INTEGER REFERENCES pos_schema.invoice_status(status_id),
     key_number VARCHAR(50) NOT NULL UNIQUE,
     consecutive_number VARCHAR(20) NOT NULL,
     -- Issuer information (required)
-    issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    issuer_name VARCHAR(150) NOT NULL,
-    issuer_identification VARCHAR(20) NOT NULL,
-    issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
-    issuer_email VARCHAR(200),
-    issuer_phone VARCHAR(20),
+    -- issue_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- issuer_name VARCHAR(150) NOT NULL,
+    -- issuer_identification VARCHAR(20) NOT NULL,
+    -- issuer_identification_type VARCHAR(2) NOT NULL,  -- 01=Individual, 02=Legal Entity, 03=DIMEX, 04=NITE
+    -- issuer_email VARCHAR(200),
+    -- issuer_phone VARCHAR(20),
     -- Receiver information (optional for consumer final)
-    receiver_name VARCHAR(150),
-    receiver_identification VARCHAR(20),
-    receiver_identification_type VARCHAR(2),
-    receiver_email VARCHAR(200),
+    -- receiver_name VARCHAR(150),
+    -- receiver_identification VARCHAR(20),
+    -- receiver_identification_type VARCHAR(2),
+    -- receiver_email VARCHAR(200),
     -- sale details
-    sale_condition VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Credit, 03=Consignment
     payment_method VARCHAR(2) NOT NULL DEFAULT '01',  -- 01=Cash, 02=Card, 03=Check, 04=Transfer
     credit_days VARCHAR(10),
     -- Tax breakdown (required)
-    total_taxed_services NUMERIC(18,5) DEFAULT 0,
-    total_exempt_services NUMERIC(18,5) DEFAULT 0,
-    total_exonerated_services NUMERIC(18,5) DEFAULT 0,
-    total_taxed_goods NUMERIC(18,5) DEFAULT 0,
-    total_exempt_goods NUMERIC(18,5) DEFAULT 0,
-    total_exonerated_goods NUMERIC(18,5) DEFAULT 0,
-    total_taxable NUMERIC(18,5) DEFAULT 0,
-    total_exempt NUMERIC(18,5) DEFAULT 0,
-    total_exonerated NUMERIC(18,5) DEFAULT 0,
-    total_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
-    total_discounts NUMERIC(18,5) DEFAULT 0,
-    total_net_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
-    total_tax NUMERIC(18,5) DEFAULT 0,
-    total_voucher NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- total_taxed_services NUMERIC(18,5) DEFAULT 0,
+    -- total_exempt_services NUMERIC(18,5) DEFAULT 0,
+    -- total_exonerated_services NUMERIC(18,5) DEFAULT 0,
+    -- total_taxed_goods NUMERIC(18,5) DEFAULT 0,
+    -- total_exempt_goods NUMERIC(18,5) DEFAULT 0,
+    -- total_exonerated_goods NUMERIC(18,5) DEFAULT 0,
+    -- total_taxable NUMERIC(18,5) DEFAULT 0,
+    -- total_exempt NUMERIC(18,5) DEFAULT 0,
+    -- total_exonerated NUMERIC(18,5) DEFAULT 0,
+    -- total_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- total_discounts NUMERIC(18,5) DEFAULT 0,
+    -- total_net_sale NUMERIC(18,5) NOT NULL DEFAULT 0,
+    -- total_tax NUMERIC(18,5) DEFAULT 0,
+    -- total_voucher NUMERIC(18,5) NOT NULL DEFAULT 0,
     -- XML digital signature
     xml_signed TEXT,
     -- Hacienda response
-    hacienda_status VARCHAR(20) DEFAULT 'pending',  -- pending, accepted, rejected
     hacienda_response_xml TEXT,
     hacienda_response_date TIMESTAMP,
     -- Metadata
-    currency_id INTEGER REFERENCES general_schema.currency(currency_id) ON DELETE SET NULL,
+    -- currency_id INTEGER REFERENCES general_schema.currency(currency_id) ON DELETE SET NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -828,35 +880,38 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
     product_variant_id UUID NOT NULL,
+    sale_item_id uuid NOT NULL REFERENCES pos_schema.sale_item(sale_item_id), 
     line_number INTEGER NOT NULL,
-    cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
-    description VARCHAR(200) NOT NULL,  -- Product description
+    -- cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
+    -- description VARCHAR(200) NOT NULL,  -- Product description
     -- Quantity and units
-    quantity NUMERIC(16,3) NOT NULL,
-    unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'Unid',
-    commercial_unit_of_measure VARCHAR(20),
+    -- quantity NUMERIC(16,3) NOT NULL,
+    -- unit_of_measure VARCHAR(20) NOT NULL DEFAULT 'Unid',
+    -- commercial_unit_of_measure VARCHAR(20),
     -- Pricing
-    unit_price NUMERIC(18,5) NOT NULL,
-    total_amount NUMERIC(18,5) NOT NULL,
+    -- unit_price NUMERIC(18,5) NOT NULL,
+    -- total_amount NUMERIC(18,5) NOT NULL,
     -- Discounts (optional)
     discount_amount NUMERIC(18,5) DEFAULT 0,
     discount_nature VARCHAR(80),
     -- Subtotal
-    subtotal NUMERIC(18,5) NOT NULL,
+    -- subtotal NUMERIC(18,5) NOT NULL,
     -- Tax (IVA)
-    tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
-    tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
-    tax_rate NUMERIC(5,2) DEFAULT 13.00,
-    tax_amount NUMERIC(18,5) DEFAULT 0,
-    tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
+    tax_rate_id INTEGER REFERENCES general_schema.tax_rate(tax_rate_id),
+    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(tax_exoneration_id),
+    -- tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
+    -- tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
+    -- tax_rate NUMERIC(5,2) DEFAULT 13.00,
+    -- tax_amount NUMERIC(18,5) DEFAULT 0,
+    -- tax_exemption_amount NUMERIC(18,5) DEFAULT 0,
     -- Exemption (optional)
-    exemption_document_type VARCHAR(2),
-    exemption_document_number VARCHAR(40),
-    exemption_institution VARCHAR(160),
-    exemption_date TIMESTAMP,
-    exemption_percentage NUMERIC(3,0),
+    -- exemption_document_type VARCHAR(2),
+    -- exemption_document_number VARCHAR(40),
+    -- exemption_institution VARCHAR(160),
+    -- exemption_date TIMESTAMP,
+    -- exemption_percentage NUMERIC(3,0),
     -- Line total
-    total_line_amount NUMERIC(18,5) NOT NULL,
+    -- total_line_amount NUMERIC(18,5) NOT NULL,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1239,6 +1294,8 @@ CREATE TABLE IF NOT EXISTS hr_schema.turn (
   entry TIME NOT NULL,
   out TIME NOT NULL
 );
+-- insert into hr_schema.turn (branch_id, entry, out) values
+-- ('64ff2bad-4012-42a6-8aa9-48dd67bfb8c6', '08:00:00', '16:00:00');
 
 CREATE INDEX branch_turn_idx ON hr_schema.turn(branch_id);
 
@@ -4394,10 +4451,13 @@ ON CONFLICT DO NOTHING;
 -- =============================================
 SET SEARCH_PATH TO general_schema;
 
-INSERT INTO general_schema.document_type(type_name, description) VALUES
-    ('passport', 'International travel document'),
-    ('driver_license', 'Official driving permit'),
-    ('national_id', 'Government issued identification card')
+INSERT INTO general_schema.document_type(type_name, description, ident_code) VALUES
+    ('Cedula Fisica', 'Tarjeta de identificacion en fisico', '01'),
+    ('Cedula Juridica', 'Numero de identificacion asignado por el Registro Nacional', '02'),
+    ('DIMEX', 'Documento de Identidad Migratorio para Extranjeros', '03'),
+    ('NITE', 'Numero de Identificacion Tributaria Especial', '04'),
+    ('Extranjero No Domiciliado', 'Cliente o proveedor sin residencia en el pais', '05'),
+    ('No Contribuyente', 'Persona no inscrita en el DGT', '06')
 ON CONFLICT DO NOTHING;
 
 
@@ -4551,7 +4611,7 @@ SET SEARCH_PATH TO pos_schema;
 INSERT INTO pos_schema.return_reason(reason_code, reason_name, description) VALUES
     ('DEFECT', 'Defecto de fábrica', 'El producto tiene un defecto de fabricación'),
     ('SIZE_CHANGE', 'Cambio de talla', 'El cliente requiere una talla diferente'),
-    ('WRonG_PRODUCT', 'Producto equivocado', 'Se entregó un producto diferente al solicitado'),
+    ('WRONG_PRODUCT', 'Producto equivocado', 'Se entregó un producto diferente al solicitado'),
     ('NOT_AS_DESCRIBED', 'No coincide con descripción', 'El producto no coincide con la descripción publicada'),
     ('DAMAGED', 'Producto dañado', 'El producto llegó dañado o roto'),
     ('EXPIRED', 'Producto vencido', 'El producto está vencido o caducado'),
