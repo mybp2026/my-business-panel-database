@@ -6,6 +6,9 @@
 
 BEGIN;
 
+-- -----------------
+-- DROP SCHEMAS
+-- -----------------
 DROP SCHEMA IF EXISTS general_schema CASCADE;
 DROP SCHEMA IF EXISTS pos_schema CASCADE;
 DROP SCHEMA IF EXISTS inventory_schema CASCADE;
@@ -58,6 +61,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 \i seeds/catalog/pos/003-insert-promotion-types.sql
 \i seeds/catalog/pos/004-insert-score-redemption-status.sql
 \i seeds/catalog/pos/005-insert-score-transaction-types.sql
+\i seeds/catalog/pos/006-insert-sale-conditions.sql
+\i seeds/catalog/pos/007-insert-invoice-status.sql
 
 -- -----------------
 -- SEEDS - CATALOG PURCHASE
@@ -75,10 +80,63 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- -----------------
 \i seeds/catalog/hr/001-insert-payment-schedules.sql
 \i seeds/catalog/hr/002-insert-paysheet-status.sql
--- \i seeds/catalog/hr/003-insert-holidays.sql
 
+-- -----------------
+-- RESTORE CABYS DATA
+-- Restaurar en orden: categorías primero (FK), luego productos
+-- Usamos session_replication_role = replica para deshabilitar triggers
+-- y FK checks durante la carga masiva (27k+ filas)
+-- -----------------
+SET session_replication_role = replica;
 
-SELECT * FROM hr_schema.payment_schedule WHERE payment_schedule_id = 1;
+DO $$
+DECLARE v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count FROM _backup_product_category;
+    RAISE NOTICE 'Restaurando % categorías CABYS...', v_count;
+END $$;
+
+INSERT INTO general_schema.product_category
+    (product_category_id, category_name, parent_category_id, hierarchy_level, created_at, updated_at)
+SELECT
+    product_category_id,
+    category_name,
+    parent_category_id,
+    hierarchy_level,
+    created_at,
+    updated_at
+FROM _backup_product_category
+ORDER BY hierarchy_level ASC
+ON CONFLICT (product_category_id) DO NOTHING;
+
+DO $$
+DECLARE v_count INT;
+BEGIN
+    SELECT COUNT(*) INTO v_count FROM _backup_product;
+    RAISE NOTICE 'Restaurando % productos CABYS...', v_count;
+END $$;
+
+INSERT INTO general_schema.product
+    (cabys_code, product_name, product_category_id, tax_rate_id, is_exonerated, created_at, updated_at)
+SELECT
+    b.cabys_code,
+    b.product_name,
+    b.product_category_id,
+    tr.tax_rate_id,
+    b.is_exonerated,
+    b.created_at,
+    b.updated_at
+FROM _backup_product b
+LEFT JOIN general_schema.tax_rate tr
+    ON tr.rate_percentage = (
+        SELECT btr.rate_percentage
+        FROM _backup_tax_rate btr
+        WHERE btr.tax_rate_id = b.tax_rate_id
+    )
+ON CONFLICT (cabys_code) DO NOTHING;
+
+SET session_replication_role = DEFAULT;
+
 -- -----------------
 -- INTEGRITY CHECKS
 -- -----------------
@@ -88,7 +146,7 @@ DECLARE
     v_count INT;
     v_failed_tables TEXT[] := '{}';
 BEGIN
-    FOR v_table_name IN 
+    FOR v_table_name IN
         SELECT unnest(ARRAY[
             'general_schema.region',
             'general_schema.role',
@@ -99,6 +157,8 @@ BEGIN
             'general_schema.customer_segment',
             'general_schema.customer_segment_margin_type',
             'general_schema.tax_rate',
+            'general_schema.product_category',  
+            'general_schema.product',            
             'general_schema.account_payable_status',
             'general_schema.account_payable_type',
             'pos_schema.return_reason',
@@ -111,20 +171,24 @@ BEGIN
             'purchase_schema.purchase_order_payment_alert_type',
             'hr_schema.payment_schedule',
             'hr_schema.paysheet_status'
-            -- 'hr_schema.holiday'
         ])
     LOOP
         EXECUTE format('SELECT COUNT(*) FROM %s', v_table_name) INTO v_count;
-        
         IF v_count = 0 THEN
             v_failed_tables := array_append(v_failed_tables, v_table_name);
         END IF;
     END LOOP;
-    
+
     IF array_length(v_failed_tables, 1) > 0 THEN
-        RAISE EXCEPTION 'The following tables are empty after seeding: %', 
+        RAISE EXCEPTION 'Las siguientes tablas están vacías después del seeding: %',
             array_to_string(v_failed_tables, ', ');
     END IF;
+
+    RAISE NOTICE 'Bootstrap completado exitosamente.';
 END $$;
 
 COMMIT;
+
+DROP TABLE IF EXISTS _backup_product_category;
+DROP TABLE IF EXISTS _backup_product;
+DROP TABLE IF EXISTS _backup_tax_rate;

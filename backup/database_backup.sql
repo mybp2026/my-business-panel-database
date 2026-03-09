@@ -1,6 +1,6 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-02-28 12:47:12
+-- Generated: 2026-03-05 03:29:55
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
@@ -62,9 +62,24 @@ CREATE TABLE IF NOT EXISTS branch(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX IF NOT EXISTS unique_main_branch_per_tenant 
-    on general_schema.branch (tenant_id) 
+CREATE UNIQUE INDEX IF NOT EXISTS unique_main_branch_per_tenant
+    on general_schema.branch (tenant_id)
     where is_main_branch = true;
+
+-- Dirección estructurada del tenant para facturación electrónica (DGT-R-48-2016)
+CREATE TABLE IF NOT EXISTS tenant_location (
+    tenant_location_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL UNIQUE REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    provincia  VARCHAR(1)  NOT NULL DEFAULT '1',   -- 1=San José … 7=Limón
+    canton     VARCHAR(2)  NOT NULL DEFAULT '01',
+    distrito   VARCHAR(2)  NOT NULL DEFAULT '01',
+    otras_senas TEXT       NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP          DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_location_tenant_id
+    ON general_schema.tenant_location(tenant_id);
 
 CREATE TABLE IF NOT EXISTS document_type(
     document_type_id SERIAL PRIMARY KEY, 
@@ -140,8 +155,6 @@ CREATE TABLE IF NOT EXISTS users(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-insert into general_schema.users (tenant_id, email, password_hash, role_id) values
-('035dddb4-bcda-42a1-99bb-c7adebb1310f', 'user@amh.com', '$2a$10$iRvRfw5T0wd/vULsEsnKGeqAUoxYpaGuhjtA3KqfVZ3Aw4FQmRWdq', 1);
 
 CREATE TABLE IF NOT EXISTS currency(
     currency_id SERIAL PRIMARY KEY,
@@ -164,6 +177,9 @@ CREATE TABLE IF NOT EXISTS tax_rate(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_rate_region_percentage
+    ON general_schema.tax_rate(region, rate_percentage);
 
 COMMENT ON TABLE general_schema.tax_rate IS
     'Stores tax rate entries for both regional taxes and CABYS product-level IVA rates.
@@ -254,7 +270,7 @@ CREATE TABLE IF NOT EXISTS commercial_unit_measure(
 
 CREATE TABLE IF NOT EXISTS product(
     cabys_code VARCHAR(13) PRIMARY KEY,
-    product_name VARCHAR(255) NOT NULL,
+    product_name TEXT NOT NULL,
     product_name_tsv tsvector GENERATED ALWAYS AS (to_tsvector('spanish', product_name)) STORED,
     product_category_id VARCHAR(13) REFERENCES general_schema.product_category(product_category_id) ON DELETE SET NULL,
     tax_rate_id INT REFERENCES general_schema.tax_rate(tax_rate_id) ON DELETE SET NULL,
@@ -359,12 +375,9 @@ CREATE INDEX IF NOT EXISTS idx_product_variant_active
     ON general_schema.product_variant(tenant_id, is_active) 
     WHERE is_active = true;
 
-COMMENT ON TABLE general_schema.product_variant IS 
-    'Tenant-specific sellable product variants linked to a CABYS catalog entry. 
+COMMENT ON TABLE general_schema.product_variant IS
+    'Tenant-specific sellable product variants linked to a CABYS catalog entry.
     Variants have unique SKUs and prices per tenant.';
-
-INSERT INTO general_schema.product_variant (tenant_id, cabys_code, sku, variant_name, unit_price) VALUES
-('035dddb4-bcda-42a1-99bb-c7adebb1310f', '0101010101010', 'SKU-001', 'Producto de Ejemplo - Variante 1', 9.99);
 
 CREATE TABLE IF NOT EXISTS attribute_assignation (
     tenant_id uuid NOT NULL,
@@ -474,8 +487,8 @@ SET SEARCH_PATH TO pos_schema;
 
 CREATE TABLE IF NOT EXISTS sale_condition (
     condition_code VARCHAR(3) PRIMARY KEY,
-    condition_desc TEXT,
-)
+    condition_desc TEXT
+);
 
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -574,7 +587,6 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
     digital_sale_invoice_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
-    -- currency_id viene dado por la venta. es redundante tenerlo aqui. eliminarlo.
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
@@ -751,7 +763,7 @@ CREATE TABLE IF NOT EXISTS promotion_rule(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-create type discount_result as (
+CREATE TYPE pos_schema.discount_result AS (
     discount_amount numeric(10,2),
     discount_percentage numeric(5,2),
     rule_description text,
@@ -819,7 +831,7 @@ CREATE TABLE IF NOT EXISTS debtor (
 CREATE TABLE IF NOT EXISTS invoice_status (
     status_id INTEGER PRIMARY KEY,
     description VARCHAR(50) NOT NULL
-)
+);
 
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     electronic_sale_invoice_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -872,8 +884,9 @@ CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_sale_id
     ON pos_schema.electronic_sale_invoice(sale_id);
 CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number 
     ON pos_schema.electronic_sale_invoice(key_number);
-CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_issue_date 
-    ON pos_schema.electronic_sale_invoice(issue_date);
+-- #2: columna issue_date no existe en esta versión del schema; se indexa created_at
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_created_at
+    ON pos_schema.electronic_sale_invoice(created_at);
 
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -898,7 +911,7 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     -- subtotal NUMERIC(18,5) NOT NULL,
     -- Tax (IVA)
     tax_rate_id INTEGER REFERENCES general_schema.tax_rate(tax_rate_id),
-    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(tax_exoneration_id),
+    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(exoneration_id),
     -- tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
     -- tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
     -- tax_rate NUMERIC(5,2) DEFAULT 13.00,
@@ -921,10 +934,8 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
         ON DELETE RESTRICT
 );
 
-CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice 
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice
     ON pos_schema.electronic_sale_invoice_items(electronic_sale_invoice_id);
-CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_cabys 
-    ON pos_schema.electronic_sale_invoice_items(cabys_code);
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
     ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);
 
@@ -1701,8 +1712,8 @@ $$ language plpgsql;
 CREATE OR REPLACE FUNCTION general_schema.prevent_category_cycles()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_current_id INTEGER;
-    v_visited INTEGER[];
+    v_current_id VARCHAR(13);
+    v_visited VARCHAR(13)[];
     v_max_iterations INTEGER := 10;
     v_iteration INTEGER := 0;
 BEGIN
@@ -1770,8 +1781,8 @@ BEGIN
         
         NEW.hierarchy_level := v_parent_level + 1;
         
-        IF NEW.hierarchy_level > 5 THEN
-            RAISE EXCEPTION 'Maximum category depth exceeded (max 5 levels)';
+        IF NEW.hierarchy_level > 10 THEN
+            RAISE EXCEPTION 'Maximum category depth exceeded (max 10 levels)';
         END IF;
     END IF;
     
@@ -1779,8 +1790,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION general_schema.update_category_hierarchy_level() IS 
-    'Automatically calculates and updates hierarchy_level based on parent category. Enforces max depth of 5 levels.';
+COMMENT ON FUNCTION general_schema.update_category_hierarchy_level() IS
+    'Automatically calculates and updates hierarchy_level based on parent category. Enforces max depth of 10 levels.';
 
 DROP TRIGGER IF EXISTS trigger_update_category_hierarchy 
     ON general_schema.product_category;
