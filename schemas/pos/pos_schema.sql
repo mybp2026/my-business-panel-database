@@ -3,8 +3,8 @@ SET SEARCH_PATH TO pos_schema;
 
 CREATE TABLE IF NOT EXISTS sale_condition (
     condition_code VARCHAR(3) PRIMARY KEY,
-    condition_desc TEXT,
-)
+    condition_desc TEXT
+);
 
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -103,7 +103,6 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
     digital_sale_invoice_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
-    -- currency_id viene dado por la venta. es redundante tenerlo aqui. eliminarlo.
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
@@ -280,7 +279,7 @@ CREATE TABLE IF NOT EXISTS promotion_rule(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-create type discount_result as (
+CREATE TYPE pos_schema.discount_result AS (
     discount_amount numeric(10,2),
     discount_percentage numeric(5,2),
     rule_description text,
@@ -348,7 +347,7 @@ CREATE TABLE IF NOT EXISTS debtor (
 CREATE TABLE IF NOT EXISTS invoice_status (
     status_id INTEGER PRIMARY KEY,
     description VARCHAR(50) NOT NULL
-)
+);
 
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     electronic_sale_invoice_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -401,8 +400,9 @@ CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_sale_id
     ON pos_schema.electronic_sale_invoice(sale_id);
 CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number 
     ON pos_schema.electronic_sale_invoice(key_number);
-CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_issue_date 
-    ON pos_schema.electronic_sale_invoice(issue_date);
+-- #2: columna issue_date no existe en esta versión del schema; se indexa created_at
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_created_at
+    ON pos_schema.electronic_sale_invoice(created_at);
 
 CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -427,7 +427,7 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     -- subtotal NUMERIC(18,5) NOT NULL,
     -- Tax (IVA)
     tax_rate_id INTEGER REFERENCES general_schema.tax_rate(tax_rate_id),
-    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(tax_exoneration_id),
+    tax_exoneration_id INTEGER REFERENCES general_schema.tax_exoneration(exoneration_id),
     -- tax_code VARCHAR(2) DEFAULT '01',     -- 01 = IVA
     -- tax_rate_code VARCHAR(2) DEFAULT '08', -- 08 = Standard rate 13%
     -- tax_rate NUMERIC(5,2) DEFAULT 13.00,
@@ -450,9 +450,7 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
         ON DELETE RESTRICT
 );
 
-CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice 
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice
     ON pos_schema.electronic_sale_invoice_items(electronic_sale_invoice_id);
-CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_cabys 
-    ON pos_schema.electronic_sale_invoice_items(cabys_code);
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
     ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);
