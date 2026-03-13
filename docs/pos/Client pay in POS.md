@@ -273,7 +273,7 @@ WHERE s.sale_id = '<sale_id>'
 GROUP BY s.sale_id;
 ```
 
-### 4. Bill / Invoice Creation (trigger)
+### 4. Bill / DInvoice Creation (trigger)
 
 When `sale.is_completed` transitions to `true`, the `pos_schema.create_digital_sale_invoice()` trigger automatically generates an invoice.
 
@@ -323,7 +323,7 @@ JOIN pos_schema.customer_payment cp ON bp.customer_payment_id = cp.customer_paym
 WHERE bp.digital_sale_invoice_id = '<digital_sale_invoice_id>';
 ```
 
-**For manual Invoice creation (if needed):**
+**For manual DInvoice creation (if needed):**
 
 ```sql
 -- Use the utility function to fetch and review invoice data

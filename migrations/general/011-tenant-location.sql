@@ -5,7 +5,7 @@
 --   structured address data needed for Costa Rica electronic invoicing
 --   (provincia, canton, distrito, otras_senas per DGT-R-48-2016).
 --
--- This table is LEFT-JOINed in getSaleForElectronicInvoice; tenants
+-- This table is LEFT-JOINed in getSaleForEInvoice; tenants
 -- without a row return empty-string fallbacks until their data is filled.
 -- ======================================================
 
