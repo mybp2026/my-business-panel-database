@@ -30,6 +30,22 @@ BEGIN
         RAISE NOTICE '   No existing test warehouse found';
     END IF;
 
+    -- actualizar limpieza inicial para eliminar también warehouse_dest/tmp
+    FOR v_warehouse_id IN
+        SELECT warehouse_id
+        FROM inventory_schema.warehouse
+        WHERE warehouse_name IN (
+            'test_warehouse_mvp',
+            'test_warehouse_mvp_updated',
+            'test_warehouse_dest',
+            'test_warehouse_mvp_tmp'
+        )
+    LOOP
+        DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_warehouse_id;
+        DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_warehouse_id;
+        RAISE NOTICE '   ✓ Warehouse and related inventory removed: %', v_warehouse_id;
+    END LOOP;
+
     RAISE NOTICE '✅ Limpieza completada';
     RAISE NOTICE '========================================';
 END $$;
@@ -147,6 +163,104 @@ BEGIN
 
     RAISE NOTICE '✅ SECCIÓN 3 COMPLETADA';
     RAISE NOTICE '========================================';
+END $$ LANGUAGE plpgsql;
+
+-- ========================================
+-- SECCIÓN 3.5: Transferencia entre warehouses
+-- ========================================
+DO $$
+DECLARE
+    v_origin uuid;
+    v_dest uuid;
+    v_tenant uuid;
+    v_product uuid;
+    v_transfer_id uuid;
+    v_before_origin int;
+    v_after_origin int;
+    v_before_dest int;
+    v_after_dest int;
+    v_log_count int;
+BEGIN
+    RAISE NOTICE '';
+    RAISE NOTICE '========================================';
+    RAISE NOTICE '🔁 SECCIÓN 3.5: Transferencia entre warehouses';
+    RAISE NOTICE '========================================';
+
+    SELECT tenant_id, product_variant_id INTO v_tenant, v_product
+      FROM general_schema.product_variant LIMIT 1;
+
+    SELECT warehouse_id INTO v_origin
+      FROM inventory_schema.warehouse
+      WHERE warehouse_name = 'test_warehouse_mvp_updated' LIMIT 1;
+
+    INSERT INTO inventory_schema.warehouse(branch_id, warehouse_name, warehouse_address)
+    VALUES (
+        (SELECT branch_id FROM inventory_schema.warehouse WHERE warehouse_id = v_origin),
+        'test_warehouse_dest',
+        'address dest'
+    )
+    RETURNING warehouse_id INTO v_dest;
+
+    -- stock inicial en ambas bodegas
+    INSERT INTO inventory_schema.inventory(tenant_id, warehouse_id, product_variant_id,
+       stock, expiration_date, created_at, updated_at)
+    VALUES (v_tenant, v_dest, v_product, 5, current_timestamp + interval '30 days', NOW(), NOW());
+
+    SELECT stock INTO v_before_origin
+      FROM inventory_schema.inventory
+      WHERE warehouse_id = v_origin AND product_variant_id = v_product;
+    SELECT stock INTO v_before_dest
+      FROM inventory_schema.inventory
+      WHERE warehouse_id = v_dest AND product_variant_id = v_product;
+
+    -- reproducimos la lógica que debe hacer el servicio
+    BEGIN
+        INSERT INTO inventory_schema.inventory_transfer
+            (from_warehouse_id, to_warehouse_id, transfer_date, created_at, updated_at)
+        VALUES (v_origin, v_dest, NOW(), NOW(), NOW())
+        RETURNING inventory_transfer_id INTO v_transfer_id;
+
+        UPDATE inventory_schema.inventory
+        SET stock = GREATEST(0, stock - 10), updated_at = NOW()
+        WHERE warehouse_id = v_origin AND product_variant_id = v_product AND tenant_id = v_tenant;
+
+        UPDATE inventory_schema.inventory
+        SET stock = stock + 10, updated_at = NOW()
+        WHERE warehouse_id = v_dest AND product_variant_id = v_product AND tenant_id = v_tenant;
+
+        INSERT INTO inventory_schema.inventory_transfer_product
+            (inventory_transfer_id, tenant_id, product_variant_id, quantity, created_at, updated_at)
+        VALUES (v_transfer_id, v_tenant, v_product, 10, NOW(), NOW());
+
+        INSERT INTO inventory_schema.inventory_log
+            (inventory_log_type_id, warehouse_id, tenant_id, product_variant_id, quantity, created_at, updated_at)
+       VALUES   (2, v_origin, v_tenant, v_product, 10, NOW(), NOW()),
+                (1, v_dest,   v_tenant, v_product, 10, NOW(), NOW());
+    EXCEPTION WHEN OTHERS THEN
+        RAISE EXCEPTION 'Transferencia fallida: %', SQLERRM;
+    END;
+
+    SELECT stock INTO v_after_origin
+      FROM inventory_schema.inventory
+      WHERE warehouse_id = v_origin AND product_variant_id = v_product;
+    SELECT stock INTO v_after_dest
+      FROM inventory_schema.inventory
+      WHERE warehouse_id = v_dest AND product_variant_id = v_product;
+
+    IF v_after_origin <> v_before_origin - 10 OR v_after_dest <> v_before_dest + 10 THEN
+        RAISE EXCEPTION 'La transferencia no actualizó correctamente los stocks';
+    END IF;
+
+    SELECT count(*) INTO v_log_count
+      FROM inventory_schema.inventory_log
+      WHERE warehouse_id IN (v_origin, v_dest) AND product_variant_id = v_product;
+    IF v_log_count <> 2 THEN
+        RAISE EXCEPTION 'No se registraron correctamente los logs, encontrados %', v_log_count;
+    END IF;
+
+    -- limpiar bodega destino
+    DELETE FROM inventory_schema.inventory WHERE warehouse_id = v_dest;
+    DELETE FROM inventory_schema.warehouse WHERE warehouse_id = v_dest;
 END $$ LANGUAGE plpgsql;
 
 -- ========================================

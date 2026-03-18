@@ -51,3 +51,18 @@ VALUES (
 )
 
 ```
+## 3 Applying a discrepancy adjustment
+
+Once a discrepancy report exists, a supervisor can apply the stock correction via:
+
+PATCH /warehouse/discrepancy-report/:id/apply
+
+No request body needed. The tenant is read from the session.
+
+### Logic:
+- delta = physical_quantity - stored_quantity
+- delta > 0 → addStock (log type IN, id=1)
+- delta < 0 → removeStock (log type OUT, id=2)
+- delta = 0 → no stock change
+- Report is marked is_applied = TRUE atomically in the same transaction
+- If already applied, returns 404 (idempotency guard)
