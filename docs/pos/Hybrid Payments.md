@@ -84,7 +84,7 @@ CALL pos_schema.verify_customer_payment(<customer_payment_id>);
 
 Logs will show partial totals and a final "Sale is COMPLETED" once cumulative verified payments meet the sale total.
 
-### 4. Invoice creation and Linking
+### 4. DInvoice creation and Linking
 
 When `sale.is_completed` toggles to true a trigger executes `pos_schema.create_digital_sale_invoice`:
 

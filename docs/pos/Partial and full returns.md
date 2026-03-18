@@ -106,7 +106,7 @@ Record refund to customer via customer_payment or external refund workflow. Exam
 
 - return_product empty after script: ensure your INSERTs commit and no trigger raises an exception causing rollback.
 - Returned quantity > purchased: update_on_return should raise an exception; check error logs for the message.
-- Invoice not updated: verify update_on_return trigger exists on pos.return_product and that tax rate lookup works for tenant/region.
+- DInvoice not updated: verify update_on_return trigger exists on pos.return_product and that tax rate lookup works for tenant/region.
 - Sale totals inconsistent: confirm update_on_return recalculates sale_subtotal from remaining sale_item rows and updates sale.tax/total.
 
 ## Quick Debugging Queries
