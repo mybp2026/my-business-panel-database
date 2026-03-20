@@ -388,3 +388,112 @@ for each row execute function general_schema.update_timestamp();
 drop trigger if exists update_tenant_payment_timestamp on general_schema.tenant_payment;
 create trigger update_tenant_payment_timestamp before update on general_schema.tenant_payment
 for each row execute function general_schema.update_timestamp();
+
+-- -----------------------------------------------------------------
+-- Currency conversion function
+-- -----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION general_schema.convert_currency(
+    p_amount           NUMERIC,
+    p_from_currency_id INTEGER,
+    p_to_currency_id   INTEGER,
+    p_date             DATE DEFAULT CURRENT_DATE
+) RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_rate NUMERIC(12,6);
+BEGIN
+    IF p_from_currency_id = p_to_currency_id THEN
+        RETURN p_amount;
+    END IF;
+
+    SELECT er.rate INTO v_rate
+    FROM general_schema.exchange_rate er
+    WHERE er.from_currency_id = p_from_currency_id
+      AND er.to_currency_id   = p_to_currency_id
+      AND er.effective_date   <= p_date
+    ORDER BY er.effective_date DESC
+    LIMIT 1;
+
+    IF v_rate IS NULL THEN
+        SELECT (1.0 / er.rate) INTO v_rate
+        FROM general_schema.exchange_rate er
+        WHERE er.from_currency_id = p_to_currency_id
+          AND er.to_currency_id   = p_from_currency_id
+          AND er.effective_date   <= p_date
+        ORDER BY er.effective_date DESC
+        LIMIT 1;
+    END IF;
+
+    IF v_rate IS NULL THEN
+        RAISE EXCEPTION 'No exchange rate found for currency % -> % on or before %',
+            p_from_currency_id, p_to_currency_id, p_date;
+    END IF;
+
+    RETURN ROUND(p_amount * v_rate, 3);
+END;
+$$;
+
+-- -----------------------------------------------------------------
+-- Update product cost on purchase receipt (weighted average cost)
+-- -----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION general_schema.update_product_cost_on_receipt(
+    p_tenant_id          UUID,
+    p_product_variant_id UUID,
+    p_purchase_order_id  UUID,
+    p_quantity           INTEGER,
+    p_unit_cost          NUMERIC(12,3),
+    p_currency_id        INTEGER DEFAULT NULL,
+    p_exchange_rate_val  NUMERIC(12,6) DEFAULT NULL
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_current_stock INTEGER;
+    v_current_avg   NUMERIC(12,3);
+    v_new_avg       NUMERIC(12,3);
+    v_cost_converted NUMERIC(12,3);
+BEGIN
+    IF p_exchange_rate_val IS NOT NULL AND p_exchange_rate_val > 0 THEN
+        v_cost_converted := ROUND(p_unit_cost * p_exchange_rate_val, 3);
+    ELSE
+        v_cost_converted := p_unit_cost;
+    END IF;
+
+    SELECT COALESCE(SUM(i.stock), 0) INTO v_current_stock
+    FROM inventory_schema.inventory i
+    WHERE i.tenant_id = p_tenant_id
+      AND i.product_variant_id = p_product_variant_id;
+
+    SELECT COALESCE(pv.weighted_avg_cost, 0) INTO v_current_avg
+    FROM general_schema.product_variant pv
+    WHERE pv.tenant_id = p_tenant_id
+      AND pv.product_variant_id = p_product_variant_id;
+
+    IF (v_current_stock + p_quantity) > 0 THEN
+        v_new_avg := ROUND(
+            (v_current_stock * v_current_avg + p_quantity * v_cost_converted)
+            / (v_current_stock + p_quantity),
+            3
+        );
+    ELSE
+        v_new_avg := v_cost_converted;
+    END IF;
+
+    UPDATE general_schema.product_variant
+    SET cost_price = v_cost_converted,
+        weighted_avg_cost = v_new_avg,
+        last_purchase_date = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE tenant_id = p_tenant_id
+      AND product_variant_id = p_product_variant_id;
+
+    INSERT INTO general_schema.product_cost_history (
+        tenant_id, product_variant_id, purchase_order_id,
+        unit_cost, currency_id, exchange_rate, unit_cost_converted,
+        quantity, effective_date
+    ) VALUES (
+        p_tenant_id, p_product_variant_id, p_purchase_order_id,
+        p_unit_cost, p_currency_id, p_exchange_rate_val, v_cost_converted,
+        p_quantity, CURRENT_TIMESTAMP
+    );
+END;
+$$;
