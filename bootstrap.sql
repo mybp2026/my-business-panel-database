@@ -92,6 +92,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 \i seeds/catalog/accounting/002-insert-journal-entry-statuses.sql
 \i seeds/catalog/accounting/003-insert-source-types.sql
 \i seeds/catalog/accounting/004-insert-chart-of-accounts-template.sql
+\i seeds/catalog/accounting/005-insert-expense-category-template.sql
 
 -- -----------------
 -- INTEGRITY CHECKS
@@ -130,7 +131,8 @@ BEGIN
             'accounting_schema.account_type',
             'accounting_schema.journal_entry_status',
             'accounting_schema.source_type',
-            'accounting_schema.chart_of_accounts_template'
+            'accounting_schema.chart_of_accounts_template',
+            'accounting_schema.expense_category_template'
         ])
     LOOP
         EXECUTE format('SELECT COUNT(*) FROM %s', v_table_name) INTO v_count;
