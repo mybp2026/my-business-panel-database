@@ -1,3 +1,4 @@
+
 -- ======================================================
 -- SCHEMA BOOTSTRAP FILE
 -- ======================================================
@@ -6,11 +7,15 @@
 
 BEGIN;
 
+-- -----------------
+-- DROP SCHEMAS
+-- -----------------
 DROP SCHEMA IF EXISTS general_schema CASCADE;
 DROP SCHEMA IF EXISTS pos_schema CASCADE;
 DROP SCHEMA IF EXISTS inventory_schema CASCADE;
 DROP SCHEMA IF EXISTS purchase_schema CASCADE;
 DROP SCHEMA IF EXISTS hr_schema CASCADE;
+DROP SCHEMA IF EXISTS accounting_schema CASCADE;
 
 -- -----------------
 -- EXTENSIONS
@@ -25,6 +30,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 \i schemas/inventory/inventory_schema.sql
 \i schemas/purchase/purchase_schema.sql
 \i schemas/hr/hr_schema.sql
+\i schemas/accounting/accounting_schema.sql
 
 -- -----------------
 -- FUNCTIONS
@@ -34,6 +40,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 \i functions/inventory/inventory_functions.sql
 \i functions/purchase/purchase_functions.sql
 \i functions/hr/hr_functions.sql
+\i functions/accounting/accounting_functions.sql
 
 -- -----------------
 -- SEEDS - CATALOG GENERAL
@@ -58,6 +65,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 \i seeds/catalog/pos/003-insert-promotion-types.sql
 \i seeds/catalog/pos/004-insert-score-redemption-status.sql
 \i seeds/catalog/pos/005-insert-score-transaction-types.sql
+\i seeds/catalog/pos/006-insert-sale-conditions.sql
+\i seeds/catalog/pos/007-insert-invoice-status.sql
 
 -- -----------------
 -- SEEDS - CATALOG PURCHASE
@@ -75,10 +84,15 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- -----------------
 \i seeds/catalog/hr/001-insert-payment-schedules.sql
 \i seeds/catalog/hr/002-insert-paysheet-status.sql
--- \i seeds/catalog/hr/003-insert-holidays.sql
 
+-- -----------------
+-- SEEDS - CATALOG ACCOUNTING
+-- -----------------
+\i seeds/catalog/accounting/001-insert-account-types.sql
+\i seeds/catalog/accounting/002-insert-journal-entry-statuses.sql
+\i seeds/catalog/accounting/003-insert-source-types.sql
+\i seeds/catalog/accounting/004-insert-chart-of-accounts-template.sql
 
-SELECT * FROM hr_schema.payment_schedule WHERE payment_schedule_id = 1;
 -- -----------------
 -- INTEGRITY CHECKS
 -- -----------------
@@ -88,7 +102,7 @@ DECLARE
     v_count INT;
     v_failed_tables TEXT[] := '{}';
 BEGIN
-    FOR v_table_name IN 
+    FOR v_table_name IN
         SELECT unnest(ARRAY[
             'general_schema.region',
             'general_schema.role',
@@ -99,6 +113,8 @@ BEGIN
             'general_schema.customer_segment',
             'general_schema.customer_segment_margin_type',
             'general_schema.tax_rate',
+            'general_schema.product_category',  
+            'general_schema.product',            
             'general_schema.account_payable_status',
             'general_schema.account_payable_type',
             'pos_schema.return_reason',
@@ -110,21 +126,25 @@ BEGIN
             'purchase_schema.purchase_order_status',
             'purchase_schema.purchase_order_payment_alert_type',
             'hr_schema.payment_schedule',
-            'hr_schema.paysheet_status'
-            -- 'hr_schema.holiday'
+            'hr_schema.paysheet_status',
+            'accounting_schema.account_type',
+            'accounting_schema.journal_entry_status',
+            'accounting_schema.source_type',
+            'accounting_schema.chart_of_accounts_template'
         ])
     LOOP
         EXECUTE format('SELECT COUNT(*) FROM %s', v_table_name) INTO v_count;
-        
         IF v_count = 0 THEN
             v_failed_tables := array_append(v_failed_tables, v_table_name);
         END IF;
     END LOOP;
-    
+
     IF array_length(v_failed_tables, 1) > 0 THEN
-        RAISE EXCEPTION 'The following tables are empty after seeding: %', 
+        RAISE EXCEPTION 'Las siguientes tablas están vacías después del seeding: %',
             array_to_string(v_failed_tables, ', ');
     END IF;
+
+    RAISE NOTICE 'Bootstrap completado exitosamente.';
 END $$;
 
 COMMIT;

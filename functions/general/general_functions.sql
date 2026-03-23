@@ -197,8 +197,8 @@ $$ language plpgsql;
 CREATE OR REPLACE FUNCTION general_schema.prevent_category_cycles()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_current_id INTEGER;
-    v_visited INTEGER[];
+    v_current_id VARCHAR(13);
+    v_visited VARCHAR(13)[];
     v_max_iterations INTEGER := 10;
     v_iteration INTEGER := 0;
 BEGIN
@@ -266,8 +266,8 @@ BEGIN
         
         NEW.hierarchy_level := v_parent_level + 1;
         
-        IF NEW.hierarchy_level > 5 THEN
-            RAISE EXCEPTION 'Maximum category depth exceeded (max 5 levels)';
+        IF NEW.hierarchy_level > 10 THEN
+            RAISE EXCEPTION 'Maximum category depth exceeded (max 10 levels)';
         END IF;
     END IF;
     
@@ -275,8 +275,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION general_schema.update_category_hierarchy_level() IS 
-    'Automatically calculates and updates hierarchy_level based on parent category. Enforces max depth of 5 levels.';
+COMMENT ON FUNCTION general_schema.update_category_hierarchy_level() IS
+    'Automatically calculates and updates hierarchy_level based on parent category. Enforces max depth of 10 levels.';
 
 DROP TRIGGER IF EXISTS trigger_update_category_hierarchy 
     ON general_schema.product_category;
