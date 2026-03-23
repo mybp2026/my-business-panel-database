@@ -1,6 +1,6 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-03-20 12:04:22
+-- Generated: 2026-03-23 20:05:26
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
@@ -1096,6 +1096,9 @@ CREATE TABLE IF NOT EXISTS discrepancy_count(
     stored_quantity INTEGER NOT NULL,
     physical_quantity INTEGER NOT NULL,
     discrepancy_reason text,
+    /*implementacion */
+    is_applied BOOLEAN NOT NULL DEFAULT FALSE,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -1104,6 +1107,11 @@ CREATE TABLE IF NOT EXISTS discrepancy_count(
 );
 CREATE INDEX IF NOT EXISTS idx_discrepancy_product_variant 
     ON inventory_schema.discrepancy_count(tenant_id, product_variant_id);
+
+/*implementacion */
+CREATE INDEX IF NOT EXISTS idx_discrepancy_pending
+    ON inventory_schema.discrepancy_count(warehouse_id, tenant_id)
+    WHERE is_applied = FALSE;
 
 
 
