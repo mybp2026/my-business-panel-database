@@ -36,6 +36,15 @@ BEGIN
     RAISE NOTICE '========================================';
 END $$ LANGUAGE plpgsql;
 
+
+ALTER TABLE inventory_schema.discrepancy_count
+  ADD COLUMN IF NOT EXISTS is_applied BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_discrepancy_pending
+  ON inventory_schema.discrepancy_count(warehouse_id, tenant_id)
+  WHERE is_applied = FALSE;
+
+
 -- ========================================
 -- SECCIÓN 1: Preparar datos (warehouse + inventory)
 -- ========================================
