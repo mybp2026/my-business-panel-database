@@ -8,6 +8,16 @@ CREATE TABLE IF NOT EXISTS region(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type
+        WHERE typname = 'tax_regime'
+          AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'general_schema')
+    ) THEN
+        CREATE TYPE general_schema.tax_regime AS ENUM ('traditional', 'simplified');
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS tenant(
     tenant_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_name VARCHAR(100) unique not null,
@@ -18,9 +28,13 @@ CREATE TABLE IF NOT EXISTS tenant(
     contact_email VARCHAR(100) not null,
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
+    tax_regime general_schema.tax_regime NOT NULL DEFAULT 'traditional',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+COMMENT ON COLUMN general_schema.tenant.tax_regime IS
+    'Tenant tax regime: traditional (régimen general IVA) or simplified (régimen simplificado, Decreto 38 MH).';
 
 CREATE TABLE IF NOT EXISTS branch(
     branch_id uuid PRIMARY KEY default gen_random_uuid(),
