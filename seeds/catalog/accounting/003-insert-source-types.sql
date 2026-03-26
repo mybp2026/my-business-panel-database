@@ -9,5 +9,6 @@ INSERT INTO accounting_schema.source_type(source_name, description) VALUES
 ('PAYMENT_MADE', 'Pago realizado a proveedor'),
 ('PAYROLL', 'Registro de nómina'),
 ('MANUAL', 'Asiento manual ingresado por el usuario'),
-('ADJUSTMENT', 'Ajuste contable')
+('ADJUSTMENT', 'Ajuste contable'),
+('EXPENSE', 'Registro de gasto operativo')
 ON CONFLICT DO NOTHING;

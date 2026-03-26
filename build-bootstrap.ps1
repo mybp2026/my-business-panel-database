@@ -135,7 +135,7 @@ Add-FileContent "seeds/catalog/accounting/001-insert-account-types.sql" "SEED: A
 Add-FileContent "seeds/catalog/accounting/002-insert-journal-entry-statuses.sql" "SEED: JOURNAL ENTRY STATUSES"
 Add-FileContent "seeds/catalog/accounting/003-insert-source-types.sql" "SEED: SOURCE TYPES"
 Add-FileContent "seeds/catalog/accounting/004-insert-chart-of-accounts-template.sql" "SEED: CHART OF ACCOUNTS TEMPLATE"
-
+Add-FileContent "seeds/catalog/accounting/005-insert-expense-category-template.sql" "SEED: EXPENSE CATEGORY TEMPLATE"
 
 # INTEGRITY CHECKS
 Write-Host "`nAdding integrity checks..." -ForegroundColor Yellow

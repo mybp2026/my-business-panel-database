@@ -8,6 +8,16 @@ CREATE TABLE IF NOT EXISTS region(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type
+        WHERE typname = 'tax_regime'
+          AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'general_schema')
+    ) THEN
+        CREATE TYPE general_schema.tax_regime AS ENUM ('traditional', 'simplified');
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS tenant(
     tenant_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_name VARCHAR(100) unique not null,
@@ -18,9 +28,13 @@ CREATE TABLE IF NOT EXISTS tenant(
     contact_email VARCHAR(100) not null,
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
+    tax_regime general_schema.tax_regime NOT NULL DEFAULT 'traditional',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+COMMENT ON COLUMN general_schema.tenant.tax_regime IS
+    'Tenant tax regime: traditional (régimen general IVA) or simplified (régimen simplificado, Decreto 38 MH).';
 
 CREATE TABLE IF NOT EXISTS branch(
     branch_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -135,7 +149,23 @@ CREATE TABLE IF NOT EXISTS currency(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
- 
+
+CREATE TABLE IF NOT EXISTS exchange_rate (
+    exchange_rate_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_currency_id INTEGER NOT NULL REFERENCES general_schema.currency(currency_id),
+    to_currency_id   INTEGER NOT NULL REFERENCES general_schema.currency(currency_id),
+    rate             NUMERIC(12,6) NOT NULL CHECK (rate > 0),
+    effective_date   DATE NOT NULL,
+    source           VARCHAR(50) DEFAULT 'MANUAL',
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(from_currency_id, to_currency_id, effective_date),
+    CHECK (from_currency_id <> to_currency_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exchange_rate_lookup
+    ON general_schema.exchange_rate(from_currency_id, to_currency_id, effective_date DESC);
+
 -- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
 -- DONE: Ya en el cabys_loader se agregan
 CREATE TABLE IF NOT EXISTS tax_rate(
@@ -314,6 +344,9 @@ CREATE TABLE IF NOT EXISTS product_variant (
     sku VARCHAR(100) NOT NULL,
     variant_name VARCHAR(255),
     unit_price numeric(10,2) CHECK (unit_price >= 0),
+    cost_price NUMERIC(12,3) DEFAULT 0 CHECK (cost_price >= 0),
+    weighted_avg_cost NUMERIC(12,3) DEFAULT 0 CHECK (weighted_avg_cost >= 0),
+    last_purchase_date TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -446,3 +479,26 @@ CREATE TABLE IF NOT EXISTS general_schema.tax_exoneration (
     exonerated_rate NUMERIC(4,2) NOT NULL,
     exoneration_amount NUMERIC(18,5) NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS product_cost_history (
+    cost_history_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id          UUID NOT NULL,
+    product_variant_id UUID NOT NULL,
+    purchase_order_id  UUID,
+    unit_cost          NUMERIC(12,3) NOT NULL CHECK (unit_cost >= 0),
+    currency_id        INTEGER REFERENCES general_schema.currency(currency_id),
+    exchange_rate      NUMERIC(12,6),
+    unit_cost_converted NUMERIC(12,3),
+    quantity           INTEGER NOT NULL CHECK (quantity > 0),
+    effective_date     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_cost_history_variant
+    ON general_schema.product_cost_history(tenant_id, product_variant_id, effective_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_product_cost_history_purchase
+    ON general_schema.product_cost_history(purchase_order_id);

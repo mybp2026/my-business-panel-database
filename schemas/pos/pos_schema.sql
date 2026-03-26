@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS sale_condition (
 
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
-    branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,  
+    branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
     tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id),
     sale_condition VARCHAR(3) not null REFERENCES pos_schema.sale_condition(condition_code),
     sale_date timestamp not null default current_timestamp,
@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS sale(
     total_amount numeric(10,2) not null,
     is_completed BOOLEAN default false,
     has_electronic_invoice BOOLEAN DEFAULT FALSE,
+    seller_user_id uuid REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
     created_at timestamp not null default current_timestamp,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -27,16 +28,21 @@ CREATE INDEX IF NOT EXISTS idx_sale_sale_date on pos_schema.sale(sale_date);
 CREATE TABLE IF NOT EXISTS sale_item(
     sale_item_id uuid PRIMARY KEY default gen_random_uuid(),
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
-    tenant_id uuid not null, 
-    product_variant_id uuid not null,  
+    tenant_id uuid not null,
+    product_variant_id uuid not null,
     quantity INTEGER not null check (quantity > 0),
     unit_price numeric(10,2) not null check (unit_price >= 0),
     total_price numeric(10,2) not null,
+    cost_price_at_sale NUMERIC(12,3),
+    sale_price_type VARCHAR(20) DEFAULT 'NORMAL' CHECK (sale_price_type IN ('NORMAL', 'PROMO', 'SEGMENT', 'MANUAL')),
+    promotion_id uuid REFERENCES pos_schema.promotion(promotion_id) ON DELETE SET NULL,
+    original_price NUMERIC(10,2),
+    discount_applied NUMERIC(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (tenant_id, product_variant_id) 
-        REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
         on delete restrict
 );
 CREATE INDEX IF NOT EXISTS idx_sale_item_product_variant 

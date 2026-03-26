@@ -115,6 +115,11 @@ INSERT INTO accounting_schema.chart_of_accounts_template(account_code, account_n
 ('5-2-001', 'Intereses Pagados',                5, '5-2',   TRUE),
 ('5-2-002', 'Comisiones Bancarias',             5, '5-2',   TRUE),
 ('5-2-003', 'Diferencial Cambiario',            5, '5-2',   TRUE),
+('5-3',     'Gastos Variables',                 5, '5',     FALSE),
+('5-3-001', 'Comisiones por Ventas',            5, '5-3',   TRUE),
+('5-3-002', 'Empaque y Embalaje',               5, '5-3',   TRUE),
+('5-3-003', 'Transporte y Envíos',              5, '5-3',   TRUE),
+('5-3-004', 'Materiales de Producción',         5, '5-3',   TRUE),
 
 -- -------------------------------------------------------
 -- 6. COSTOS

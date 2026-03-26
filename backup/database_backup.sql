@@ -1,6 +1,6 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-03-15 21:13:15
+-- Generated: 2026-03-23 20:05:26
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
@@ -164,7 +164,23 @@ CREATE TABLE IF NOT EXISTS currency(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
- 
+
+CREATE TABLE IF NOT EXISTS exchange_rate (
+    exchange_rate_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_currency_id INTEGER NOT NULL REFERENCES general_schema.currency(currency_id),
+    to_currency_id   INTEGER NOT NULL REFERENCES general_schema.currency(currency_id),
+    rate             NUMERIC(12,6) NOT NULL CHECK (rate > 0),
+    effective_date   DATE NOT NULL,
+    source           VARCHAR(50) DEFAULT 'MANUAL',
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(from_currency_id, to_currency_id, effective_date),
+    CHECK (from_currency_id <> to_currency_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exchange_rate_lookup
+    ON general_schema.exchange_rate(from_currency_id, to_currency_id, effective_date DESC);
+
 -- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
 -- DONE: Ya en el cabys_loader se agregan
 CREATE TABLE IF NOT EXISTS tax_rate(
@@ -343,6 +359,9 @@ CREATE TABLE IF NOT EXISTS product_variant (
     sku VARCHAR(100) NOT NULL,
     variant_name VARCHAR(255),
     unit_price numeric(10,2) CHECK (unit_price >= 0),
+    cost_price NUMERIC(12,3) DEFAULT 0 CHECK (cost_price >= 0),
+    weighted_avg_cost NUMERIC(12,3) DEFAULT 0 CHECK (weighted_avg_cost >= 0),
+    last_purchase_date TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -476,6 +495,29 @@ CREATE TABLE IF NOT EXISTS general_schema.tax_exoneration (
     exoneration_amount NUMERIC(18,5) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS product_cost_history (
+    cost_history_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id          UUID NOT NULL,
+    product_variant_id UUID NOT NULL,
+    purchase_order_id  UUID,
+    unit_cost          NUMERIC(12,3) NOT NULL CHECK (unit_cost >= 0),
+    currency_id        INTEGER REFERENCES general_schema.currency(currency_id),
+    exchange_rate      NUMERIC(12,6),
+    unit_cost_converted NUMERIC(12,3),
+    quantity           INTEGER NOT NULL CHECK (quantity > 0),
+    effective_date     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_cost_history_variant
+    ON general_schema.product_cost_history(tenant_id, product_variant_id, effective_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_product_cost_history_purchase
+    ON general_schema.product_cost_history(purchase_order_id);
+
 
 
 -- =============================================
@@ -492,7 +534,7 @@ CREATE TABLE IF NOT EXISTS sale_condition (
 
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
-    branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,  
+    branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
     tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id),
     sale_condition VARCHAR(3) not null REFERENCES pos_schema.sale_condition(condition_code),
     sale_date timestamp not null default current_timestamp,
@@ -502,6 +544,7 @@ CREATE TABLE IF NOT EXISTS sale(
     total_amount numeric(10,2) not null,
     is_completed BOOLEAN default false,
     has_electronic_invoice BOOLEAN DEFAULT FALSE,
+    seller_user_id uuid REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
     created_at timestamp not null default current_timestamp,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -511,16 +554,21 @@ CREATE INDEX IF NOT EXISTS idx_sale_sale_date on pos_schema.sale(sale_date);
 CREATE TABLE IF NOT EXISTS sale_item(
     sale_item_id uuid PRIMARY KEY default gen_random_uuid(),
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
-    tenant_id uuid not null, 
-    product_variant_id uuid not null,  
+    tenant_id uuid not null,
+    product_variant_id uuid not null,
     quantity INTEGER not null check (quantity > 0),
     unit_price numeric(10,2) not null check (unit_price >= 0),
     total_price numeric(10,2) not null,
+    cost_price_at_sale NUMERIC(12,3),
+    sale_price_type VARCHAR(20) DEFAULT 'NORMAL' CHECK (sale_price_type IN ('NORMAL', 'PROMO', 'SEGMENT', 'MANUAL')),
+    promotion_id uuid REFERENCES pos_schema.promotion(promotion_id) ON DELETE SET NULL,
+    original_price NUMERIC(10,2),
+    discount_applied NUMERIC(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (tenant_id, product_variant_id) 
-        REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
         on delete restrict
 );
 CREATE INDEX IF NOT EXISTS idx_sale_item_product_variant 
@@ -1048,6 +1096,9 @@ CREATE TABLE IF NOT EXISTS discrepancy_count(
     stored_quantity INTEGER NOT NULL,
     physical_quantity INTEGER NOT NULL,
     discrepancy_reason text,
+    /*implementacion */
+    is_applied BOOLEAN NOT NULL DEFAULT FALSE,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -1056,6 +1107,11 @@ CREATE TABLE IF NOT EXISTS discrepancy_count(
 );
 CREATE INDEX IF NOT EXISTS idx_discrepancy_product_variant 
     ON inventory_schema.discrepancy_count(tenant_id, product_variant_id);
+
+/*implementacion */
+CREATE INDEX IF NOT EXISTS idx_discrepancy_pending
+    ON inventory_schema.discrepancy_count(warehouse_id, tenant_id)
+    WHERE is_applied = FALSE;
 
 
 
@@ -1712,6 +1768,100 @@ COMMENT ON TABLE accounting_schema.accounting_mapping_rule IS
 COMMENT ON COLUMN accounting_schema.accounting_mapping_rule_line.amount_field IS
     'References the field from the source transaction to use as the amount (e.g., total_amount, tax_amount, subtotal_amount).';
 
+-- -------------------------------------------------------
+-- CATEGORÍAS DE GASTO (Expense Categories)
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS expense_category (
+    category_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    account_code VARCHAR(20) NOT NULL,
+    parent_category_id UUID REFERENCES accounting_schema.expense_category(category_id) ON DELETE SET NULL,
+    is_fixed BOOLEAN DEFAULT TRUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(tenant_id, name),
+    CONSTRAINT chk_no_self_parent_cat CHECK (category_id != parent_category_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_cat_tenant
+    ON accounting_schema.expense_category(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_expense_cat_active
+    ON accounting_schema.expense_category(tenant_id, is_active)
+    WHERE is_active = TRUE;
+
+COMMENT ON TABLE accounting_schema.expense_category IS
+    'Expense categories that map to chart of accounts codes. is_fixed=TRUE for recurring/fixed expenses, FALSE for variable.';
+COMMENT ON COLUMN accounting_schema.expense_category.account_code IS
+    'References chart_of_accounts.account_code for the tenant. Used to resolve the debit account in journal entries.';
+
+-- -------------------------------------------------------
+-- GASTOS (Expenses)
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS expense (
+    expense_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+    category_id UUID NOT NULL REFERENCES accounting_schema.expense_category(category_id),
+    description TEXT,
+    amount NUMERIC(14,4) NOT NULL CHECK (amount > 0),
+    tax_amount NUMERIC(14,4) NOT NULL DEFAULT 0 CHECK (tax_amount >= 0),
+    total_amount NUMERIC(14,4) NOT NULL CHECK (total_amount > 0),
+    currency_id INTEGER NOT NULL REFERENCES general_schema.currency(currency_id),
+    expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    payment_method VARCHAR(20) NOT NULL DEFAULT 'CASH'
+        CHECK (payment_method IN ('CASH', 'BANK', 'CREDIT_CARD', 'CHECK', 'TRANSFER')),
+    reference_number VARCHAR(50),
+    notes TEXT,
+    created_by UUID REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_tenant
+    ON accounting_schema.expense(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_expense_branch
+    ON accounting_schema.expense(branch_id);
+CREATE INDEX IF NOT EXISTS idx_expense_date
+    ON accounting_schema.expense(tenant_id, expense_date);
+CREATE INDEX IF NOT EXISTS idx_expense_category
+    ON accounting_schema.expense(category_id);
+
+COMMENT ON TABLE accounting_schema.expense IS
+    'Individual expense records. Each expense generates a journal entry via generateExpenseJournal().';
+COMMENT ON COLUMN accounting_schema.expense.payment_method IS
+    'Determines the credit account in journal entries: CASH→Caja General, BANK/TRANSFER/CHECK→Bancos, CREDIT_CARD→CxP.';
+
+-- -------------------------------------------------------
+-- PERÍODO FISCAL (Fiscal Period)
+-- -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS fiscal_period (
+    period_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    is_closed BOOLEAN DEFAULT FALSE,
+    closed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(tenant_id, name),
+    CONSTRAINT chk_period_dates CHECK (end_date > start_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fiscal_period_tenant
+    ON accounting_schema.fiscal_period(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_fiscal_period_dates
+    ON accounting_schema.fiscal_period(tenant_id, start_date, end_date);
+
+COMMENT ON TABLE accounting_schema.fiscal_period IS
+    'Fiscal periods for financial reporting. is_closed prevents modifications to journal entries within the period.';
+
 
 
 -- =============================================
@@ -2108,6 +2258,115 @@ for each row execute function general_schema.update_timestamp();
 drop trigger if exists update_tenant_payment_timestamp on general_schema.tenant_payment;
 create trigger update_tenant_payment_timestamp before update on general_schema.tenant_payment
 for each row execute function general_schema.update_timestamp();
+
+-- -----------------------------------------------------------------
+-- Currency conversion function
+-- -----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION general_schema.convert_currency(
+    p_amount           NUMERIC,
+    p_from_currency_id INTEGER,
+    p_to_currency_id   INTEGER,
+    p_date             DATE DEFAULT CURRENT_DATE
+) RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_rate NUMERIC(12,6);
+BEGIN
+    IF p_from_currency_id = p_to_currency_id THEN
+        RETURN p_amount;
+    END IF;
+
+    SELECT er.rate INTO v_rate
+    FROM general_schema.exchange_rate er
+    WHERE er.from_currency_id = p_from_currency_id
+      AND er.to_currency_id   = p_to_currency_id
+      AND er.effective_date   <= p_date
+    ORDER BY er.effective_date DESC
+    LIMIT 1;
+
+    IF v_rate IS NULL THEN
+        SELECT (1.0 / er.rate) INTO v_rate
+        FROM general_schema.exchange_rate er
+        WHERE er.from_currency_id = p_to_currency_id
+          AND er.to_currency_id   = p_from_currency_id
+          AND er.effective_date   <= p_date
+        ORDER BY er.effective_date DESC
+        LIMIT 1;
+    END IF;
+
+    IF v_rate IS NULL THEN
+        RAISE EXCEPTION 'No exchange rate found for currency % -> % on or before %',
+            p_from_currency_id, p_to_currency_id, p_date;
+    END IF;
+
+    RETURN ROUND(p_amount * v_rate, 3);
+END;
+$$;
+
+-- -----------------------------------------------------------------
+-- Update product cost on purchase receipt (weighted average cost)
+-- -----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION general_schema.update_product_cost_on_receipt(
+    p_tenant_id          UUID,
+    p_product_variant_id UUID,
+    p_purchase_order_id  UUID,
+    p_quantity           INTEGER,
+    p_unit_cost          NUMERIC(12,3),
+    p_currency_id        INTEGER DEFAULT NULL,
+    p_exchange_rate_val  NUMERIC(12,6) DEFAULT NULL
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_current_stock INTEGER;
+    v_current_avg   NUMERIC(12,3);
+    v_new_avg       NUMERIC(12,3);
+    v_cost_converted NUMERIC(12,3);
+BEGIN
+    IF p_exchange_rate_val IS NOT NULL AND p_exchange_rate_val > 0 THEN
+        v_cost_converted := ROUND(p_unit_cost * p_exchange_rate_val, 3);
+    ELSE
+        v_cost_converted := p_unit_cost;
+    END IF;
+
+    SELECT COALESCE(SUM(i.stock), 0) INTO v_current_stock
+    FROM inventory_schema.inventory i
+    WHERE i.tenant_id = p_tenant_id
+      AND i.product_variant_id = p_product_variant_id;
+
+    SELECT COALESCE(pv.weighted_avg_cost, 0) INTO v_current_avg
+    FROM general_schema.product_variant pv
+    WHERE pv.tenant_id = p_tenant_id
+      AND pv.product_variant_id = p_product_variant_id;
+
+    IF (v_current_stock + p_quantity) > 0 THEN
+        v_new_avg := ROUND(
+            (v_current_stock * v_current_avg + p_quantity * v_cost_converted)
+            / (v_current_stock + p_quantity),
+            3
+        );
+    ELSE
+        v_new_avg := v_cost_converted;
+    END IF;
+
+    UPDATE general_schema.product_variant
+    SET cost_price = v_cost_converted,
+        weighted_avg_cost = v_new_avg,
+        last_purchase_date = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE tenant_id = p_tenant_id
+      AND product_variant_id = p_product_variant_id;
+
+    INSERT INTO general_schema.product_cost_history (
+        tenant_id, product_variant_id, purchase_order_id,
+        unit_cost, currency_id, exchange_rate, unit_cost_converted,
+        quantity, effective_date
+    ) VALUES (
+        p_tenant_id, p_product_variant_id, p_purchase_order_id,
+        p_unit_cost, p_currency_id, p_exchange_rate_val, v_cost_converted,
+        p_quantity, CURRENT_TIMESTAMP
+    );
+END;
+$$;
 
 
 
@@ -5246,7 +5505,8 @@ INSERT INTO accounting_schema.source_type(source_name, description) VALUES
 ('PAYMENT_MADE', 'Pago realizado a proveedor'),
 ('PAYROLL', 'Registro de nómina'),
 ('MANUAL', 'Asiento manual ingresado por el usuario'),
-('ADJUSTMENT', 'Ajuste contable')
+('ADJUSTMENT', 'Ajuste contable'),
+('EXPENSE', 'Registro de gasto operativo')
 ON CONFLICT DO NOTHING;
 
 
@@ -5372,6 +5632,11 @@ INSERT INTO accounting_schema.chart_of_accounts_template(account_code, account_n
 ('5-2-001', 'Intereses Pagados',                5, '5-2',   TRUE),
 ('5-2-002', 'Comisiones Bancarias',             5, '5-2',   TRUE),
 ('5-2-003', 'Diferencial Cambiario',            5, '5-2',   TRUE),
+('5-3',     'Gastos Variables',                 5, '5',     FALSE),
+('5-3-001', 'Comisiones por Ventas',            5, '5-3',   TRUE),
+('5-3-002', 'Empaque y Embalaje',               5, '5-3',   TRUE),
+('5-3-003', 'Transporte y Envíos',              5, '5-3',   TRUE),
+('5-3-004', 'Materiales de Producción',         5, '5-3',   TRUE),
 
 -- -------------------------------------------------------
 -- 6. COSTOS
@@ -5380,6 +5645,61 @@ INSERT INTO accounting_schema.chart_of_accounts_template(account_code, account_n
 ('6-1',     'Costo de Ventas',                  6, '6',     TRUE),
 ('6-2',     'Costo de Producción',              6, '6',     TRUE),
 ('6-3',     'Costo de Mano de Obra Directa',    6, '6',     TRUE);
+
+
+
+-- =============================================
+-- SEED: EXPENSE CATEGORY TEMPLATE
+-- Source: seeds/catalog/accounting/005-insert-expense-category-template.sql
+-- =============================================
+-- ============================================================
+-- Expense Category Template
+-- ============================================================
+-- Template table for expense categories, copied to per-tenant
+-- expense_category via provision_tenant_expense_categories().
+-- Maps each category to a chart of accounts code.
+-- ============================================================
+
+SET SEARCH_PATH TO accounting_schema;
+
+CREATE TABLE IF NOT EXISTS accounting_schema.expense_category_template (
+    template_id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    account_code VARCHAR(20) NOT NULL,
+    is_fixed BOOLEAN DEFAULT TRUE,
+    parent_name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE accounting_schema.expense_category_template IS
+    'Template expense categories based on NIIF for PYMES (Costa Rica).
+     Copied to expense_category per tenant via provision_tenant_expense_categories().';
+
+TRUNCATE accounting_schema.expense_category_template RESTART IDENTITY;
+
+INSERT INTO accounting_schema.expense_category_template(name, account_code, is_fixed, parent_name) VALUES
+-- Gastos Operativos Fijos
+('Salarios y Sueldos',               '5-1-001', TRUE,  NULL),
+('Cargas Sociales',                   '5-1-002', TRUE,  NULL),
+('Alquiler',                          '5-1-003', TRUE,  NULL),
+('Servicios Públicos',                '5-1-004', TRUE,  NULL),
+('Depreciación',                      '5-1-005', TRUE,  NULL),
+('Seguros',                           '5-1-006', TRUE,  NULL),
+('Suministros de Oficina',            '5-1-007', TRUE,  NULL),
+('Mantenimiento y Reparaciones',      '5-1-008', TRUE,  NULL),
+('Publicidad y Mercadeo',             '5-1-009', TRUE,  NULL),
+('Gastos de Viaje',                   '5-1-010', TRUE,  NULL),
+
+-- Gastos Financieros
+('Intereses Pagados',                 '5-2-001', TRUE,  NULL),
+('Comisiones Bancarias',              '5-2-002', TRUE,  NULL),
+('Diferencial Cambiario',             '5-2-003', TRUE,  NULL),
+
+-- Gastos Variables
+('Comisiones por Ventas',             '5-3-001', FALSE, NULL),
+('Empaque y Embalaje',                '5-3-002', FALSE, NULL),
+('Transporte y Envíos',               '5-3-003', FALSE, NULL),
+('Materiales de Producción',          '5-3-004', FALSE, NULL);
 
 
 
