@@ -35,7 +35,6 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- -----------------
 \i functions/general/general_functions.sql
 \i functions/pos/pos_functions.sql
-\i functions/inventory/inventory_functions.sql
 \i functions/purchase/purchase_functions.sql
 \i functions/hr/hr_functions.sql
 
@@ -53,6 +52,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 \i seeds/catalog/general/009-insert-payment_methods.sql
 \i seeds/catalog/general/010-insert-account-payable-status.sql
 \i seeds/catalog/general/011-insert-account-payable-types.sql
+\i seeds/catalog/general/012-insert-product-categories.sql
+\i seeds/catalog/general/013-insert-products.sql
 
 -- -----------------
 -- SEEDS - CATALOG POS

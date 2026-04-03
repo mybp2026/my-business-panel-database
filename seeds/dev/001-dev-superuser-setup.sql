@@ -58,8 +58,10 @@ DECLARE
   v_return_id        UUID := 'a0000001-0000-0000-0000-000000000019';
   v_paysheet_id      UUID := 'a0000001-0000-0000-0000-000000000020';
 
-  v_employee_id UUID;
-  v_turn_id     INTEGER;
+  v_employee_id            UUID;
+  v_turn_id                INTEGER;
+  v_account_payable_id     UUID;
+  v_account_payable_type_id INT;
 BEGIN
 
   -- ─────────────────────────────────────────────────────────────
@@ -233,6 +235,11 @@ BEGIN
      v_tenant_id)
   ON CONFLICT (supplier_id) DO NOTHING;
 
+  -- Vincular proveedor a la sucursal (requerido para flujo de compras)
+  INSERT INTO purchase_schema.supplier_branch (supplier_id, branch_id)
+  VALUES (v_supplier_id, v_branch_id)
+  ON CONFLICT (supplier_id, branch_id) DO NOTHING;
+
   -- purchase_order_status_id 1 = Pendiente (seed catalog/purchase)
   INSERT INTO purchase_schema.purchase_order
     (purchase_order_id, supplier_id, warehouse_id,
@@ -252,6 +259,38 @@ BEGIN
        quantity_ordered, unit_price)
     VALUES
       (v_purchase_id, v_tenant_id, v_variant1_id, 100, 1200.000);
+  END IF;
+
+  -- Crear account_payable + purchase_account_payable si no existen
+  -- subtotal = 100 * 1200 = 120000, IVA 13% = 15600
+  IF NOT EXISTS (
+    SELECT 1 FROM purchase_schema.purchase_account_payable
+    WHERE purchase_order_id = v_purchase_id
+  ) THEN
+    SELECT account_payable_type_id INTO v_account_payable_type_id
+    FROM general_schema.account_payable_type
+    WHERE type_name = 'goods_purchase' LIMIT 1;
+
+    INSERT INTO general_schema.account_payable
+      (account_payable_type_id, has_invoice, has_tax,
+       subtotal, amount_paid, is_paid, due_date)
+    VALUES
+      (v_account_payable_type_id, true, true,
+       120000.000, 0, false, (current_date + interval '30 days')::date)
+    RETURNING account_payable_id INTO v_account_payable_id;
+
+    INSERT INTO purchase_schema.purchase_account_payable
+      (account_payable_id, purchase_order_id, tax_amount, account_payable_status)
+    VALUES
+      (v_account_payable_id, v_purchase_id, 15600.000, 1);
+
+    INSERT INTO purchase_schema.supplier_invoice
+      (purchase_order_id, invoice_number, invoice_date,
+       payment_condition, due_date, subtotal_amount, tax_rate)
+    VALUES
+      (v_purchase_id, 'INV-SEED-001', current_timestamp,
+       'CREDIT', (current_date + interval '30 days')::date,
+       120000.000, 13.00);
   END IF;
 
 
