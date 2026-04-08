@@ -37,7 +37,6 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- -----------------
 \i functions/general/general_functions.sql
 \i functions/pos/pos_functions.sql
-\i functions/inventory/inventory_functions.sql
 \i functions/purchase/purchase_functions.sql
 \i functions/hr/hr_functions.sql
 \i functions/accounting/accounting_functions.sql
@@ -114,8 +113,6 @@ BEGIN
             'general_schema.customer_segment',
             'general_schema.customer_segment_margin_type',
             'general_schema.tax_rate',
-            'general_schema.product_category',  
-            'general_schema.product',            
             'general_schema.account_payable_status',
             'general_schema.account_payable_type',
             'pos_schema.return_reason',
