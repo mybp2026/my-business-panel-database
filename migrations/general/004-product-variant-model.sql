@@ -136,11 +136,14 @@ ALTER TABLE inventory_schema.inventory
 ALTER TABLE inventory_schema.inventory 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE inventory_schema.inventory 
-    ADD CONSTRAINT inventory_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE inventory_schema.inventory
+  ADD CONSTRAINT inventory_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_inventory_product_variant 
     ON inventory_schema.inventory(tenant_id, product_variant_id);
@@ -154,11 +157,14 @@ ALTER TABLE inventory_schema.inventory_log
 ALTER TABLE inventory_schema.inventory_log 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE inventory_schema.inventory_log 
-    ADD CONSTRAINT inventory_log_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE inventory_schema.inventory_log
+  ADD CONSTRAINT inventory_log_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_inventory_log_product_variant 
     ON inventory_schema.inventory_log(tenant_id, product_variant_id);
@@ -172,11 +178,14 @@ ALTER TABLE inventory_schema.inventory_transfer_product
 ALTER TABLE inventory_schema.inventory_transfer_product 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE inventory_schema.inventory_transfer_product 
-    ADD CONSTRAINT inventory_transfer_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE inventory_schema.inventory_transfer_product
+  ADD CONSTRAINT inventory_transfer_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_transfer_product_variant 
     ON inventory_schema.inventory_transfer_product(tenant_id, product_variant_id);
@@ -190,11 +199,14 @@ ALTER TABLE inventory_schema.discrepancy_count
 ALTER TABLE inventory_schema.discrepancy_count 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE inventory_schema.discrepancy_count 
-    ADD CONSTRAINT discrepancy_count_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE inventory_schema.discrepancy_count
+  ADD CONSTRAINT discrepancy_count_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_discrepancy_product_variant 
     ON inventory_schema.discrepancy_count(tenant_id, product_variant_id);
@@ -210,11 +222,14 @@ ALTER TABLE pos_schema.sale_item
 ALTER TABLE pos_schema.sale_item 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE pos_schema.sale_item 
-    ADD CONSTRAINT sale_item_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE RESTRICT;
+DO $$ BEGIN
+  ALTER TABLE pos_schema.sale_item
+  ADD CONSTRAINT sale_item_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 DROP INDEX IF EXISTS pos_schema.idx_sale_item_product_id;
 DROP INDEX IF EXISTS pos_schema.idx_sale_item_tenant_product;
@@ -236,11 +251,14 @@ ALTER TABLE purchase_schema.purchase_order_item
 ALTER TABLE purchase_schema.purchase_order_item 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE purchase_schema.purchase_order_item 
-    ADD CONSTRAINT purchase_order_item_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE purchase_schema.purchase_order_item
+  ADD CONSTRAINT purchase_order_item_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_purchase_order_item_variant 
     ON purchase_schema.purchase_order_item(tenant_id, product_variant_id);
@@ -254,11 +272,14 @@ ALTER TABLE purchase_schema.supplier_invoice_item
 ALTER TABLE purchase_schema.supplier_invoice_item 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE purchase_schema.supplier_invoice_item 
-    ADD CONSTRAINT supplier_invoice_item_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE purchase_schema.supplier_invoice_item
+  ADD CONSTRAINT supplier_invoice_item_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_supplier_invoice_item_variant 
     ON purchase_schema.supplier_invoice_item(tenant_id, product_variant_id);
@@ -272,11 +293,14 @@ ALTER TABLE purchase_schema.goods_receipt_item
 ALTER TABLE purchase_schema.goods_receipt_item 
     ALTER COLUMN product_id DROP NOT NULL;
 
-ALTER TABLE purchase_schema.goods_receipt_item 
-    ADD CONSTRAINT goods_receipt_item_product_variant_fkey 
-    FOREIGN KEY (tenant_id, product_variant_id) 
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id) 
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE purchase_schema.goods_receipt_item
+  ADD CONSTRAINT goods_receipt_item_product_variant_fkey
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_goods_receipt_item_variant 
     ON purchase_schema.goods_receipt_item(tenant_id, product_variant_id);

@@ -255,11 +255,14 @@ CREATE INDEX IF NOT EXISTS idx_product_name_fts
     ON general_schema.product USING gin(product_name_tsv);
 
 -- Recreate old FK on product_variant
-ALTER TABLE general_schema.product_variant
-    ADD CONSTRAINT product_variant_tenant_id_product_id_fkey
-    FOREIGN KEY (tenant_id, product_id)
-    REFERENCES general_schema.product(tenant_id, product_id)
-    ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE general_schema.product_variant
+  ADD CONSTRAINT product_variant_tenant_id_product_id_fkey
+  FOREIGN KEY (tenant_id, product_id)
+  REFERENCES general_schema.product(tenant_id, product_id)
+  ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Recreate old index on product_variant
 CREATE INDEX IF NOT EXISTS idx_product_variant_product
