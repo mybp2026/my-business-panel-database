@@ -36,6 +36,22 @@ CREATE TABLE IF NOT EXISTS tenant(
 COMMENT ON COLUMN general_schema.tenant.tax_regime IS
     'Tenant tax regime: traditional (régimen general IVA) or simplified (régimen simplificado, Decreto 38 MH).';
 
+CREATE TABLE IF NOT EXISTS tenant_hacienda_config (
+    tenant_hacienda_config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL UNIQUE REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    hacienda_username TEXT NOT NULL,
+    hacienda_password TEXT NOT NULL,
+    hacienda_client_id VARCHAR(20) NOT NULL DEFAULT 'api-prod',
+    p12_base64 TEXT NOT NULL,
+    p12_password TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_hacienda_config_tenant
+    ON general_schema.tenant_hacienda_config(tenant_id);  
+
 CREATE TABLE IF NOT EXISTS branch(
     branch_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
