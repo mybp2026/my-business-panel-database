@@ -36,6 +36,22 @@ CREATE TABLE IF NOT EXISTS tenant(
 COMMENT ON COLUMN general_schema.tenant.tax_regime IS
     'Tenant tax regime: traditional (régimen general IVA) or simplified (régimen simplificado, Decreto 38 MH).';
 
+CREATE TABLE IF NOT EXISTS tenant_hacienda_config (
+    tenant_hacienda_config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL UNIQUE REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    hacienda_username TEXT NOT NULL,
+    hacienda_password TEXT NOT NULL,
+    hacienda_client_id VARCHAR(20) NOT NULL DEFAULT 'api-prod',
+    p12_base64 TEXT NOT NULL,
+    p12_password TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_hacienda_config_tenant
+    ON general_schema.tenant_hacienda_config(tenant_id);  
+
 CREATE TABLE IF NOT EXISTS branch(
     branch_id uuid PRIMARY KEY default gen_random_uuid(),
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
@@ -43,6 +59,7 @@ CREATE TABLE IF NOT EXISTS branch(
     branch_address text,
     branch_number VARCHAR(4),   
     contact_email VARCHAR(100),
+    econ_activity VARCHAR(10),
     is_main_branch BOOLEAN default false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -51,10 +68,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS unique_main_branch_per_tenant
     on general_schema.branch (tenant_id)
     where is_main_branch = true;
 
--- Dirección estructurada del tenant para facturación electrónica (DGT-R-48-2016)
-CREATE TABLE IF NOT EXISTS tenant_location (
-    tenant_location_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL UNIQUE REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+-- Dirección estructurada del branch para facturación electrónica (DGT-R-48-2016)
+CREATE TABLE IF NOT EXISTS branch_location (
+    branch_location_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID NOT NULL UNIQUE REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
     provincia  VARCHAR(1)  NOT NULL DEFAULT '1',   -- 1=San José … 7=Limón
     canton     VARCHAR(2)  NOT NULL DEFAULT '01',
     distrito   VARCHAR(2)  NOT NULL DEFAULT '01',
@@ -63,8 +80,8 @@ CREATE TABLE IF NOT EXISTS tenant_location (
     updated_at TIMESTAMP          DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_tenant_location_tenant_id
-    ON general_schema.tenant_location(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_branch_location_branch_id
+    ON general_schema.branch_location(branch_id);
 
 CREATE TABLE IF NOT EXISTS document_type(
     document_type_id SERIAL PRIMARY KEY, 
