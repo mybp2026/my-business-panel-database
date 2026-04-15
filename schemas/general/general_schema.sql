@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tenant(
     tenant_name VARCHAR(100) unique not null,
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
     identification VARCHAR(21) unique not null,
+    document_type_id INTEGER REFERENCES general_schema.document_type(document_type_id) on delete set null,
     econ_activity VARCHAR(10),
     sign text,
     contact_email VARCHAR(100) not null,

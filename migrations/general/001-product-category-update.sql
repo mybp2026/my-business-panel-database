@@ -31,9 +31,12 @@ CREATE INDEX IF NOT EXISTS idx_product_category_parent
 CREATE INDEX IF NOT EXISTS idx_product_category_hierarchy 
     ON general_schema.product_category(parent_category_id, hierarchy_level);
 
-ALTER TABLE general_schema.product_category
-ADD CONSTRAINT chk_no_self_reference 
-    CHECK (product_category_id != parent_category_id);
+DO $$ BEGIN
+  ALTER TABLE general_schema.product_category
+  ADD CONSTRAINT chk_no_self_reference
+  CHECK (product_category_id != parent_category_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 COMMENT ON COLUMN general_schema.product_category.parent_category_id IS 
     'Reference to parent category. NULL for root categories.';

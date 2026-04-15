@@ -19,9 +19,12 @@ ALTER TABLE purchase_schema.supplier
 DROP CONSTRAINT IF EXISTS supplier_added_by_fkey;
 
 -- 2. Add new foreign key constraint referencing tenant
-ALTER TABLE purchase_schema.supplier
-ADD CONSTRAINT supplier_added_by_tenant_fkey
-FOREIGN KEY (added_by) REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE purchase_schema.supplier
+  ADD CONSTRAINT supplier_added_by_tenant_fkey
+  FOREIGN KEY (added_by) REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- 3. Recreate index if needed (optional, as query patterns may differ)
 DROP INDEX IF EXISTS idx_supplier_added_by;

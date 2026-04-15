@@ -112,7 +112,7 @@ CREATE OR REPLACE FUNCTION general_schema.get_subcategories(
 )
 RETURNS TABLE(
     category_id INTEGER,
-    category_name TEXT,
+    category_name VARCHAR(100),
     parent_id INTEGER,
     level INTEGER,
     full_path TEXT,

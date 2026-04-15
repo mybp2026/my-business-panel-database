@@ -89,11 +89,14 @@ ALTER TABLE pos_schema.electronic_sale_invoice_items
     ALTER COLUMN tenant_id SET NOT NULL,
     ALTER COLUMN product_variant_id SET NOT NULL;
 
-ALTER TABLE pos_schema.electronic_sale_invoice_items
-    ADD CONSTRAINT fk_electronic_item_product_variant
-    FOREIGN KEY (tenant_id, product_variant_id)
-    REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
-    ON DELETE RESTRICT;
+DO $$ BEGIN
+  ALTER TABLE pos_schema.electronic_sale_invoice_items
+  ADD CONSTRAINT fk_electronic_item_product_variant
+  FOREIGN KEY (tenant_id, product_variant_id)
+  REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+  ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
     ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);

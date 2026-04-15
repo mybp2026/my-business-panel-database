@@ -25,6 +25,30 @@ CREATE TABLE IF NOT EXISTS sale(
 CREATE INDEX IF NOT EXISTS idx_sale_branch_id on pos_schema.sale(branch_id);
 CREATE INDEX IF NOT EXISTS idx_sale_sale_date on pos_schema.sale(sale_date);
 
+CREATE TABLE IF NOT EXISTS promotion_type(
+    promotion_type_id SERIAL PRIMARY KEY,
+    type_name VARCHAR(50) unique not null,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS promotion(
+    promotion_id uuid PRIMARY KEY default gen_random_uuid(),
+    tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
+    promotion_name VARCHAR(100) not null,
+    promotion_code VARCHAR(50) not null,
+    promotion_description text,
+    promotion_type_id int REFERENCES pos_schema.promotion_type(promotion_type_id) on delete set null,
+    customer_segment_id int REFERENCES general_schema.customer_segment(customer_segment_id) on delete set null,
+    promotion_start_date date not null,
+    promotion_end_date date not null,
+    is_active BOOLEAN default false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    check (promotion_end_date > promotion_start_date)
+);
+
 CREATE TABLE IF NOT EXISTS sale_item(
     sale_item_id uuid PRIMARY KEY default gen_random_uuid(),
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
@@ -216,30 +240,6 @@ CREATE TABLE IF NOT EXISTS return_product(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_return_product_transaction_id on pos_schema.return_product(return_transaction_id);
-
-CREATE TABLE IF NOT EXISTS promotion_type(
-    promotion_type_id SERIAL PRIMARY KEY,
-    type_name VARCHAR(50) unique not null,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS promotion(
-    promotion_id uuid PRIMARY KEY default gen_random_uuid(),
-    tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
-    promotion_name VARCHAR(100) not null,
-    promotion_code VARCHAR(50) not null,
-    promotion_description text,
-    promotion_type_id int REFERENCES pos_schema.promotion_type(promotion_type_id) on delete set null,
-    customer_segment_id int REFERENCES general_schema.customer_segment(customer_segment_id) on delete set null,
-    promotion_start_date date not null,
-    promotion_end_date date not null,
-    is_active BOOLEAN default false,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    check (promotion_end_date > promotion_start_date)
-);
 
 CREATE TABLE IF NOT EXISTS promotion_rule(
     promotion_rule_id uuid PRIMARY KEY default gen_random_uuid(),

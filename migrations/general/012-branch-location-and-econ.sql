@@ -45,19 +45,7 @@ ALTER TABLE general_schema.branch_location ADD CONSTRAINT branch_location_branch
 CREATE INDEX IF NOT EXISTS idx_branch_location_branch_id
     ON general_schema.branch_location(branch_id);
 
--- Update the specifically requested branch_id specific record
-INSERT INTO general_schema.branch_location (branch_id, provincia, canton, distrito, otras_senas)
-VALUES ('859cc745-185e-4af3-82fc-9c5b8d6e6f26', '4', '09', '01', 'Calle Principal 123, San José, Costa Rica')
-ON CONFLICT (branch_id) DO UPDATE SET
-    provincia = '4',
-    canton = '09',
-    distrito = '01',
-    otras_senas = 'Calle Principal 123, San José, Costa Rica';
-
--- Update the specifically requested branch_id econ_activity
-UPDATE general_schema.branch
-SET econ_activity = '620100'
-WHERE branch_id = '859cc745-185e-4af3-82fc-9c5b8d6e6f26';
+-- Seed data moved to 022-fix-branch-location-seed.sql (conditional insert)
 
 COMMIT;
 
