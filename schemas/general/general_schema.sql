@@ -82,8 +82,8 @@ CREATE TABLE IF NOT EXISTS branch_location (
 CREATE INDEX IF NOT EXISTS idx_branch_location_branch_id
     ON general_schema.branch_location(branch_id);
 
-CREATE TABLE IF NOT EXISTS document_type(
-    document_type_id SERIAL PRIMARY KEY, 
+CREATE TABLE IF NOT EXISTS identification_type(
+    identification_type_id SERIAL PRIMARY KEY,
     type_name VARCHAR(50) unique not null,
     description text,
     ident_code VARCHAR(3) not null, -- Campo requerido para la facturacion
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS tenant_customer(
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,  
     first_name VARCHAR(100) not null,
     last_name VARCHAR(100) not null,
-    document_type_id INTEGER REFERENCES general_schema.document_type(document_type_id) on delete set null,  
+    identification_type_id INTEGER REFERENCES general_schema.identification_type(identification_type_id) on delete set null,
     document_number VARCHAR(50) not null,
     econ_activity VARCHAR(6), -- Requerido para la factura
     email VARCHAR(255) not null,

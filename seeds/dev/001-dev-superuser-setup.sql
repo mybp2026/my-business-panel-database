@@ -169,10 +169,10 @@ BEGIN
   -- ─────────────────────────────────────────────────────────────
   -- FASE 6 — CLIENTE
   -- ─────────────────────────────────────────────────────────────
-  -- document_type_id 1 = Cédula Física (seed catalog/general)
+  -- identification_type_id 1 = Cédula Física (seed catalog/general)
   INSERT INTO general_schema.tenant_customer
     (tenant_customer_id, tenant_id, first_name, last_name,
-     document_type_id, document_number, econ_activity,
+     identification_type_id, document_number, econ_activity,
      email, phone, address, is_tenant)
   VALUES
     (v_customer_id, v_tenant_id, 'María', 'Rodríguez Vega',

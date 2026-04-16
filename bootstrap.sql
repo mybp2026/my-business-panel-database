@@ -107,7 +107,7 @@ BEGIN
         SELECT unnest(ARRAY[
             'general_schema.region',
             'general_schema.role',
-            'general_schema.document_type',
+            'general_schema.identification_type',
             'general_schema.currency',
             'general_schema.payment_method',
             'general_schema.subscription_type',
