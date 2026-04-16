@@ -59,7 +59,6 @@ CREATE TABLE IF NOT EXISTS branch(
     branch_address text,
     branch_number VARCHAR(4),   
     contact_email VARCHAR(100),
-    econ_activity VARCHAR(10),
     is_main_branch BOOLEAN default false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
