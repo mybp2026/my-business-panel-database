@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tenant(
     tenant_name VARCHAR(100) unique not null,
     region_id INTEGER REFERENCES general_schema.region(region_id) on delete set null,
     identification VARCHAR(21) unique not null,
+    identification_type_id INTEGER, -- FK added after identification_type table via ALTER TABLE below
     econ_activity VARCHAR(10),
     sign text,
     contact_email VARCHAR(100) not null,
@@ -90,6 +91,21 @@ CREATE TABLE IF NOT EXISTS identification_type(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- FK from tenant to identification_type (deferred because tenant is defined first)
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'tenant_identification_type_id_fkey'
+          AND conrelid = 'general_schema.tenant'::regclass
+    ) THEN
+        ALTER TABLE general_schema.tenant
+            ADD CONSTRAINT tenant_identification_type_id_fkey
+            FOREIGN KEY (identification_type_id)
+            REFERENCES general_schema.identification_type(identification_type_id)
+            ON DELETE SET NULL;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS customer_segment(
     customer_segment_id SERIAL PRIMARY KEY,
