@@ -140,9 +140,9 @@ CREATE TABLE IF NOT EXISTS tenant_customer(
     last_name VARCHAR(100) not null,
     identification_type_id INTEGER REFERENCES general_schema.identification_type(identification_type_id) on delete set null,
     document_number VARCHAR(50) not null,
-    econ_activity VARCHAR(6), -- Requerido para la factura
-    email VARCHAR(255) not null,
-    phone VARCHAR(50) not null,
+    econ_activity VARCHAR(6),
+    email VARCHAR(255),
+    phone VARCHAR(50),
     birthdate date,
     address text,
     is_tenant BOOLEAN default false,
