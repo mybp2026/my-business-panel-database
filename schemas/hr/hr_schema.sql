@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS contract(
 	base_salary NUMERIC(19, 4) NOT NULL,
 	duties TEXT,
 	turn_type INTEGER,
-	turn_id INTEGER REFERENCES hr_schema.turn(turn_id) NOT NULL
+	turn_id INTEGER REFERENCES hr_schema.turn(turn_id)
 );
 --Indice para filtracion o busqueda por rango de precios
 CREATE INDEX idx_contract_base_salary ON hr_schema.contract (base_salary);
