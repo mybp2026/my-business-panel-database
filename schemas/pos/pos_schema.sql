@@ -194,15 +194,20 @@ CREATE TABLE IF NOT EXISTS return_status(
 
 CREATE TABLE IF NOT EXISTS return_transaction(
     return_transaction_id uuid PRIMARY KEY default gen_random_uuid(),
-    digital_sale_invoice_id uuid not null REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) on delete cascade,
+    digital_sale_invoice_id uuid REFERENCES pos_schema.digital_sale_invoice(digital_sale_invoice_id) on delete cascade,
+    electronic_sale_invoice_id uuid REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) on delete cascade,
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete set null,
     total_refund_amount numeric(10,2) not null check (total_refund_amount >= 0),
     refund_method int REFERENCES general_schema.payment_method(payment_method_id) on delete set null,
     return_status_id INTEGER REFERENCES pos_schema.return_status(return_status_id) on delete set null,
     return_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_return_transaction_invoice CHECK (
+        digital_sale_invoice_id IS NOT NULL OR electronic_sale_invoice_id IS NOT NULL
+    )
 );
 CREATE INDEX IF NOT EXISTS idx_return_transaction_digital_sale_invoice_id on pos_schema.return_transaction(digital_sale_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_return_transaction_electronic_sale_invoice_id on pos_schema.return_transaction(electronic_sale_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_return_transaction_date on pos_schema.return_transaction(return_date);
 
 CREATE TABLE IF NOT EXISTS return_product(
@@ -415,7 +420,7 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
     product_variant_id UUID NOT NULL,
-    sale_item_id uuid NOT NULL REFERENCES pos_schema.sale_item(sale_item_id), 
+    sale_item_id uuid NOT NULL REFERENCES pos_schema.sale_item(sale_item_id) ON DELETE CASCADE,
     line_number INTEGER NOT NULL,
     -- cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
     -- description VARCHAR(200) NOT NULL,  -- Product description
