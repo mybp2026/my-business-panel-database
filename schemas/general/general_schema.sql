@@ -380,6 +380,7 @@ CREATE TABLE IF NOT EXISTS product_variant (
     weighted_avg_cost NUMERIC(12,3) DEFAULT 0 CHECK (weighted_avg_cost >= 0),
     last_purchase_date TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
+    is_composite BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -448,8 +449,120 @@ CREATE INDEX IF NOT EXISTS idx_attr_assignation_variant
 CREATE INDEX IF NOT EXISTS idx_attr_assignation_value 
     ON general_schema.attribute_assignation(attribute_value_id);
 
-COMMENT ON TABLE general_schema.attribute_assignation IS 
+COMMENT ON TABLE general_schema.attribute_assignation IS
     'Links product variants to their attribute values (e.g., Color: Red, Size: Medium).';
+
+-- ============================================================================
+-- PRODUCT VARIANT COMPOSITION (six-pack / batch / kit)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS product_variant_composition (
+    tenant_id                  uuid    NOT NULL,
+    parent_product_variant_id  uuid    NOT NULL,
+    child_product_variant_id   uuid    NOT NULL,
+    quantity                   numeric(12,3) NOT NULL CHECK (quantity > 0),
+    created_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, parent_product_variant_id, child_product_variant_id),
+    CHECK (parent_product_variant_id <> child_product_variant_id),
+    FOREIGN KEY (tenant_id, parent_product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id, child_product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
+        ON DELETE RESTRICT
+) PARTITION BY HASH (tenant_id);
+
+DO $$ DECLARE i INT; BEGIN
+  FOR i IN 0..7 LOOP
+    EXECUTE format(
+      'CREATE TABLE IF NOT EXISTS general_schema.product_variant_composition_p%s
+       PARTITION OF general_schema.product_variant_composition
+       FOR VALUES WITH (MODULUS 8, REMAINDER %s);', i, i);
+  END LOOP;
+END $$ LANGUAGE plpgsql;
+
+CREATE INDEX IF NOT EXISTS idx_pvc_parent
+    ON general_schema.product_variant_composition (tenant_id, parent_product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_pvc_child
+    ON general_schema.product_variant_composition (tenant_id, child_product_variant_id);
+
+COMMENT ON TABLE general_schema.product_variant_composition IS
+    'Composite product variants: parent explodes into N children with a quantity ratio.';
+
+-- ============================================================================
+-- TENANT PRODUCT GROUPING (departments, families, brands, etc.)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tenant_product_group_type (
+    tenant_product_group_type_id  uuid    NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id                     uuid    NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    type_name                     VARCHAR(80) NOT NULL,
+    description                   TEXT,
+    is_active                     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at                    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, tenant_product_group_type_id),
+    UNIQUE (tenant_id, type_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tpgt_tenant
+    ON general_schema.tenant_product_group_type(tenant_id);
+
+COMMENT ON TABLE general_schema.tenant_product_group_type IS
+    'Classification dimensions per tenant (e.g., Department, Family, Brand).';
+
+CREATE TABLE IF NOT EXISTS tenant_product_group (
+    tenant_product_group_id       uuid    NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id                     uuid    NOT NULL,
+    tenant_product_group_type_id  uuid    NOT NULL,
+    parent_group_id               uuid,
+    group_name                    VARCHAR(120) NOT NULL,
+    hierarchy_level               INTEGER NOT NULL DEFAULT 0 CHECK (hierarchy_level >= 0),
+    is_active                     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at                    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, tenant_product_group_id),
+    FOREIGN KEY (tenant_id, tenant_product_group_type_id)
+        REFERENCES general_schema.tenant_product_group_type(tenant_id, tenant_product_group_type_id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id, parent_group_id)
+        REFERENCES general_schema.tenant_product_group(tenant_id, tenant_product_group_id) ON DELETE CASCADE,
+    CHECK (parent_group_id IS NULL OR parent_group_id <> tenant_product_group_id),
+    UNIQUE (tenant_id, tenant_product_group_type_id, parent_group_id, group_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tpg_parent
+    ON general_schema.tenant_product_group(tenant_id, parent_group_id) WHERE parent_group_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tpg_type
+    ON general_schema.tenant_product_group(tenant_id, tenant_product_group_type_id);
+
+COMMENT ON TABLE general_schema.tenant_product_group IS
+    'Hierarchical group nodes within a classification dimension.';
+
+CREATE TABLE IF NOT EXISTS product_variant_group_assignment (
+    tenant_id                  uuid NOT NULL,
+    product_variant_id         uuid NOT NULL,
+    tenant_product_group_id    uuid NOT NULL,
+    created_at                 TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, product_variant_id, tenant_product_group_id),
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id, tenant_product_group_id)
+        REFERENCES general_schema.tenant_product_group(tenant_id, tenant_product_group_id) ON DELETE CASCADE
+) PARTITION BY HASH (tenant_id);
+
+DO $$ DECLARE i INT; BEGIN
+  FOR i IN 0..7 LOOP
+    EXECUTE format(
+      'CREATE TABLE IF NOT EXISTS general_schema.product_variant_group_assignment_p%s
+       PARTITION OF general_schema.product_variant_group_assignment
+       FOR VALUES WITH (MODULUS 8, REMAINDER %s);', i, i);
+  END LOOP;
+END $$ LANGUAGE plpgsql;
+
+CREATE INDEX IF NOT EXISTS idx_pvga_group
+    ON general_schema.product_variant_group_assignment(tenant_id, tenant_product_group_id);
+
+COMMENT ON TABLE general_schema.product_variant_group_assignment IS
+    'M2M between product variants and tenant groups (variants can belong across dimensions).';
 
 CREATE TABLE IF NOT EXISTS account_payable_status(
     status_id SERIAL PRIMARY KEY,
