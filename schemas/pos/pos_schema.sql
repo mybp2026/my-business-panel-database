@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS sale_condition (
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
-    tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id),
+    -- nullable: walk-in/anonymous sales no requieren registrar al cliente
+    tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id),
     sale_condition VARCHAR(3) not null REFERENCES pos_schema.sale_condition(condition_code),
     sale_date timestamp not null default current_timestamp,
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
@@ -85,7 +86,8 @@ CREATE TABLE IF NOT EXISTS cash_register_sale(
 
 CREATE TABLE IF NOT EXISTS customer_payment(
     customer_payment_id uuid PRIMARY KEY not null default gen_random_uuid(),
-    tenant_customer_id uuid not null REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete cascade,   
+    -- nullable: walk-in/anonymous sales pay without a registered customer
+    tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id) on delete cascade,
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
     payment_method_id INTEGER REFERENCES general_schema.payment_method(payment_method_id) on delete set null,
     is_points_redemption BOOLEAN default false,

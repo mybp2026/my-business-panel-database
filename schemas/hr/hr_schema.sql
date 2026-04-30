@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS employee(
 	first_name VARCHAR(100) NOT NULL,
 	last_name VARCHAR(100) NOT NULL,
 	doc_number VARCHAR(100) NOT NULL UNIQUE,
+	identification_type_id INTEGER REFERENCES general_schema.identification_type(identification_type_id) ON DELETE SET NULL,
 	phone VARCHAR(100) NOT NULL,
 	email VARCHAR(100) NOT NULL UNIQUE,
 	contract_id UUID NOT NULL REFERENCES hr_schema.contract(contract_id) ON DELETE CASCADE,
@@ -60,6 +61,9 @@ CREATE TABLE IF NOT EXISTS employee(
 	
 --Indice para que se pueda garantizar que no haya empleados duplicados
 CREATE UNIQUE INDEX idx_employee_doc_number ON hr_schema.employee (doc_number);
+
+--Indice para JOINs de tipo de documento
+CREATE INDEX idx_employee_identification_type ON hr_schema.employee (identification_type_id);
 
 --Inidice para la recuperacion de cuentas o autenticacion del empleado
 CREATE UNIQUE INDEX idx_employee_email ON hr_schema.employee (email);

@@ -260,9 +260,38 @@ CREATE TABLE IF NOT EXISTS subscription(
     is_active BOOLEAN default true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+
     check (end_date > start_date)
 );
+
+-- Códigos de un solo uso que el superusuario emite para que ciertas
+-- personas se registren en el onboarding sin pagar Stripe. La
+-- transacción de onboarding marca is_used = TRUE y deja el tenant_id
+-- que consumió el código.
+CREATE TABLE IF NOT EXISTS special_code (
+    special_code_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(64) UNIQUE NOT NULL,
+    description TEXT,
+    created_by UUID REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    tenant_id UUID REFERENCES general_schema.tenant(tenant_id) ON DELETE SET NULL,
+    used_at TIMESTAMP,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT special_code_used_consistency
+        CHECK (
+            (is_used = FALSE AND tenant_id IS NULL AND used_at IS NULL) OR
+            (is_used = TRUE  AND tenant_id IS NOT NULL AND used_at IS NOT NULL)
+        )
+);
+
+CREATE INDEX IF NOT EXISTS idx_special_code_is_used
+    ON general_schema.special_code(is_used);
+CREATE INDEX IF NOT EXISTS idx_special_code_tenant
+    ON general_schema.special_code(tenant_id)
+    WHERE tenant_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS product_category(
     product_category_id VARCHAR(13) PRIMARY KEY NOT NULL,

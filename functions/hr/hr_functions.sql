@@ -16,7 +16,8 @@ CREATE OR REPLACE FUNCTION hr_schema.create_new_employee(
     p_phone CHARACTER VARYING,
     p_email CHARACTER VARYING,
     p_payment_schedule_id INTEGER,
-    p_branch_id UUID
+    p_branch_id UUID,
+    p_identification_type_id INTEGER DEFAULT 1
   )
  RETURNS UUID
  LANGUAGE plpgsql
@@ -37,13 +38,18 @@ BEGIN
 
   v_new_employee_id := gen_random_uuid();
 
-  INSERT INTO hr_schema.employee (employee_id, user_id, first_name, last_name, doc_number, phone, email, contract_id, payment_schedule_id, tenant_id, branch_id)
+  INSERT INTO hr_schema.employee (
+    employee_id, user_id, first_name, last_name, doc_number,
+    identification_type_id, phone, email, contract_id,
+    payment_schedule_id, tenant_id, branch_id
+  )
   VALUES (
     v_new_employee_id,
     p_user_id,
     p_first_name,
     p_last_name,
     p_doc_number,
+    p_identification_type_id,
     p_phone,
     p_email,
     v_new_contract_id,
@@ -58,11 +64,11 @@ EXCEPTION
   WHEN unique_violation THEN
     RAISE EXCEPTION 'Data Error: Document Number (%) or Email already exists.', p_doc_number;
   WHEN foreign_key_violation THEN
-    RAISE EXCEPTION 'Integrity Error: Insert failed, cause of the error a non existent FOREIGN KEY (user_id or payment_schedule_id).';
+    RAISE EXCEPTION 'Integrity Error: Insert failed, cause of the error a non existent FOREIGN KEY (user_id, payment_schedule_id, or identification_type_id).';
   WHEN others THEN
     RAISE EXCEPTION 'Error creating employee or contract: %', SQLERRM;
 END;
-$function$; 
+$function$;
 
 CREATE OR REPLACE FUNCTION hr_schema.update_paysheet_state (
     p_paysheet_id UUID

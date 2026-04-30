@@ -332,6 +332,118 @@ create trigger update_invoice_paid_status_trigger
     for each row
     execute function purchase_schema.update_invoice_paid_status();
 
+CREATE OR REPLACE FUNCTION purchase_schema.upsert_inventory_stock(
+    p_tenant_id UUID,
+    p_product_variant_id UUID,
+    p_warehouse_id UUID,
+    p_quantity INTEGER,
+    p_log_in_type_id INTEGER
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_existing_id UUID;
+BEGIN
+    IF p_quantity IS NULL OR p_quantity <= 0 THEN
+        RETURN;
+    END IF;
+
+    SELECT inventory_id INTO v_existing_id
+    FROM inventory_schema.inventory
+    WHERE tenant_id = p_tenant_id
+      AND product_variant_id = p_product_variant_id
+      AND warehouse_id = p_warehouse_id
+    LIMIT 1;
+
+    IF v_existing_id IS NOT NULL THEN
+        UPDATE inventory_schema.inventory
+        SET stock = stock + p_quantity,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE inventory_id = v_existing_id;
+    ELSE
+        INSERT INTO inventory_schema.inventory(
+            tenant_id, product_variant_id, warehouse_id, stock
+        ) VALUES (
+            p_tenant_id, p_product_variant_id, p_warehouse_id, p_quantity
+        );
+    END IF;
+
+    IF p_log_in_type_id IS NOT NULL THEN
+        INSERT INTO inventory_schema.inventory_log(
+            inventory_log_type_id, warehouse_id, tenant_id,
+            product_variant_id, quantity
+        ) VALUES (
+            p_log_in_type_id, p_warehouse_id, p_tenant_id,
+            p_product_variant_id, p_quantity
+        );
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION purchase_schema.apply_inventory_on_delivery(
+    p_purchase_order_id UUID
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_warehouse_id UUID;
+    v_log_in_type_id INTEGER;
+    v_item RECORD;
+    v_component RECORD;
+    v_is_composite BOOLEAN;
+    v_total_qty INTEGER;
+BEGIN
+    SELECT po.warehouse_id INTO v_warehouse_id
+    FROM purchase_schema.purchase_order po
+    WHERE po.purchase_order_id = p_purchase_order_id;
+
+    IF v_warehouse_id IS NULL THEN
+        RAISE EXCEPTION 'apply_inventory_on_delivery: warehouse not found for PO %', p_purchase_order_id;
+    END IF;
+
+    SELECT inventory_log_type_id INTO v_log_in_type_id
+    FROM inventory_schema.inventory_log_type
+    WHERE inventory_log_type_name = 'IN'
+    LIMIT 1;
+
+    FOR v_item IN
+        SELECT poi.tenant_id, poi.product_variant_id, poi.quantity_ordered
+        FROM purchase_schema.purchase_order_item poi
+        WHERE poi.purchase_order_id = p_purchase_order_id
+    LOOP
+        SELECT pv.is_composite INTO v_is_composite
+        FROM general_schema.product_variant pv
+        WHERE pv.tenant_id = v_item.tenant_id
+          AND pv.product_variant_id = v_item.product_variant_id;
+
+        IF v_is_composite IS TRUE THEN
+            FOR v_component IN
+                SELECT pvc.child_product_variant_id, pvc.quantity AS component_qty
+                FROM general_schema.product_variant_composition pvc
+                WHERE pvc.tenant_id = v_item.tenant_id
+                  AND pvc.parent_product_variant_id = v_item.product_variant_id
+            LOOP
+                v_total_qty := v_item.quantity_ordered * v_component.component_qty;
+
+                PERFORM purchase_schema.upsert_inventory_stock(
+                    v_item.tenant_id,
+                    v_component.child_product_variant_id,
+                    v_warehouse_id,
+                    v_total_qty,
+                    v_log_in_type_id
+                );
+            END LOOP;
+        ELSE
+            PERFORM purchase_schema.upsert_inventory_stock(
+                v_item.tenant_id,
+                v_item.product_variant_id,
+                v_warehouse_id,
+                v_item.quantity_ordered,
+                v_log_in_type_id
+            );
+        END IF;
+    END LOOP;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION create_goods_receipt()
 returns trigger as $$
 declare
@@ -341,54 +453,57 @@ declare
     v_item record;
 BEGIN
     if new.purchase_order_status_id = 3 and old.purchase_order_status_id is distinct from 3 then
-        if exists(
-            select 1 
-            from purchase_schema.goods_receipt 
+        if not exists(
+            select 1
+            from purchase_schema.goods_receipt
             where purchase_order_id = new.purchase_order_id
         ) then
-            return new;
+            select
+                ap.subtotal,
+                sap.tax_amount
+            into v_subtotal, v_tax_amount
+            from general_schema.account_payable ap
+            join purchase_schema.purchase_account_payable sap
+                on ap.account_payable_id = sap.account_payable_id
+            where sap.purchase_order_id = new.purchase_order_id;
+
+            INSERT INTO purchase_schema.goods_receipt(
+                purchase_order_id,
+                received_date,
+                subtotal_amount,
+                tax_amount
+            ) VALUES (
+                new.purchase_order_id,
+                current_timestamp,
+                v_subtotal,
+                v_tax_amount
+            ) returning goods_receipt_id into v_goods_receipt_id;
+
+            for v_item in
+                select tenant_id, product_variant_id, quantity_ordered
+                from purchase_schema.purchase_order_item
+                where purchase_order_id = new.purchase_order_id
+            loop
+                INSERT INTO purchase_schema.goods_receipt_item(
+                    goods_receipt_id,
+                    tenant_id,
+                    product_variant_id,
+                    quantity_received
+                ) VALUES (
+                    v_goods_receipt_id,
+                    v_item.tenant_id,
+                    v_item.product_variant_id,
+                    v_item.quantity_ordered
+                );
+            end loop;
+
+            perform purchase_schema.execute_three_way_matching(new.purchase_order_id, v_goods_receipt_id);
         end if;
 
-        select 
-            ap.subtotal,
-            sap.tax_amount
-        into v_subtotal, v_tax_amount
-        from general_schema.account_payable ap
-        join purchase_schema.purchase_account_payable sap 
-            on ap.account_payable_id = sap.account_payable_id
-        where sap.purchase_order_id = new.purchase_order_id;
-
-        INSERT INTO purchase_schema.goods_receipt(
-            purchase_order_id,
-            received_date,
-            subtotal_amount,
-            tax_amount
-        ) VALUES (
-            new.purchase_order_id,
-            current_timestamp,
-            v_subtotal,
-            v_tax_amount
-        ) returning goods_receipt_id into v_goods_receipt_id;
-
-        for v_item in 
-            select tenant_id, product_variant_id, quantity_ordered
-            from purchase_schema.purchase_order_item
-            where purchase_order_id = new.purchase_order_id
-        loop
-            INSERT INTO purchase_schema.goods_receipt_item(
-                goods_receipt_id,
-                tenant_id,
-                product_variant_id,
-                quantity_received
-            ) VALUES (
-                v_goods_receipt_id,
-                v_item.tenant_id,
-                v_item.product_variant_id,
-                v_item.quantity_ordered
-            );
-        end loop;
-
-        perform purchase_schema.execute_three_way_matching(new.purchase_order_id, v_goods_receipt_id);
+        -- Push items into inventory at the destination warehouse. The
+        -- 'IS DISTINCT FROM 3' guard above ensures this only runs once
+        -- per real status transition.
+        perform purchase_schema.apply_inventory_on_delivery(new.purchase_order_id);
     end if;
 
     return new;
