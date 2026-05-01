@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS exchange_rate (
     effective_date   DATE NOT NULL,
     source           VARCHAR(50) DEFAULT 'MANUAL',
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE(from_currency_id, to_currency_id, effective_date),
     CHECK (from_currency_id <> to_currency_id)

@@ -58,9 +58,12 @@ CREATE TABLE IF NOT EXISTS cash_register(
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
     register_name VARCHAR(100),
     is_active BOOLEAN default true,
+    cash_register_key VARCHAR(64),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+COMMENT ON COLUMN pos_schema.cash_register.cash_register_key IS
+    'Optional plain-text key required for non-admin users to open/close a session. NULL = no key required.';
 
 CREATE TABLE IF NOT EXISTS cash_register_session(
     cash_register_session_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -242,11 +245,17 @@ CREATE TABLE IF NOT EXISTS promotion(
     promotion_start_date date not null,
     promotion_end_date date not null,
     is_active BOOLEAN default false,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    is_stackable BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     check (promotion_end_date > promotion_start_date)
 );
+
+CREATE INDEX IF NOT EXISTS idx_promotion_active_default
+    ON pos_schema.promotion(tenant_id, is_active, is_default)
+    WHERE is_active = TRUE AND is_default = TRUE;
 
 -- FK deferred: sale_item.promotion_id -> promotion (promotion defined after sale_item)
 DO $$ BEGIN

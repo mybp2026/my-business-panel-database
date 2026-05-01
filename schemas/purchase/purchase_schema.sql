@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS purchase_schema.purchase_order_payment(
     purchase_order_payment_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     purchase_account_payable_id uuid NOT NULL REFERENCES purchase_schema.purchase_account_payable(purchase_account_payable_id) ON DELETE CASCADE,
     payment_method_id INTEGER REFERENCES general_schema.payment_method(payment_method_id),
+    currency_id INTEGER NOT NULL DEFAULT 1 REFERENCES general_schema.currency(currency_id),
     amount_paid NUMERIC(12,3) NOT NULL CHECK (amount_paid > 0),
     payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     payment_reference VARCHAR(100),
