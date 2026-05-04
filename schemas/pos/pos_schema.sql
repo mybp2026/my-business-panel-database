@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS sale_condition (
 CREATE TABLE IF NOT EXISTS sale(
     sale_id uuid PRIMARY KEY default gen_random_uuid(),
     branch_id uuid not null REFERENCES general_schema.branch(branch_id) on delete cascade,
-    -- nullable: walk-in/anonymous sales no requieren registrar al cliente
     tenant_customer_id uuid REFERENCES general_schema.tenant_customer(tenant_customer_id),
     sale_condition VARCHAR(3) not null REFERENCES pos_schema.sale_condition(condition_code),
     sale_date timestamp not null default current_timestamp,
@@ -205,6 +204,7 @@ CREATE TABLE IF NOT EXISTS return_transaction(
     total_refund_amount numeric(10,2) not null check (total_refund_amount >= 0),
     refund_method int REFERENCES general_schema.payment_method(payment_method_id) on delete set null,
     return_status_id INTEGER REFERENCES pos_schema.return_status(return_status_id) on delete set null,
+    description TEXT NOT NULL,
     return_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_return_transaction_invoice CHECK (

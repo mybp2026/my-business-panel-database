@@ -199,8 +199,6 @@ CREATE TABLE IF NOT EXISTS exchange_rate (
 CREATE INDEX IF NOT EXISTS idx_exchange_rate_lookup
     ON general_schema.exchange_rate(from_currency_id, to_currency_id, effective_date DESC);
 
--- TODO: AGREGAR SEED DE TAX RATES DE CABYS (0, 1, 2, 4, 13, 15, 18, 27)
--- DONE: Ya en el cabys_loader se agregan
 CREATE TABLE IF NOT EXISTS tax_rate(
     tax_rate_id SERIAL PRIMARY KEY,
     region VARCHAR(100),
