@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS customer_payment(
 
     constraint check_points_redemption
     check (
-        (is_points_redemption = true and points_redeemed is not null and points_redeemed > 0 and payment_method_id = 4) or
+        (is_points_redemption = true and points_redeemed is not null and points_redeemed > 0 and payment_method_id = 5) or
         (is_points_redemption = false)
     )
 );
@@ -116,13 +116,11 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
     currency_id INTEGER REFERENCES general_schema.currency(currency_id) on delete set null,
     subtotal_amount numeric(10,2) not null check (subtotal_amount >= 0),
     tax_amount numeric(10,2) not null check (tax_amount >= 0),
-    total_amount numeric(10,2) not null,    
-    due_date DATE,
-    seller_name VARCHAR(150),
-    cash_register_id UUID REFERENCES pos_schema.cash_register(cash_register_id) ON DELETE SET NULL,
+    total_amount numeric(10,2) not null,
+    due_date DATE DEFAULT CURRENT_DATE,
+    cash_register_session_id UUID REFERENCES pos_schema.cash_register_session(cash_register_session_id) ON DELETE SET NULL,
     points_accumulated INTEGER DEFAULT 0,
     ad_message TEXT,
-    invoice_number VARCHAR(50),
     amount_paid NUMERIC(10,2) DEFAULT 0,
     change_amount NUMERIC(10,2) DEFAULT 0,
     invoiced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -130,8 +128,8 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice(
 );
 
 CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_sale_id on pos_schema.digital_sale_invoice(sale_id);
-CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_cash_register
-    ON pos_schema.digital_sale_invoice(cash_register_id);
+CREATE INDEX IF NOT EXISTS idx_digital_sale_invoice_cash_register_session
+    ON pos_schema.digital_sale_invoice(cash_register_session_id);
 
 CREATE TABLE IF NOT EXISTS digital_sale_invoice_item(
     digital_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -241,7 +239,7 @@ CREATE TABLE IF NOT EXISTS promotion(
     promotion_code VARCHAR(50) not null,
     promotion_description text,
     promotion_type_id int REFERENCES pos_schema.promotion_type(promotion_type_id) on delete set null,
-    customer_segment_id int REFERENCES general_schema.customer_segment(customer_segment_id) on delete set null,
+    is_universal BOOLEAN NOT NULL DEFAULT TRUE,
     promotion_start_date date not null,
     promotion_end_date date not null,
     is_active BOOLEAN default false,
@@ -252,6 +250,19 @@ CREATE TABLE IF NOT EXISTS promotion(
 
     check (promotion_end_date > promotion_start_date)
 );
+
+-- Junction table: specific segment targeting when is_universal = false
+CREATE TABLE IF NOT EXISTS promotion_customer_segment (
+    promotion_id        uuid    NOT NULL REFERENCES pos_schema.promotion(promotion_id) ON DELETE CASCADE,
+    customer_segment_id INTEGER NOT NULL REFERENCES general_schema.customer_segment(customer_segment_id) ON DELETE CASCADE,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (promotion_id, customer_segment_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_promo_seg_promo
+    ON pos_schema.promotion_customer_segment(promotion_id);
+CREATE INDEX IF NOT EXISTS idx_promo_seg_segment
+    ON pos_schema.promotion_customer_segment(customer_segment_id);
 
 CREATE INDEX IF NOT EXISTS idx_promotion_active_default
     ON pos_schema.promotion(tenant_id, is_active, is_default)

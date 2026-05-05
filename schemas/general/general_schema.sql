@@ -409,6 +409,9 @@ CREATE TABLE IF NOT EXISTS product_variant (
     last_purchase_date TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
     is_composite BOOLEAN NOT NULL DEFAULT false,
+    supplier_id UUID REFERENCES purchase_schema.supplier(supplier_id) ON DELETE SET NULL,
+    giftable BOOLEAN DEFAULT FALSE,
+    giftable_from NUMERIC(10,2) CHECK (giftable_from IS NULL OR giftable_from >= 0),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -436,9 +439,12 @@ CREATE INDEX IF NOT EXISTS idx_product_variant_cabys
     ON general_schema.product_variant(cabys_code);
 CREATE INDEX IF NOT EXISTS idx_product_variant_tenant_btree 
     ON general_schema.product_variant(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_product_variant_active 
-    ON general_schema.product_variant(tenant_id, is_active) 
+CREATE INDEX IF NOT EXISTS idx_product_variant_active
+    ON general_schema.product_variant(tenant_id, is_active)
     WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_product_variant_supplier
+    ON general_schema.product_variant(supplier_id)
+    WHERE supplier_id IS NOT NULL;
 
 COMMENT ON TABLE general_schema.product_variant IS
     'Tenant-specific sellable product variants linked to a CABYS catalog entry.
