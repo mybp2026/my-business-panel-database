@@ -85,6 +85,41 @@ BEGIN
                 v_unit
             );
         end loop;
+
+        -- ✅ MC1: Actualizar supplier_id en product_variant si no tiene proveedor asignado
+        -- Para cada product_variant que se está comprando y que no tiene supplier_id,
+        -- asignar el supplier_id de esta orden de compra
+        UPDATE general_schema.product_variant
+        SET 
+            supplier_id = p_supplier_id,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE 
+            tenant_id = v_tenant_id
+            AND product_variant_id IN (
+                SELECT (value ->> 'product_variant_id')::uuid 
+                FROM jsonb_array_elements(p_items)
+            )
+            AND supplier_id IS NULL;
+
+        -- ✅ MC1 (Extended): Si el producto es compuesto, heredar supplier_id a componentes
+        -- Para cada producto compuesto que recibió supplier_id, asignar el mismo supplier_id
+        -- a todos sus componentes que no tengan proveedor asignado
+        UPDATE general_schema.product_variant child
+        SET 
+            supplier_id = p_supplier_id,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE 
+            child.tenant_id = v_tenant_id
+            AND child.supplier_id IS NULL
+            AND child.product_variant_id IN (
+                SELECT pvc.child_product_variant_id
+                FROM general_schema.product_variant_composition pvc
+                WHERE pvc.tenant_id = v_tenant_id
+                  AND pvc.parent_product_variant_id IN (
+                      SELECT (value ->> 'product_variant_id')::uuid 
+                      FROM jsonb_array_elements(p_items)
+                  )
+            );
     end if;
 
     -- Calcular subtotal de la orden

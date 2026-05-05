@@ -41,6 +41,12 @@ Covers:
   - inserts purchase_order and purchase_order_item rows
   - computes subtotal and tax, inserts purchase_account_payable
   - inserts supplier_invoice and supplier_invoice_item when invoice requested
+  - For each item being purchased, if the product_variant.supplier_id is NULL,
+    it is automatically updated to the supplier_id from the purchase order
+  - This ensures that after first purchase from a supplier, the product is now
+    associated with that supplier for future efficiency and consistency
+  - If any purchased items are composite products (bundles/lotes), the same supplier_id
+    is automatically inherited by all their child components that don't have a supplier
 - verify_purchase_order_payment(payment_id):
   - marks payment verified and updates purchase_account_payable status/amounts
   - when fully paid, marks supplier_invoice.paid = true
