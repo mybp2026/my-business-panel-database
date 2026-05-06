@@ -18,12 +18,14 @@ CREATE TABLE IF NOT EXISTS sale(
     total_amount numeric(10,2) not null,
     is_completed BOOLEAN default false,
     has_electronic_invoice BOOLEAN DEFAULT FALSE,
+    is_refunded BOOLEAN NOT NULL DEFAULT false,
     seller_user_id uuid REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
     created_at timestamp not null default current_timestamp,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sale_branch_id on pos_schema.sale(branch_id);
 CREATE INDEX IF NOT EXISTS idx_sale_sale_date on pos_schema.sale(sale_date);
+CREATE INDEX IF NOT EXISTS idx_sale_is_refunded on pos_schema.sale(branch_id, is_refunded);
 
 CREATE TABLE IF NOT EXISTS sale_item(
     sale_item_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -547,4 +549,44 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice
     ON pos_schema.electronic_sale_invoice_items(electronic_sale_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
+    ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);
+
+-- ── Royalties ─────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS pos_schema.royalty_rule (
+    royalty_rule_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    min_amount        NUMERIC(14,2) NOT NULL CHECK (min_amount > 0),
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_royalty_rule_tenant
+    ON pos_schema.royalty_rule(tenant_id, min_amount ASC);
+
+CREATE TABLE IF NOT EXISTS pos_schema.royalty_option (
+    royalty_option_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    royalty_rule_id           UUID NOT NULL REFERENCES pos_schema.royalty_rule(royalty_rule_id) ON DELETE CASCADE,
+    tenant_id                 UUID NOT NULL,
+    tenant_product_group_id   UUID NOT NULL,
+    quantity                  INT NOT NULL CHECK (quantity > 0),
+    scope                     TEXT NOT NULL DEFAULT 'any' CHECK (scope IN ('any', 'specific')),
+    created_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (royalty_rule_id, tenant_product_group_id),
+    FOREIGN KEY (tenant_id, tenant_product_group_id)
+        REFERENCES general_schema.tenant_product_group(tenant_id, tenant_product_group_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_royalty_option_rule
+    ON pos_schema.royalty_option(royalty_rule_id);
+
+CREATE TABLE IF NOT EXISTS pos_schema.royalty_option_product (
+    royalty_option_product_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    royalty_option_id           UUID NOT NULL REFERENCES pos_schema.royalty_option(royalty_option_id) ON DELETE CASCADE,
+    product_variant_id          UUID NOT NULL,
+    UNIQUE (royalty_option_id, product_variant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_royalty_option_product_option
+    ON pos_schema.royalty_option_product(royalty_option_id);
     ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);

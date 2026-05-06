@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS tenant_customer(
     birthdate date,
     address text,
     is_tenant BOOLEAN default false,
+    is_wholesale BOOLEAN DEFAULT false,
     customer_segment_id int default 4 REFERENCES general_schema.customer_segment(customer_segment_id) on delete set null,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
