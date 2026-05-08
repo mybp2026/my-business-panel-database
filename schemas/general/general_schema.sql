@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS branch(
     tenant_id uuid not null REFERENCES general_schema.tenant(tenant_id) on delete cascade,
     branch_name VARCHAR(100) not null,
     branch_address text,
-    branch_number VARCHAR(4),   
+    branch_number VARCHAR(20),
     contact_email VARCHAR(100),
     is_main_branch BOOLEAN default false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
