@@ -1,6 +1,6 @@
 ﻿-- ======================================================
 -- CONSOLIDATED BOOTSTRAP FILE
--- Generated: 2026-05-10 06:08:00
+-- Generated: 2026-05-10 17:48:55
 -- ======================================================
 -- This file can be executed from any SQL client
 -- ======================================================
@@ -34,6 +34,7 @@ SET SEARCH_PATH TO general_schema;
 CREATE TABLE IF NOT EXISTS region(
     region_id SERIAL PRIMARY KEY,
     region_name VARCHAR(100) unique not null,
+    country_code VARCHAR(5),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tenant(
     econ_activity VARCHAR(10),
     sign text,
     contact_email VARCHAR(100) not null,
+    contact_phone VARCHAR(20),
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
     tax_regime general_schema.tax_regime NOT NULL DEFAULT 'traditional',
@@ -796,6 +798,15 @@ CREATE TABLE IF NOT EXISTS cash_register_session(
     opening_amount numeric(10,2) not null check (opening_amount >= 0),
     closing_amount numeric(10,2) check (closing_amount >= 0),
     is_active BOOLEAN default true,
+    cash_sales_amount     NUMERIC(14, 2),
+    debit_sales_amount    NUMERIC(14, 2),
+    credit_sales_amount   NUMERIC(14, 2),
+    transfer_sales_amount NUMERIC(14, 2),
+    points_sales_amount   NUMERIC(14, 2),
+    total_sales_amount    NUMERIC(14, 2),
+    mismatch              BOOLEAN DEFAULT FALSE,
+    mismatch_amount       NUMERIC(14, 2),
+    mismatch_type         VARCHAR(10) CHECK (mismatch_type IN ('surplus', 'shortage')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -1311,6 +1322,49 @@ CREATE TABLE IF NOT EXISTS pos_schema.royalty_option_product (
 CREATE INDEX IF NOT EXISTS idx_royalty_option_product_option
     ON pos_schema.royalty_option_product(royalty_option_id);
 
+CREATE TABLE IF NOT EXISTS pos_schema.session_group_sales (
+    session_group_sales_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    cash_register_session_id uuid NOT NULL
+        REFERENCES pos_schema.cash_register_session(cash_register_session_id)
+        ON DELETE CASCADE,
+    tenant_product_group_id  uuid NOT NULL,
+    group_name               VARCHAR(200) NOT NULL,
+    total_amount             NUMERIC(14, 2) NOT NULL,
+    UNIQUE (cash_register_session_id, tenant_product_group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_group_sales_session
+    ON pos_schema.session_group_sales(cash_register_session_id);
+
+CREATE TABLE IF NOT EXISTS pos_schema.expense_type (
+    expense_type_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           uuid NOT NULL,
+    expense_type_name   VARCHAR(100) NOT NULL,
+    expense_type_detail TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_type_tenant
+    ON pos_schema.expense_type(tenant_id);
+
+CREATE TABLE IF NOT EXISTS pos_schema.expense (
+    expense_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    expense_type_id   uuid NOT NULL REFERENCES pos_schema.expense_type(expense_type_id) ON DELETE RESTRICT,
+    expense_amount    NUMERIC(14, 2) NOT NULL CHECK (expense_amount > 0),
+    branch_id         uuid NOT NULL,
+    user_id           uuid NOT NULL,
+    status            TEXT DEFAULT 'approved',
+    rejection_reason  TEXT,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_type_fk ON pos_schema.expense(expense_type_id);
+CREATE INDEX IF NOT EXISTS idx_expense_branch   ON pos_schema.expense(branch_id);
+CREATE INDEX IF NOT EXISTS idx_expense_user     ON pos_schema.expense(user_id);
+CREATE INDEX IF NOT EXISTS idx_expense_status   ON pos_schema.expense(status);
+
 
 
 -- =============================================
@@ -1436,6 +1490,55 @@ CREATE INDEX IF NOT EXISTS idx_discrepancy_product_variant
 CREATE INDEX IF NOT EXISTS idx_discrepancy_pending
     ON inventory_schema.discrepancy_count(warehouse_id, tenant_id)
     WHERE is_applied = FALSE;
+
+CREATE TABLE IF NOT EXISTS inventory_transfer_request_status (
+    inventory_transfer_request_status_id SERIAL PRIMARY KEY,
+    status_name VARCHAR(50) NOT NULL UNIQUE,
+    status_description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO inventory_schema.inventory_transfer_request_status (inventory_transfer_request_status_id, status_name, status_description) VALUES
+    (1, 'pending',   'Solicitud pendiente de aprobación'),
+    (2, 'approved',  'Solicitud aprobada y transferencia ejecutada'),
+    (3, 'rejected',  'Solicitud rechazada'),
+    (4, 'cancelled', 'Solicitud cancelada')
+ON CONFLICT (inventory_transfer_request_status_id) DO UPDATE SET
+    status_name = EXCLUDED.status_name,
+    status_description = EXCLUDED.status_description;
+
+CREATE TABLE IF NOT EXISTS inventory_transfer_request (
+    inventory_transfer_request_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    from_warehouse_id uuid NOT NULL REFERENCES inventory_schema.warehouse(warehouse_id) ON DELETE CASCADE,
+    to_warehouse_id uuid NOT NULL REFERENCES inventory_schema.warehouse(warehouse_id) ON DELETE CASCADE,
+    inventory_transfer_request_status_id INTEGER NOT NULL REFERENCES inventory_schema.inventory_transfer_request_status(inventory_transfer_request_status_id),
+    requested_by_user_id uuid,
+    approved_by_user_id uuid,
+    rejection_reason TEXT,
+    inventory_transfer_id uuid REFERENCES inventory_schema.inventory_transfer(inventory_transfer_id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS inventory_transfer_request_product (
+    inventory_transfer_request_product_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    inventory_transfer_request_id uuid NOT NULL REFERENCES inventory_schema.inventory_transfer_request(inventory_transfer_request_id) ON DELETE CASCADE,
+    tenant_id uuid NOT NULL,
+    product_variant_id uuid NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (tenant_id, product_variant_id)
+        REFERENCES general_schema.product_variant(tenant_id, product_variant_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_transfer_request_tenant ON inventory_schema.inventory_transfer_request(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_request_from_warehouse ON inventory_schema.inventory_transfer_request(from_warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_request_to_warehouse ON inventory_schema.inventory_transfer_request(to_warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_request_product_request ON inventory_schema.inventory_transfer_request_product(inventory_transfer_request_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_request_product_variant ON inventory_schema.inventory_transfer_request_product(tenant_id, product_variant_id);
 
 
 
@@ -4152,6 +4255,105 @@ drop trigger if exists update_sale_item_timestamp on pos_schema.sale_item;
 create trigger update_sale_item_timestamp before update on pos_schema.sale_item
 for each row execute function general_schema.update_timestamp();
 
+CREATE OR REPLACE FUNCTION pos_schema.close_cash_register_session(
+    p_session_id     uuid,
+    p_closing_amount numeric
+)
+RETURNS pos_schema.cash_register_session
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_session             pos_schema.cash_register_session%ROWTYPE;
+    v_cash_sales          NUMERIC(14, 2) := 0;
+    v_debit_sales         NUMERIC(14, 2) := 0;
+    v_credit_sales        NUMERIC(14, 2) := 0;
+    v_transfer_sales      NUMERIC(14, 2) := 0;
+    v_points_sales        NUMERIC(14, 2) := 0;
+    v_total_sales         NUMERIC(14, 2) := 0;
+    v_expected_cash       NUMERIC(14, 2);
+    v_mismatch            BOOLEAN        := FALSE;
+    v_mismatch_amt        NUMERIC(14, 2) := NULL;
+    v_mismatch_type       VARCHAR(10)    := NULL;
+BEGIN
+    SELECT * INTO v_session
+    FROM pos_schema.cash_register_session
+    WHERE cash_register_session_id = p_session_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Session not found: %', p_session_id;
+    END IF;
+
+    IF NOT v_session.is_active THEN
+        RAISE EXCEPTION 'Session % is already closed', p_session_id;
+    END IF;
+
+    SELECT
+        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 1), 0),
+        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 2), 0),
+        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 3), 0),
+        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 4), 0),
+        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 5), 0)
+    INTO v_cash_sales, v_debit_sales, v_credit_sales, v_transfer_sales, v_points_sales
+    FROM pos_schema.customer_payment cp
+    INNER JOIN pos_schema.cash_register_sale crs ON crs.sale_id = cp.sale_id
+    WHERE crs.cash_register_session_id = p_session_id;
+
+    v_total_sales := v_cash_sales + v_debit_sales + v_credit_sales
+                     + v_transfer_sales + v_points_sales;
+
+    v_expected_cash := v_session.opening_amount + v_cash_sales;
+    IF ABS(p_closing_amount - v_expected_cash) > 0.01 THEN
+        v_mismatch      := TRUE;
+        v_mismatch_amt  := ROUND(ABS(p_closing_amount - v_expected_cash), 2);
+        v_mismatch_type := CASE
+            WHEN p_closing_amount > v_expected_cash THEN 'surplus'
+            ELSE 'shortage'
+        END;
+    END IF;
+
+    INSERT INTO pos_schema.session_group_sales
+        (cash_register_session_id, tenant_product_group_id, group_name, total_amount)
+    SELECT
+        p_session_id,
+        tpg.tenant_product_group_id,
+        tpg.group_name,
+        ROUND(SUM(si.total_price), 2)
+    FROM pos_schema.sale_item si
+    INNER JOIN pos_schema.cash_register_sale crs_link
+        ON crs_link.sale_id = si.sale_id
+    INNER JOIN general_schema.product_variant_group_assignment pvga
+        ON  pvga.product_variant_id = si.product_variant_id
+        AND pvga.tenant_id          = si.tenant_id
+    INNER JOIN general_schema.tenant_product_group tpg
+        ON tpg.tenant_product_group_id = pvga.tenant_product_group_id
+    WHERE crs_link.cash_register_session_id = p_session_id
+    GROUP BY tpg.tenant_product_group_id, tpg.group_name
+    ON CONFLICT (cash_register_session_id, tenant_product_group_id)
+    DO UPDATE SET total_amount = EXCLUDED.total_amount;
+
+    UPDATE pos_schema.cash_register_session
+    SET
+        closed_at             = NOW(),
+        closing_amount        = p_closing_amount,
+        is_active             = FALSE,
+        cash_sales_amount     = v_cash_sales,
+        debit_sales_amount    = v_debit_sales,
+        credit_sales_amount   = v_credit_sales,
+        transfer_sales_amount = v_transfer_sales,
+        points_sales_amount   = v_points_sales,
+        total_sales_amount    = v_total_sales,
+        mismatch              = v_mismatch,
+        mismatch_amount       = CASE WHEN v_mismatch THEN v_mismatch_amt  ELSE NULL END,
+        mismatch_type         = CASE WHEN v_mismatch THEN v_mismatch_type ELSE NULL END,
+        updated_at            = NOW()
+    WHERE cash_register_session_id = p_session_id
+    RETURNING * INTO v_session;
+
+    RETURN v_session;
+END;
+$$;
+
 
 
 
@@ -5617,13 +5819,14 @@ $$ LANGUAGE plpgsql;
 -- =============================================
 SET SEARCH_PATH TO general_schema;
 
-INSERT INTO general_schema.region(region_name) VALUES
-    ('Costa Rica'),
-    ('Panama'),
-    ('United States'),
-    ('United Kingdom'),
-    ('Japan')
-ON CONFLICT DO NOTHING;
+INSERT INTO general_schema.region(region_name, country_code) VALUES
+    ('Costa Rica',    '+506'),
+    ('Panama',        '+507'),
+    ('United States', '+1'),
+    ('United Kingdom','+44'),
+    ('Japan',         '+81'),
+    ('Spain',         '+34')
+ON CONFLICT (region_name) DO UPDATE SET country_code = EXCLUDED.country_code;
 
 
 

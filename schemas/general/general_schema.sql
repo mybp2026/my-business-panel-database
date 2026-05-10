@@ -4,6 +4,7 @@ SET SEARCH_PATH TO general_schema;
 CREATE TABLE IF NOT EXISTS region(
     region_id SERIAL PRIMARY KEY,
     region_name VARCHAR(100) unique not null,
+    country_code VARCHAR(5),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS tenant(
     econ_activity VARCHAR(10),
     sign text,
     contact_email VARCHAR(100) not null,
+    contact_phone VARCHAR(20),
     is_subscribed BOOLEAN default false,
     stripe_id VARCHAR(255) unique default null,
     tax_regime general_schema.tax_regime NOT NULL DEFAULT 'traditional',

@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS cash_register_session(
     opening_amount numeric(10,2) not null check (opening_amount >= 0),
     closing_amount numeric(10,2) check (closing_amount >= 0),
     is_active BOOLEAN default true,
+    cash_sales_amount     NUMERIC(14, 2),
+    debit_sales_amount    NUMERIC(14, 2),
+    credit_sales_amount   NUMERIC(14, 2),
+    transfer_sales_amount NUMERIC(14, 2),
+    points_sales_amount   NUMERIC(14, 2),
+    total_sales_amount    NUMERIC(14, 2),
+    mismatch              BOOLEAN DEFAULT FALSE,
+    mismatch_amount       NUMERIC(14, 2),
+    mismatch_type         VARCHAR(10) CHECK (mismatch_type IN ('surplus', 'shortage')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -589,3 +598,46 @@ CREATE TABLE IF NOT EXISTS pos_schema.royalty_option_product (
 
 CREATE INDEX IF NOT EXISTS idx_royalty_option_product_option
     ON pos_schema.royalty_option_product(royalty_option_id);
+
+CREATE TABLE IF NOT EXISTS pos_schema.session_group_sales (
+    session_group_sales_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    cash_register_session_id uuid NOT NULL
+        REFERENCES pos_schema.cash_register_session(cash_register_session_id)
+        ON DELETE CASCADE,
+    tenant_product_group_id  uuid NOT NULL,
+    group_name               VARCHAR(200) NOT NULL,
+    total_amount             NUMERIC(14, 2) NOT NULL,
+    UNIQUE (cash_register_session_id, tenant_product_group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_group_sales_session
+    ON pos_schema.session_group_sales(cash_register_session_id);
+
+CREATE TABLE IF NOT EXISTS pos_schema.expense_type (
+    expense_type_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           uuid NOT NULL,
+    expense_type_name   VARCHAR(100) NOT NULL,
+    expense_type_detail TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_type_tenant
+    ON pos_schema.expense_type(tenant_id);
+
+CREATE TABLE IF NOT EXISTS pos_schema.expense (
+    expense_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    expense_type_id   uuid NOT NULL REFERENCES pos_schema.expense_type(expense_type_id) ON DELETE RESTRICT,
+    expense_amount    NUMERIC(14, 2) NOT NULL CHECK (expense_amount > 0),
+    branch_id         uuid NOT NULL,
+    user_id           uuid NOT NULL,
+    status            TEXT DEFAULT 'approved',
+    rejection_reason  TEXT,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_type_fk ON pos_schema.expense(expense_type_id);
+CREATE INDEX IF NOT EXISTS idx_expense_branch   ON pos_schema.expense(branch_id);
+CREATE INDEX IF NOT EXISTS idx_expense_user     ON pos_schema.expense(user_id);
+CREATE INDEX IF NOT EXISTS idx_expense_status   ON pos_schema.expense(status);
