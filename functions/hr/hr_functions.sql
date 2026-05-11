@@ -17,7 +17,8 @@ CREATE OR REPLACE FUNCTION hr_schema.create_new_employee(
     p_email CHARACTER VARYING,
     p_payment_schedule_id INTEGER,
     p_branch_id UUID,
-    p_identification_type_id INTEGER DEFAULT 1
+    p_identification_type_id INTEGER DEFAULT 1,
+    p_duties_type_id INTEGER DEFAULT NULL
   )
  RETURNS UUID
  LANGUAGE plpgsql
@@ -32,8 +33,8 @@ BEGIN
     RAISE EXCEPTION 'Integrity error: payment_schedule_id (payment_schedule_id: %) doesnt exists', p_payment_schedule_id;
   END IF;
 
-  INSERT INTO hr_schema.contract (tenant_id, start_date, end_date, hours, base_salary, duties, turn_type, turn_id)
-  VALUES (p_tenant_id, p_start_date, p_end_date, p_hours, p_base_salary, p_duties, p_turn_type, p_turn_id)
+  INSERT INTO hr_schema.contract (tenant_id, start_date, end_date, hours, base_salary, duties, turn_type, turn_id, duties_type_id)
+  VALUES (p_tenant_id, p_start_date, p_end_date, p_hours, p_base_salary, p_duties, p_turn_type, p_turn_id, p_duties_type_id)
   RETURNING contract_id INTO v_new_contract_id;
 
   v_new_employee_id := gen_random_uuid();
@@ -64,7 +65,7 @@ EXCEPTION
   WHEN unique_violation THEN
     RAISE EXCEPTION 'Data Error: Document Number (%) or Email already exists.', p_doc_number;
   WHEN foreign_key_violation THEN
-    RAISE EXCEPTION 'Integrity Error: Insert failed, cause of the error a non existent FOREIGN KEY (user_id, payment_schedule_id, or identification_type_id).';
+    RAISE EXCEPTION 'Integrity Error: Insert failed due to a non-existent FOREIGN KEY (payment_schedule_id, identification_type_id, or duties_type_id).';
   WHEN others THEN
     RAISE EXCEPTION 'Error creating employee or contract: %', SQLERRM;
 END;

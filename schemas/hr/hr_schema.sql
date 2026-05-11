@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS hr_schema.turn (
 
 CREATE INDEX branch_turn_idx ON hr_schema.turn(branch_id);
 
+CREATE TABLE IF NOT EXISTS hr_schema.duties_type (
+	duties_type_id SERIAL PRIMARY KEY,
+	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+	name VARCHAR(150) NOT NULL,
+	description TEXT,
+	is_active BOOLEAN NOT NULL DEFAULT TRUE,
+	created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_duties_type_tenant ON hr_schema.duties_type(tenant_id);
+
 CREATE TABLE IF NOT EXISTS contract(
 	contract_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id),
@@ -35,6 +46,7 @@ CREATE TABLE IF NOT EXISTS contract(
 	hours INTEGER NOT NULL,
 	base_salary NUMERIC(19, 4) NOT NULL,
 	duties TEXT,
+	duties_type_id INTEGER REFERENCES hr_schema.duties_type(duties_type_id) ON DELETE SET NULL,
 	turn_type INTEGER,
 	turn_id INTEGER REFERENCES hr_schema.turn(turn_id)
 );
@@ -43,7 +55,7 @@ CREATE INDEX idx_contract_base_salary ON hr_schema.contract (base_salary);
 
 CREATE TABLE IF NOT EXISTS employee(
 	employee_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
-	user_id UUID NOT NULL REFERENCES general_schema.users(user_id) ON DELETE CASCADE,
+	user_id UUID REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
 	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id),
 	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
 	first_name VARCHAR(100) NOT NULL,
