@@ -1,8 +1,8 @@
+
 SET SEARCH_PATH = purchase_schema;
 
-CREATE OR REPLACE FUNCTION calculate_purchase_order_total(
-    p_purchase_order_id uuid
-) returns numeric as $$
+
+CREATE OR REPLACE FUNCTION calculate_purchase_order_total(p_purchase_order_id uuid) returns numeric as $$
 declare
     v_total numeric(12,3);
 BEGIN
@@ -15,14 +15,8 @@ BEGIN
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION create_purchase_order(
-    p_supplier_id uuid,
-    p_warehouse_id uuid,
-    p_expected_delivery_date date,
-    p_items jsonb default '[]'::jsonb,
-    p_has_invoice BOOLEAN default true,
-    p_payment_condition VARCHAR(10) default 'CREDIT'
-) returns uuid as $$
+
+CREATE OR REPLACE FUNCTION create_purchase_order(p_supplier_id uuid, p_warehouse_id uuid, p_expected_delivery_date date, p_items jsonb default '[]'::jsonb, p_has_invoice BOOLEAN default true, p_payment_condition VARCHAR(10) default 'CREDIT') returns uuid as $$
 declare
     v_purchase_order_id uuid;
     v_supplier_invoice_id uuid;
@@ -39,10 +33,8 @@ declare
     v_due_date date;
 BEGIN
     -- Obtener tenant_id desde la relación supplier -> supplier_branch -> branch
-    select b.tenant_id into v_tenant_id
+    select s.added_by into v_tenant_id
     from purchase_schema.supplier s
-    join purchase_schema.supplier_branch sb on s.supplier_id = sb.supplier_id
-    join general_schema.branch b on b.branch_id = sb.branch_id
     where s.supplier_id = p_supplier_id
     limit 1;
 
@@ -90,13 +82,13 @@ BEGIN
         -- Para cada product_variant que se está comprando y que no tiene supplier_id,
         -- asignar el supplier_id de esta orden de compra
         UPDATE general_schema.product_variant
-        SET 
+        SET
             supplier_id = p_supplier_id,
             updated_at = CURRENT_TIMESTAMP
-        WHERE 
+        WHERE
             tenant_id = v_tenant_id
             AND product_variant_id IN (
-                SELECT (value ->> 'product_variant_id')::uuid 
+                SELECT (value ->> 'product_variant_id')::uuid
                 FROM jsonb_array_elements(p_items)
             )
             AND supplier_id IS NULL;
@@ -105,10 +97,10 @@ BEGIN
         -- Para cada producto compuesto que recibió supplier_id, asignar el mismo supplier_id
         -- a todos sus componentes que no tengan proveedor asignado
         UPDATE general_schema.product_variant child
-        SET 
+        SET
             supplier_id = p_supplier_id,
             updated_at = CURRENT_TIMESTAMP
-        WHERE 
+        WHERE
             child.tenant_id = v_tenant_id
             AND child.supplier_id IS NULL
             AND child.product_variant_id IN (
@@ -116,7 +108,7 @@ BEGIN
                 FROM general_schema.product_variant_composition pvc
                 WHERE pvc.tenant_id = v_tenant_id
                   AND pvc.parent_product_variant_id IN (
-                      SELECT (value ->> 'product_variant_id')::uuid 
+                      SELECT (value ->> 'product_variant_id')::uuid
                       FROM jsonb_array_elements(p_items)
                   )
             );
@@ -208,7 +200,7 @@ BEGIN
             quantity_billed,
             unit_price
         )
-        select 
+        select
             v_supplier_invoice_id,
             tenant_id,
             product_variant_id,
@@ -222,8 +214,8 @@ BEGIN
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION update_order_status()
-returns trigger as $$
+
+CREATE OR REPLACE FUNCTION update_order_status() returns trigger as $$
 BEGIN
     INSERT INTO purchase_schema.purchase_order_tracking(
         purchase_order_id,
@@ -243,16 +235,19 @@ BEGIN
 end;
 $$ language plpgsql;
 
+
 drop trigger if exists on_order_status_update on purchase_schema.purchase_order;
-create trigger on_order_status_update
-after update of purchase_order_status_id on purchase_schema.purchase_order
+
+
+create trigger on_order_status_update after
+update of purchase_order_status_id on purchase_schema.purchase_order
 for each row execute function update_order_status();
+
 
 DROP FUNCTION IF EXISTS check_account_payable_completion(UUID);
 
-CREATE OR REPLACE FUNCTION check_account_payable_completion(
-    _account_payable_id UUID
-) RETURNS BOOLEAN AS $$
+
+CREATE OR REPLACE FUNCTION check_account_payable_completion(_account_payable_id UUID) RETURNS BOOLEAN AS $$
 DECLARE
     _subtotal NUMERIC(12,3);
     _tax_amount NUMERIC(12,3);
@@ -262,20 +257,20 @@ DECLARE
     _balance NUMERIC(12,3);
     _target_purchase_ap_id UUID;
 BEGIN
-    SELECT 
+    SELECT
         ap.subtotal,
         sap.tax_amount,
         (ap.subtotal + COALESCE(sap.tax_amount, 0)) AS amount_due,
         ap.amount_paid,
         sap.purchase_account_payable_id
-    INTO 
+    INTO
         _subtotal,
         _tax_amount,
         _amount_due,
         _current_amount_paid,
         _target_purchase_ap_id
     FROM general_schema.account_payable ap
-    JOIN purchase_schema.purchase_account_payable sap 
+    JOIN purchase_schema.purchase_account_payable sap
         ON ap.account_payable_id = sap.account_payable_id
     WHERE ap.account_payable_id = _account_payable_id;
 
@@ -321,26 +316,30 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION recalc_account_payable_on_payment()
-returns trigger as $$
+
+CREATE OR REPLACE FUNCTION recalc_account_payable_on_payment() returns trigger as $$
 BEGIN
     perform purchase_schema.check_account_payable_completion(
-        (select account_payable_id 
-         from purchase_schema.purchase_account_payable 
+        (select account_payable_id
+         from purchase_schema.purchase_account_payable
          where purchase_account_payable_id = new.purchase_account_payable_id)
     );
     return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists recalc_account_payable_on_payment_trigger on purchase_schema.purchase_order_payment;
-create trigger recalc_account_payable_on_payment_trigger
-    after insert or update of amount_paid on purchase_schema.purchase_order_payment
-    for each row
-    execute function recalc_account_payable_on_payment();
 
-CREATE OR REPLACE FUNCTION update_invoice_paid_status()
-returns trigger as $$
+drop trigger if exists recalc_account_payable_on_payment_trigger on purchase_schema.purchase_order_payment;
+
+
+create trigger recalc_account_payable_on_payment_trigger after
+insert
+or
+update of amount_paid on purchase_schema.purchase_order_payment
+for each row execute function recalc_account_payable_on_payment();
+
+
+CREATE OR REPLACE FUNCTION update_invoice_paid_status() returns trigger as $$
 declare
     v_is_paid BOOLEAN;
 BEGIN
@@ -348,7 +347,7 @@ BEGIN
         select is_paid into v_is_paid
         from general_schema.account_payable
         where account_payable_id = new.account_payable_id;
-        
+
         if v_is_paid = true then
             update purchase_schema.supplier_invoice
             set paid = true,
@@ -356,25 +355,21 @@ BEGIN
             where purchase_order_id = new.purchase_order_id;
         end if;
     end if;
-    
+
     return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists update_invoice_paid_status_trigger on purchase_schema.purchase_account_payable;
-create trigger update_invoice_paid_status_trigger
-    after update of account_payable_status on purchase_schema.purchase_account_payable
-    for each row
-    execute function purchase_schema.update_invoice_paid_status();
 
-CREATE OR REPLACE FUNCTION purchase_schema.upsert_inventory_stock(
-    p_tenant_id UUID,
-    p_product_variant_id UUID,
-    p_warehouse_id UUID,
-    p_quantity INTEGER,
-    p_log_in_type_id INTEGER
-) RETURNS VOID
-LANGUAGE plpgsql AS $$
+drop trigger if exists update_invoice_paid_status_trigger on purchase_schema.purchase_account_payable;
+
+
+create trigger update_invoice_paid_status_trigger after
+update of account_payable_status on purchase_schema.purchase_account_payable
+for each row execute function purchase_schema.update_invoice_paid_status();
+
+
+CREATE OR REPLACE FUNCTION purchase_schema.upsert_inventory_stock(p_tenant_id UUID, p_product_variant_id UUID, p_warehouse_id UUID, p_quantity INTEGER, p_log_in_type_id INTEGER) RETURNS VOID LANGUAGE plpgsql AS $$
 DECLARE
     v_existing_id UUID;
 BEGIN
@@ -414,10 +409,8 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION purchase_schema.apply_inventory_on_delivery(
-    p_purchase_order_id UUID
-) RETURNS VOID
-LANGUAGE plpgsql AS $$
+
+CREATE OR REPLACE FUNCTION purchase_schema.apply_inventory_on_delivery(p_purchase_order_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$
 DECLARE
     v_warehouse_id UUID;
     v_log_in_type_id INTEGER;
@@ -479,8 +472,8 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION create_goods_receipt()
-returns trigger as $$
+
+CREATE OR REPLACE FUNCTION create_goods_receipt() returns trigger as $$
 declare
     v_goods_receipt_id uuid;
     v_subtotal numeric(12,3);
@@ -545,16 +538,16 @@ BEGIN
 end;
 $$ language plpgsql;
 
-drop trigger if exists create_goods_receipt_trigger on purchase_schema.purchase_order;
-create trigger create_goods_receipt_trigger
-    after update of purchase_order_status_id on purchase_schema.purchase_order
-    for each row
-    execute function purchase_schema.create_goods_receipt();
 
-CREATE OR REPLACE FUNCTION execute_three_way_matching(
-    p_purchase_order_id uuid,
-    p_goods_receipt_id uuid
-) returns void as $$
+drop trigger if exists create_goods_receipt_trigger on purchase_schema.purchase_order;
+
+
+create trigger create_goods_receipt_trigger after
+update of purchase_order_status_id on purchase_schema.purchase_order
+for each row execute function purchase_schema.create_goods_receipt();
+
+
+CREATE OR REPLACE FUNCTION execute_three_way_matching(p_purchase_order_id uuid, p_goods_receipt_id uuid) returns void as $$
 declare
     v_supplier_invoice_id uuid;
     v_order_subtotal numeric(12,3);
@@ -581,42 +574,42 @@ BEGIN
     end if;
 
     if exists(
-        select 1 
-        from purchase_schema.three_way_matching 
+        select 1
+        from purchase_schema.three_way_matching
         where purchase_order_id = p_purchase_order_id
     ) then
         return;
     end if;
 
-    select 
+    select
         ap.subtotal,
         sap.tax_amount,
         (ap.subtotal + sap.tax_amount) AS total_amount
-    into 
+    into
         v_order_subtotal,
         v_order_tax,
         v_order_total
     from general_schema.account_payable ap
-    join purchase_schema.purchase_account_payable sap 
+    join purchase_schema.purchase_account_payable sap
         on ap.account_payable_id = sap.account_payable_id
     where sap.purchase_order_id = p_purchase_order_id;
 
-    select 
+    select
         subtotal_amount,
         tax_amount,
         total_amount
-    into 
+    into
         v_invoice_subtotal,
         v_invoice_tax,
         v_invoice_total
     from purchase_schema.supplier_invoice
     where supplier_invoice_id = v_supplier_invoice_id;
 
-    select 
+    select
         subtotal_amount,
         tax_amount,
         total_amount
-    into 
+    into
         v_receipt_subtotal,
         v_receipt_tax,
         v_receipt_total
@@ -635,7 +628,7 @@ BEGIN
     from purchase_schema.goods_receipt_item
     where goods_receipt_id = p_goods_receipt_id;
 
-    v_amounts_matched := (abs(v_order_subtotal - v_invoice_subtotal) <= 0.01) and 
+    v_amounts_matched := (abs(v_order_subtotal - v_invoice_subtotal) <= 0.01) and
                          (abs(v_order_subtotal - v_receipt_subtotal) <= 0.01) and
                          (abs(v_invoice_subtotal - v_receipt_subtotal) <= 0.01) and
                          (abs(v_order_tax - v_invoice_tax) <= 0.01) and
@@ -644,8 +637,8 @@ BEGIN
                          (abs(v_order_total - v_invoice_total) <= 0.01) and
                          (abs(v_order_total - v_receipt_total) <= 0.01) and
                          (abs(v_invoice_total - v_receipt_total) <= 0.01);
-    
-    v_quantities_matched := (v_order_qty = v_invoice_qty) and 
+
+    v_quantities_matched := (v_order_qty = v_invoice_qty) and
                             (v_order_qty = v_receipt_qty);
 
     INSERT INTO purchase_schema.three_way_matching(
@@ -665,15 +658,15 @@ BEGIN
         v_amounts_matched and v_quantities_matched,
         current_timestamp
     );
-    
+
 exception
     when others then
         raise exception 'Error executing three-way matching: %', sqlerrm;
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION generate_payment_alerts()
-returns void as $$
+
+CREATE OR REPLACE FUNCTION generate_payment_alerts() returns void as $$
 declare
     v_config record;
     v_account record;
@@ -681,15 +674,15 @@ declare
     v_alert_type_id INTEGER;
     v_existing_alert_id uuid;
 BEGIN
-    for v_config in 
-        select 
+    for v_config in
+        select
             pac.tenant_id,
             pac.warning_days_before_due,
             pac.urgent_days_before_due
         from purchase_schema.purchase_order_payment_alert_config pac
     loop
         for v_account in
-            select 
+            select
                 ap.account_payable_id,
                 ap.due_date,
                 ap.is_paid,
@@ -700,40 +693,40 @@ BEGIN
                 (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) as balance_remaining,
                 so.purchase_order_id
             from general_schema.account_payable ap
-            join purchase_schema.purchase_account_payable sap 
+            join purchase_schema.purchase_account_payable sap
                 on ap.account_payable_id = sap.account_payable_id
-            join purchase_schema.purchase_order so 
+            join purchase_schema.purchase_order so
                 on sap.purchase_order_id = so.purchase_order_id
-            join purchase_schema.supplier s 
+            join purchase_schema.supplier s
                 on so.supplier_id = s.supplier_id
-            join purchase_schema.supplier_branch sb 
+            join purchase_schema.supplier_branch sb
                 on s.supplier_id = sb.supplier_id
-            join general_schema.branch b 
+            join general_schema.branch b
                 on sb.branch_id = b.branch_id
             where b.tenant_id = v_config.tenant_id
             and ap.is_paid = false
             and (ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid) > 0
         loop
             v_days_until_due := v_account.due_date - current_date;
-            
-  
+
+
             if v_days_until_due < 0 then
-                v_alert_type_id := 3; 
+                v_alert_type_id := 3;
             elsif v_days_until_due <= v_config.urgent_days_before_due then
-                v_alert_type_id := 2; 
+                v_alert_type_id := 2;
             elsif v_days_until_due <= v_config.warning_days_before_due then
-                v_alert_type_id := 1; 
+                v_alert_type_id := 1;
             else
-                continue; 
+                continue;
             end if;
-            
+
             select payment_alert_id into v_existing_alert_id
             from purchase_schema.purchase_order_payment_alert
             where purchase_account_payable_id = v_account.purchase_account_payable_id
             and payment_alert_type_id = v_alert_type_id
             and is_resolved = false
             limit 1;
-            
+
             if v_existing_alert_id is null then
                 INSERT INTO purchase_schema.purchase_order_payment_alert(
                     purchase_account_payable_id,
@@ -749,33 +742,21 @@ BEGIN
             end if;
         end loop;
     end loop;
-    
+
 exception
     when others then
         raise exception 'Error generating payment alerts: %', sqlerrm;
 end;
 $$ language plpgsql;
 
+
 drop function if exists get_pending_payment_alerts(uuid);
 
-CREATE OR REPLACE FUNCTION get_pending_payment_alerts(p_tenant_id uuid)
-returns table(
-    payment_alert_id uuid,
-    purchase_account_payable_id uuid,
-    purchase_order_id uuid,
-    supplier_name VARCHAR,
-    invoice_number VARCHAR,
-    alert_type VARCHAR,
-    alert_type_description text,
-    due_date date,
-    days_until_due INTEGER,
-    balance_remaining numeric,
-    alert_date timestamp,
-    created_at timestamp
-) as $$
+
+CREATE OR REPLACE FUNCTION get_pending_payment_alerts(p_tenant_id uuid) returns table(payment_alert_id uuid, purchase_account_payable_id uuid, purchase_order_id uuid, supplier_name VARCHAR, invoice_number VARCHAR, alert_type VARCHAR, alert_type_description text, due_date date, days_until_due INTEGER, balance_remaining numeric, alert_date timestamp, created_at timestamp) as $$
 BEGIN
     return query
-    select 
+    select
         spa.payment_alert_id,
         sap.purchase_account_payable_id,
         so.purchase_order_id,
@@ -789,34 +770,34 @@ BEGIN
         spa.alert_date,
         spa.created_at
     from purchase_schema.purchase_order_payment_alert spa
-    join purchase_schema.purchase_order_payment_alert_type spat 
+    join purchase_schema.purchase_order_payment_alert_type spat
         on spa.payment_alert_type_id = spat.payment_alert_type_id
-    join purchase_schema.purchase_account_payable sap 
+    join purchase_schema.purchase_account_payable sap
         on spa.purchase_account_payable_id = sap.purchase_account_payable_id
-    join general_schema.account_payable ap 
+    join general_schema.account_payable ap
         on sap.account_payable_id = ap.account_payable_id
-    join purchase_schema.purchase_order so 
+    join purchase_schema.purchase_order so
         on sap.purchase_order_id = so.purchase_order_id
-    join purchase_schema.supplier s 
+    join purchase_schema.supplier s
         on so.supplier_id = s.supplier_id
-    left join purchase_schema.supplier_invoice si 
+    left join purchase_schema.supplier_invoice si
         on so.purchase_order_id = si.purchase_order_id
-    join purchase_schema.supplier_branch sb 
+    join purchase_schema.supplier_branch sb
         on s.supplier_id = sb.supplier_id
-    join general_schema.branch b 
+    join general_schema.branch b
         on sb.branch_id = b.branch_id
     where b.tenant_id = p_tenant_id
     and spa.is_resolved = false
     order by ap.due_date asc, spa.alert_date desc;
-    
+
 exception
     when others then
         raise exception 'Error fetching pending payment alerts: %', sqlerrm;
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION resolve_payment_alert(p_alert_id uuid)
-returns void as $$
+
+CREATE OR REPLACE FUNCTION resolve_payment_alert(p_alert_id uuid) returns void as $$
 BEGIN
     update purchase_schema.purchase_order_payment_alert
     set is_resolved = true,
@@ -825,8 +806,8 @@ BEGIN
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION auto_resolve_payment_alerts()
-returns trigger as $$
+
+CREATE OR REPLACE FUNCTION auto_resolve_payment_alerts() returns trigger as $$
 declare
     v_is_paid BOOLEAN;
 BEGIN
@@ -834,7 +815,7 @@ BEGIN
         select is_paid into v_is_paid
         from general_schema.account_payable
         where account_payable_id = new.account_payable_id;
-        
+
         if v_is_paid = true then
             update purchase_schema.purchase_order_payment_alert
             set is_resolved = true,
@@ -843,24 +824,21 @@ BEGIN
             and is_resolved = false;
         end if;
     end if;
-    
+
     return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists auto_resolve_payment_alerts_trigger on purchase_schema.purchase_account_payable;
-create trigger auto_resolve_payment_alerts_trigger
-    after update of account_payable_status on purchase_schema.purchase_account_payable
-    for each row
-    execute function purchase_schema.auto_resolve_payment_alerts();
 
-CREATE OR REPLACE FUNCTION initialize_payment_alert_config(
-    p_tenant_id uuid,
-    p_warning_days INTEGER default 7,
-    p_urgent_days INTEGER default 3,
-    p_email_enabled BOOLEAN default true,
-    p_sms_enabled BOOLEAN default false
-) returns uuid as $$
+drop trigger if exists auto_resolve_payment_alerts_trigger on purchase_schema.purchase_account_payable;
+
+
+create trigger auto_resolve_payment_alerts_trigger after
+update of account_payable_status on purchase_schema.purchase_account_payable
+for each row execute function purchase_schema.auto_resolve_payment_alerts();
+
+
+CREATE OR REPLACE FUNCTION initialize_payment_alert_config(p_tenant_id uuid, p_warning_days INTEGER default 7, p_urgent_days INTEGER default 3, p_email_enabled BOOLEAN default true, p_sms_enabled BOOLEAN default false) returns uuid as $$
 declare
     v_config_id uuid;
 BEGIN
@@ -884,45 +862,39 @@ BEGIN
         sms_notifications_enabled = excluded.sms_notifications_enabled,
         updated_at = current_timestamp
     returning payment_alert_config_id into v_config_id;
-    
+
     return v_config_id;
 end;
 $$ language plpgsql;
 
-CREATE OR REPLACE FUNCTION get_payment_alert_stats(p_tenant_id uuid)
-returns table(
-    total_alerts INTEGER,
-    overdue_count INTEGER,
-    urgent_count INTEGER,
-    warning_count INTEGER,
-    total_amount_at_risk numeric
-) as $$
+
+CREATE OR REPLACE FUNCTION get_payment_alert_stats(p_tenant_id uuid) returns table(total_alerts INTEGER, overdue_count INTEGER, urgent_count INTEGER, warning_count INTEGER, total_amount_at_risk numeric) as $$
 BEGIN
     return query
-    select 
+    select
         count(*)::INTEGER as total_alerts,
         count(*) filter (where spat.payment_alert_type_id = 3)::INTEGER as overdue_count,
         count(*) filter (where spat.payment_alert_type_id = 2)::INTEGER as urgent_count,
         count(*) filter (where spat.payment_alert_type_id = 1)::INTEGER as warning_count,
         coalesce(sum(ap.subtotal + coalesce(sap.tax_amount, 0) - ap.amount_paid), 0) as total_amount_at_risk
     from purchase_schema.purchase_order_payment_alert spa
-    join purchase_schema.purchase_order_payment_alert_type spat 
+    join purchase_schema.purchase_order_payment_alert_type spat
         on spa.payment_alert_type_id = spat.payment_alert_type_id
-    join purchase_schema.purchase_account_payable sap 
+    join purchase_schema.purchase_account_payable sap
         on spa.purchase_account_payable_id = sap.purchase_account_payable_id
-    join general_schema.account_payable ap 
+    join general_schema.account_payable ap
         on sap.account_payable_id = ap.account_payable_id
-    join purchase_schema.purchase_order so 
+    join purchase_schema.purchase_order so
         on sap.purchase_order_id = so.purchase_order_id
-    join purchase_schema.supplier s 
+    join purchase_schema.supplier s
         on so.supplier_id = s.supplier_id
-    join purchase_schema.supplier_branch sb 
+    join purchase_schema.supplier_branch sb
         on s.supplier_id = sb.supplier_id
-    join general_schema.branch b 
+    join general_schema.branch b
         on sb.branch_id = b.branch_id
     where b.tenant_id = p_tenant_id
     and spa.is_resolved = false;
-    
+
 EXCEPTION
     WHEN OTHERS THEN
         RAISE EXCEPTION 'Error calculating payment alert stats: %', SQLERRM;
@@ -931,49 +903,108 @@ $$ LANGUAGE plpgsql;
 
 
 drop trigger if exists update_supplier_timestamp on purchase_schema.supplier;
-create trigger update_supplier_timestamp before update on purchase_schema.supplier
+
+
+create trigger update_supplier_timestamp
+before
+update on purchase_schema.supplier
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_purchase_order_timestamp on purchase_schema.purchase_order;
-create trigger update_purchase_order_timestamp before update on purchase_schema.purchase_order
+
+
+create trigger update_purchase_order_timestamp
+before
+update on purchase_schema.purchase_order
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_purchase_order_item_timestamp on purchase_schema.purchase_order_item;
-create trigger update_purchase_order_item_timestamp before update on purchase_schema.purchase_order_item
+
+
+create trigger update_purchase_order_item_timestamp
+before
+update on purchase_schema.purchase_order_item
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_supplier_invoice_timestamp on purchase_schema.supplier_invoice;
-create trigger update_supplier_invoice_timestamp before update on purchase_schema.supplier_invoice
+
+
+create trigger update_supplier_invoice_timestamp
+before
+update on purchase_schema.supplier_invoice
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_supplier_invoice_item_timestamp on purchase_schema.supplier_invoice_item;
-create trigger update_supplier_invoice_item_timestamp before update on purchase_schema.supplier_invoice_item
+
+
+create trigger update_supplier_invoice_item_timestamp
+before
+update on purchase_schema.supplier_invoice_item
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_goods_receipt_timestamp on purchase_schema.goods_receipt;
-create trigger update_goods_receipt_timestamp before update on purchase_schema.goods_receipt
+
+
+create trigger update_goods_receipt_timestamp
+before
+update on purchase_schema.goods_receipt
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_goods_receipt_item_timestamp on purchase_schema.goods_receipt_item;
-create trigger update_goods_receipt_item_timestamp before update on purchase_schema.goods_receipt_item
+
+
+create trigger update_goods_receipt_item_timestamp
+before
+update on purchase_schema.goods_receipt_item
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_account_payable_timestamp on purchase_schema.purchase_account_payable;
-create trigger update_account_payable_timestamp before update on purchase_schema.purchase_account_payable
+
+
+create trigger update_account_payable_timestamp
+before
+update on purchase_schema.purchase_account_payable
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_purchase_order_payment_timestamp on purchase_schema.purchase_order_payment;
-create trigger update_purchase_order_payment_timestamp before update on purchase_schema.purchase_order_payment
+
+
+create trigger update_purchase_order_payment_timestamp
+before
+update on purchase_schema.purchase_order_payment
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_purchase_order_payment_alert_timestamp on purchase_schema.purchase_order_payment_alert;
-create trigger update_purchase_order_payment_alert_timestamp before update on purchase_schema.purchase_order_payment_alert
+
+
+create trigger update_purchase_order_payment_alert_timestamp
+before
+update on purchase_schema.purchase_order_payment_alert
 for each row execute function general_schema.update_timestamp();
+
 
 drop trigger if exists update_purchase_order_payment_alert_config_timestamp on purchase_schema.purchase_order_payment_alert_config;
-create trigger update_purchase_order_payment_alert_config_timestamp before update on purchase_schema.purchase_order_payment_alert_config
+
+
+create trigger update_purchase_order_payment_alert_config_timestamp
+before
+update on purchase_schema.purchase_order_payment_alert_config
 for each row execute function general_schema.update_timestamp();
 
+
 drop trigger if exists update_three_way_matching_timestamp on purchase_schema.three_way_matching;
-create trigger update_three_way_matching_timestamp before update on purchase_schema.three_way_matching
+
+
+create trigger update_three_way_matching_timestamp
+before
+update on purchase_schema.three_way_matching
 for each row execute function general_schema.update_timestamp();
