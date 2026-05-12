@@ -418,6 +418,7 @@ DECLARE
     v_component RECORD;
     v_is_composite BOOLEAN;
     v_total_qty INTEGER;
+    v_target_is_branch BOOLEAN;
 BEGIN
     SELECT po.warehouse_id INTO v_warehouse_id
     FROM purchase_schema.purchase_order po
@@ -426,6 +427,14 @@ BEGIN
     IF v_warehouse_id IS NULL THEN
         RAISE EXCEPTION 'apply_inventory_on_delivery: warehouse not found for PO %', p_purchase_order_id;
     END IF;
+
+    -- Determine if the target warehouse is a branch (sales floor).
+    -- Composite products (lotes) are only expanded into their components
+    -- when delivered to a branch warehouse. A regular warehouse (bodega)
+    -- receives the lot as a single intact unit.
+    SELECT w.is_branch INTO v_target_is_branch
+    FROM inventory_schema.warehouse w
+    WHERE w.warehouse_id = v_warehouse_id;
 
     SELECT inventory_log_type_id INTO v_log_in_type_id
     FROM inventory_schema.inventory_log_type
@@ -442,7 +451,10 @@ BEGIN
         WHERE pv.tenant_id = v_item.tenant_id
           AND pv.product_variant_id = v_item.product_variant_id;
 
-        IF v_is_composite IS TRUE THEN
+        -- Only disaggregate (expand) the lot if the product is composite
+        -- AND the destination warehouse is a branch (is_branch = true).
+        -- Non-branch warehouses (bodegas) store the lot as a whole unit.
+        IF v_is_composite IS TRUE AND v_target_is_branch IS TRUE THEN
             FOR v_component IN
                 SELECT pvc.child_product_variant_id, pvc.quantity AS component_qty
                 FROM general_schema.product_variant_composition pvc
@@ -460,6 +472,7 @@ BEGIN
                 );
             END LOOP;
         ELSE
+            -- Non-branch warehouse OR non-composite product: insert as-is.
             PERFORM purchase_schema.upsert_inventory_stock(
                 v_item.tenant_id,
                 v_item.product_variant_id,
