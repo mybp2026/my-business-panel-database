@@ -480,19 +480,26 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice (
     -- Hacienda response
     hacienda_response_xml TEXT,
     hacienda_response_date TIMESTAMP,
+    -- Async status polling (cron-based reconciliation, migration 011 + 032)
+    check_attempts INT NOT NULL DEFAULT 0,
+    next_check_at TIMESTAMP,
     -- Metadata
     -- currency_id INTEGER REFERENCES general_schema.currency(currency_id) ON DELETE SET NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_sale_id 
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_sale_id
     ON pos_schema.electronic_sale_invoice(sale_id);
-CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number 
+CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_key_number
     ON pos_schema.electronic_sale_invoice(key_number);
 -- #2: columna issue_date no existe en esta versión del schema; se indexa created_at
 CREATE INDEX IF NOT EXISTS idx_electronic_sale_invoice_created_at
     ON pos_schema.electronic_sale_invoice(created_at);
+-- Cron picks pending invoices due for re-check; partial index keeps it tiny.
+CREATE INDEX IF NOT EXISTS idx_electronic_invoice_pending_check
+    ON pos_schema.electronic_sale_invoice(next_check_at)
+    WHERE status_id = 1;
 
 -- FK deferred: return_transaction.electronic_sale_invoice_id -> electronic_sale_invoice
 DO $$ BEGIN
