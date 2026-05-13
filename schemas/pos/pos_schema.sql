@@ -582,8 +582,8 @@ CREATE TABLE IF NOT EXISTS pos_schema.royalty_option (
     scope                     TEXT NOT NULL DEFAULT 'any' CHECK (scope IN ('any', 'specific')),
     created_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (royalty_rule_id, tenant_product_group_id),
-    FOREIGN KEY (tenant_id, tenant_product_group_id)
-        REFERENCES general_schema.tenant_product_group(tenant_id, tenant_product_group_id) ON DELETE CASCADE
+    CONSTRAINT fk_royalty_option_group FOREIGN KEY (tenant_id, tenant_product_group_id)
+        REFERENCES general_schema.tenant_product_group(tenant_id, tenant_product_group_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_royalty_option_rule
