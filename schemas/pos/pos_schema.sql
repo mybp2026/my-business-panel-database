@@ -570,15 +570,23 @@ CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
 -- ── Royalties ─────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS pos_schema.royalty_rule (
-    royalty_rule_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id         UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
-    min_amount        NUMERIC(14,2) NOT NULL CHECK (min_amount > 0),
-    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    royalty_rule_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id                    UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    tenant_product_group_type_id UUID,
+    min_amount                   NUMERIC(14,2) NOT NULL CHECK (min_amount > 0),
+    created_at                   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_royalty_rule_group_type
+        FOREIGN KEY (tenant_id, tenant_product_group_type_id)
+        REFERENCES general_schema.tenant_product_group_type(tenant_id, tenant_product_group_type_id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_royalty_rule_tenant
     ON pos_schema.royalty_rule(tenant_id, min_amount ASC);
+
+CREATE INDEX IF NOT EXISTS idx_royalty_rule_dimension
+    ON pos_schema.royalty_rule(tenant_id, tenant_product_group_type_id, min_amount ASC);
 
 CREATE TABLE IF NOT EXISTS pos_schema.royalty_option (
     royalty_option_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
