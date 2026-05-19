@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS sale_item(
     sale_item_id uuid PRIMARY KEY default gen_random_uuid(),
     sale_id uuid not null REFERENCES pos_schema.sale(sale_id) on delete cascade,
     tenant_id uuid not null,
-    product_variant_id uuid not null,
+    product_variant_id uuid,
     quantity INTEGER not null check (quantity > 0),
     unit_price numeric(10,2) not null check (unit_price >= 0),
     total_price numeric(10,2) not null,
@@ -45,9 +45,10 @@ CREATE TABLE IF NOT EXISTS sale_item(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT sale_item_product_variant_fkey
     FOREIGN KEY (tenant_id, product_variant_id)
         REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
-        on delete restrict
+        ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sale_item_product_variant
     ON pos_schema.sale_item(tenant_id, product_variant_id);
@@ -161,7 +162,7 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice_item(
     sale_item_id UUID NOT NULL
         REFERENCES pos_schema.sale_item(sale_item_id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
-    product_variant_id UUID NOT NULL,
+    product_variant_id UUID,
     cabys_code VARCHAR(13)
         REFERENCES general_schema.product(cabys_code) ON DELETE SET NULL,
     tax_rate_id INTEGER
@@ -176,9 +177,10 @@ CREATE TABLE IF NOT EXISTS digital_sale_invoice_item(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT digital_sale_invoice_item_product_variant_fkey
     FOREIGN KEY (tenant_id, product_variant_id)
         REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
-        ON DELETE RESTRICT
+        ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_digital_invoice_item_invoice
@@ -532,7 +534,7 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     electronic_sale_invoice_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     electronic_sale_invoice_id UUID NOT NULL REFERENCES pos_schema.electronic_sale_invoice(electronic_sale_invoice_id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
-    product_variant_id UUID NOT NULL,
+    product_variant_id UUID,
     sale_item_id uuid NOT NULL REFERENCES pos_schema.sale_item(sale_item_id) ON DELETE CASCADE,
     line_number INTEGER NOT NULL,
     -- cabys_code VARCHAR(13) NOT NULL REFERENCES general_schema.product(cabys_code) ON DELETE RESTRICT,
@@ -569,9 +571,10 @@ CREATE TABLE IF NOT EXISTS electronic_sale_invoice_items (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT fk_electronic_item_product_variant
     FOREIGN KEY (tenant_id, product_variant_id)
         REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
-        ON DELETE RESTRICT
+        ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_invoice
