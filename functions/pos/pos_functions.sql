@@ -1450,22 +1450,29 @@ for each row execute function general_schema.update_timestamp();
 
 CREATE OR REPLACE FUNCTION pos_schema.close_cash_register_session(
     p_session_id     uuid,
-    p_closing_amount numeric
+    p_closing_amount numeric,
+    p_user_cash      numeric DEFAULT 0,
+    p_user_debit     numeric DEFAULT 0,
+    p_user_credit    numeric DEFAULT 0,
+    p_user_transfer  numeric DEFAULT 0
 )
 RETURNS pos_schema.cash_register_session
 LANGUAGE plpgsql
 AS $$
 DECLARE
     v_session             pos_schema.cash_register_session%ROWTYPE;
-    v_cash_sales          NUMERIC(14, 2) := 0;
-    v_debit_sales         NUMERIC(14, 2) := 0;
-    v_credit_sales        NUMERIC(14, 2) := 0;
-    v_transfer_sales      NUMERIC(14, 2) := 0;
-    v_points_sales        NUMERIC(14, 2) := 0;
-    v_total_sales         NUMERIC(14, 2) := 0;
-    v_expected_cash       NUMERIC(14, 2);
+    v_system_cash         NUMERIC(14, 2) := 0;
+    v_system_debit        NUMERIC(14, 2) := 0;
+    v_system_credit       NUMERIC(14, 2) := 0;
+    v_system_transfer     NUMERIC(14, 2) := 0;
+    v_system_points       NUMERIC(14, 2) := 0;
+    v_system_total_sales  NUMERIC(14, 2) := 0;
+    v_diff_cash           NUMERIC(14, 2);
+    v_diff_debit          NUMERIC(14, 2);
+    v_diff_credit         NUMERIC(14, 2);
+    v_diff_transfer       NUMERIC(14, 2);
     v_mismatch            BOOLEAN        := FALSE;
-    v_mismatch_amt        NUMERIC(14, 2) := NULL;
+    v_mismatch_amt        NUMERIC(14, 2) := 0;
     v_mismatch_type       VARCHAR(10)    := NULL;
 BEGIN
     SELECT * INTO v_session
@@ -1481,28 +1488,51 @@ BEGIN
         RAISE EXCEPTION 'Session % is already closed', p_session_id;
     END IF;
 
+    INSERT INTO pos_schema.session_payment_method_sales
+        (cash_register_session_id, payment_method_id, total_amount)
     SELECT
-        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 1), 0),
-        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 2), 0),
-        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 3), 0),
-        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 4), 0),
-        COALESCE(SUM(cp.payment_amount) FILTER (WHERE cp.payment_method_id = 5), 0)
-    INTO v_cash_sales, v_debit_sales, v_credit_sales, v_transfer_sales, v_points_sales
+        p_session_id,
+        cp.payment_method_id,
+        COALESCE(SUM(cp.payment_amount), 0)
     FROM pos_schema.customer_payment cp
     INNER JOIN pos_schema.cash_register_sale crs ON crs.sale_id = cp.sale_id
-    WHERE crs.cash_register_session_id = p_session_id;
+    WHERE crs.cash_register_session_id = p_session_id
+    GROUP BY cp.payment_method_id
+    ON CONFLICT (cash_register_session_id, payment_method_id)
+    DO UPDATE SET total_amount = EXCLUDED.total_amount;
 
-    v_total_sales := v_cash_sales + v_debit_sales + v_credit_sales
-                     + v_transfer_sales + v_points_sales;
+    -- Single aggregate: guaranteed one row, zero for missing methods
+    SELECT
+        COALESCE(SUM(total_amount) FILTER (WHERE payment_method_id = 1), 0),
+        COALESCE(SUM(total_amount) FILTER (WHERE payment_method_id = 2), 0),
+        COALESCE(SUM(total_amount) FILTER (WHERE payment_method_id = 3), 0),
+        COALESCE(SUM(total_amount) FILTER (WHERE payment_method_id = 4), 0),
+        COALESCE(SUM(total_amount) FILTER (WHERE payment_method_id = 5), 0),
+        COALESCE(SUM(total_amount), 0)
+    INTO
+        v_system_cash,
+        v_system_debit,
+        v_system_credit,
+        v_system_transfer,
+        v_system_points,
+        v_system_total_sales
+    FROM pos_schema.session_payment_method_sales
+    WHERE cash_register_session_id = p_session_id;
 
-    v_expected_cash := v_session.opening_amount + v_cash_sales;
-    IF ABS(p_closing_amount - v_expected_cash) > 0.01 THEN
-        v_mismatch      := TRUE;
-        v_mismatch_amt  := ROUND(ABS(p_closing_amount - v_expected_cash), 2);
-        v_mismatch_type := CASE
-            WHEN p_closing_amount > v_expected_cash THEN 'surplus'
-            ELSE 'shortage'
-        END;
+    -- Per-method diff (cash must cover opening float + cash sales)
+    v_diff_cash     := p_user_cash     - (v_session.opening_amount + v_system_cash);
+    v_diff_debit    := p_user_debit    - v_system_debit;
+    v_diff_credit   := p_user_credit   - v_system_credit;
+    v_diff_transfer := p_user_transfer - v_system_transfer;
+
+    IF ABS(v_diff_cash)     > 0.01
+    OR ABS(v_diff_debit)    > 0.01
+    OR ABS(v_diff_credit)   > 0.01
+    OR ABS(v_diff_transfer) > 0.01
+    THEN
+        v_mismatch     := TRUE;
+        v_mismatch_amt := v_diff_cash + v_diff_debit + v_diff_credit + v_diff_transfer;
+        v_mismatch_type := CASE WHEN v_mismatch_amt > 0 THEN 'surplus' ELSE 'shortage' END;
     END IF;
 
     INSERT INTO pos_schema.session_group_sales
@@ -1530,15 +1560,19 @@ BEGIN
         closed_at             = NOW(),
         closing_amount        = p_closing_amount,
         is_active             = FALSE,
-        cash_sales_amount     = v_cash_sales,
-        debit_sales_amount    = v_debit_sales,
-        credit_sales_amount   = v_credit_sales,
-        transfer_sales_amount = v_transfer_sales,
-        points_sales_amount   = v_points_sales,
-        total_sales_amount    = v_total_sales,
+        cash_sales_amount     = v_system_cash,
+        debit_sales_amount    = v_system_debit,
+        credit_sales_amount   = v_system_credit,
+        transfer_sales_amount = v_system_transfer,
+        points_sales_amount   = v_system_points,
+        total_sales_amount    = v_system_total_sales,
+        user_cash_amount      = p_user_cash,
+        user_debit_amount     = p_user_debit,
+        user_credit_amount    = p_user_credit,
+        user_transfer_amount  = p_user_transfer,
         mismatch              = v_mismatch,
-        mismatch_amount       = CASE WHEN v_mismatch THEN v_mismatch_amt  ELSE NULL END,
-        mismatch_type         = CASE WHEN v_mismatch THEN v_mismatch_type ELSE NULL END,
+        mismatch_amount       = ABS(v_mismatch_amt),
+        mismatch_type         = v_mismatch_type,
         updated_at            = NOW()
     WHERE cash_register_session_id = p_session_id
     RETURNING * INTO v_session;

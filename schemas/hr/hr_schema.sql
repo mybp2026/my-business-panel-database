@@ -11,14 +11,14 @@ CREATE TABLE IF NOT EXISTS payment_schedule(
 );
 
 CREATE TABLE IF NOT EXISTS hr_schema.config (
-  branch_id UUID PRIMARY KEY REFERENCES general_schema.branch(branch_id),
+  branch_id UUID PRIMARY KEY REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
   foul_expiration_months INTEGER DEFAULT 6,
   updated_at TIMESTAMP DEFAULT current_timestamp
 );
 
 CREATE TABLE IF NOT EXISTS hr_schema.turn (
   turn_id SERIAL PRIMARY KEY,
-  branch_id UUID REFERENCES general_schema.branch(branch_id) NOT NULL,
+  branch_id UUID REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE NOT NULL,
   entry TIME NOT NULL,
   out TIME NOT NULL
 );
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS contract(
 	duties TEXT,
 	duties_type_id INTEGER REFERENCES hr_schema.duties_type(duties_type_id) ON DELETE SET NULL,
 	turn_type INTEGER,
-	turn_id INTEGER REFERENCES hr_schema.turn(turn_id)
+	turn_id INTEGER REFERENCES hr_schema.turn(turn_id) ON DELETE SET NULL
 );
 --Indice para filtracion o busqueda por rango de precios
 CREATE INDEX idx_contract_base_salary ON hr_schema.contract (base_salary);
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS employee(
 	employee_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	user_id UUID REFERENCES general_schema.users(user_id) ON DELETE SET NULL,
 	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id),
-	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
 	first_name VARCHAR(100) NOT NULL,
 	last_name VARCHAR(100) NOT NULL,
 	doc_number VARCHAR(100) NOT NULL UNIQUE,
@@ -91,7 +91,7 @@ CREATE INDEX idx_employee_is_active ON hr_schema.employee (is_active);
 CREATE TABLE IF NOT EXISTS hr_schema.foul(
   foul_id SERIAL PRIMARY KEY,
   employee_id UUID NOT NULL REFERENCES hr_schema.employee(employee_id),
-  branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+  branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
   identificator VARCHAR(50) UNIQUE NOT NULL, 
   foul_date DATE NOT NULL,
   foul_hour TIME NOT NULL,
@@ -105,7 +105,7 @@ CREATE INDEX idx_identificator_foul ON hr_schema.foul(identificator);
 CREATE TABLE IF NOT EXISTS hr_schema.suspention (
   suspention_id SERIAL PRIMARY KEY,
   employee_id UUID REFERENCES hr_schema.employee(employee_id),
-	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
   suspention_start DATE NOT NULL,
   suspention_end DATE NOT NULL,
   reason TEXT NOT NULL,
@@ -120,7 +120,7 @@ CREATE INDEX idx_branch_suspention ON hr_schema.suspention(branch_id);
 CREATE TABLE IF NOT EXISTS clocking(
 	clocking_id SERIAL PRIMARY KEY NOT NULL,
 	employee_id UUID NOT NULL REFERENCES hr_schema.employee(employee_id),
-	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
 	clock_in TIMESTAMP,
 	clock_out TIMESTAMP,
 	turn_hours NUMERIC NOT NULL DEFAULT 0
@@ -134,7 +134,7 @@ CREATE INDEX idx_track_hours_branch_id ON hr_schema.clocking (branch_id);
 CREATE TABLE IF NOT EXISTS hr_schema.tardiness (
   tardiness_id SERIAL PRIMARY KEY,
   employee_id UUID REFERENCES hr_schema.employee(employee_id),
-  branch_id UUID REFERENCES general_schema.branch(branch_id),
+  branch_id UUID REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
   type VARCHAR(20) NOT NULL, -- "late" | "early"
   log TEXT,
   registered_at DATE DEFAULT NOW()
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS hr_schema.holiday (
 
 CREATE TABLE IF NOT EXISTS hr_schema.incapacity (
     incapacity_id SERIAL PRIMARY KEY,
-    branch_id UUID  REFERENCES general_schema.branch(branch_id),
+    branch_id UUID  REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
     employee_id UUID  REFERENCES hr_schema.employee(employee_id),
     type VARCHAR(50),
     period_start DATE NOT NULL,
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS payroll_concept(
 CREATE TABLE IF NOT EXISTS paysheet(
 	paysheet_id UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
 	tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id),
-	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+	branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
 	period_start DATE NOT NULL,
 	period_end DATE NOT NULL,
 	payment_date TIMESTAMP,

@@ -36,8 +36,10 @@ CREATE TABLE IF NOT EXISTS sale_item(
     unit_price numeric(10,2) not null check (unit_price >= 0),
     total_price numeric(10,2) not null,
     cost_price_at_sale NUMERIC(12,3),
-    sale_price_type VARCHAR(20) DEFAULT 'NORMAL' CHECK (sale_price_type IN ('NORMAL', 'PROMO', 'SEGMENT', 'MANUAL')),
+    sale_price_type VARCHAR(20) DEFAULT 'NORMAL' CHECK (sale_price_type IN ('NORMAL', 'PROMO', 'SEGMENT', 'MANUAL', 'ROYALTY')),
     promotion_id uuid, -- FK to pos_schema.promotion added via ALTER TABLE below (forward reference)
+    royalty_option_id uuid, -- FK to pos_schema.royalty_option added via ALTER TABLE below (forward reference)
+    royalty_rule_id uuid, -- FK to pos_schema.royalty_rule added via ALTER TABLE below (forward reference)
     original_price NUMERIC(10,2),
     discount_applied NUMERIC(10,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -47,12 +49,18 @@ CREATE TABLE IF NOT EXISTS sale_item(
         REFERENCES general_schema.product_variant(tenant_id, product_variant_id)
         on delete restrict
 );
-CREATE INDEX IF NOT EXISTS idx_sale_item_product_variant 
+CREATE INDEX IF NOT EXISTS idx_sale_item_product_variant
     ON pos_schema.sale_item(tenant_id, product_variant_id);
-CREATE INDEX IF NOT EXISTS idx_sale_item_sale_id 
+CREATE INDEX IF NOT EXISTS idx_sale_item_sale_id
     ON pos_schema.sale_item(sale_id);
-CREATE INDEX IF NOT EXISTS idx_sale_item_sale_variant 
+CREATE INDEX IF NOT EXISTS idx_sale_item_sale_variant
     ON pos_schema.sale_item(sale_id, product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_royalty_option
+    ON pos_schema.sale_item(royalty_option_id)
+    WHERE royalty_option_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sale_item_royalty_rule
+    ON pos_schema.sale_item(royalty_rule_id)
+    WHERE royalty_rule_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS cash_register(
     cash_register_id uuid PRIMARY KEY default gen_random_uuid(),
@@ -81,6 +89,10 @@ CREATE TABLE IF NOT EXISTS cash_register_session(
     transfer_sales_amount NUMERIC(14, 2),
     points_sales_amount   NUMERIC(14, 2),
     total_sales_amount    NUMERIC(14, 2),
+    user_cash_amount      NUMERIC(14, 2),
+    user_debit_amount     NUMERIC(14, 2),
+    user_credit_amount    NUMERIC(14, 2),
+    user_transfer_amount  NUMERIC(14, 2),
     mismatch              BOOLEAN DEFAULT FALSE,
     mismatch_amount       NUMERIC(14, 2),
     mismatch_type         VARCHAR(10) CHECK (mismatch_type IN ('surplus', 'shortage')),
@@ -568,25 +580,48 @@ CREATE INDEX IF NOT EXISTS idx_electronic_invoice_items_variant
     ON pos_schema.electronic_sale_invoice_items(tenant_id, product_variant_id);
 
 -- ── Royalties ─────────────────────────────────────────────────────────────────
+-- A royalty_rule defines a minimum purchase amount. It is not bound to a
+-- single dimension: any of its options may target any tenant_product_group
+-- across dimensions. Selecting a group implicitly includes its descendants
+-- in the tenant_product_group hierarchy at query time (resolved via
+-- recursive CTE in the application layer).
+--
+-- A variant becomes eligible as a gift when product_variant.giftable = true
+-- AND the variant is assigned (directly or transitively) to a group selected
+-- by the option. There is no specific-product targeting table.
 
 CREATE TABLE IF NOT EXISTS pos_schema.royalty_rule (
-    royalty_rule_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id                    UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
-    tenant_product_group_type_id UUID,
-    min_amount                   NUMERIC(14,2) NOT NULL CHECK (min_amount > 0),
-    created_at                   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at                   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_royalty_rule_group_type
-        FOREIGN KEY (tenant_id, tenant_product_group_type_id)
-        REFERENCES general_schema.tenant_product_group_type(tenant_id, tenant_product_group_type_id)
-        ON DELETE CASCADE
+    royalty_rule_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
+    min_amount       NUMERIC(14,2) NOT NULL CHECK (min_amount > 0),
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_royalty_rule_tenant
     ON pos_schema.royalty_rule(tenant_id, min_amount ASC);
 
-CREATE INDEX IF NOT EXISTS idx_royalty_rule_dimension
-    ON pos_schema.royalty_rule(tenant_id, tenant_product_group_type_id, min_amount ASC);
+-- Explicit dimensions the rule applies to. Without this row in
+-- royalty_rule_dimension, the dimension is excluded from the rule
+-- regardless of any leftover options.
+CREATE TABLE IF NOT EXISTS pos_schema.royalty_rule_dimension (
+    royalty_rule_id              UUID NOT NULL
+        REFERENCES pos_schema.royalty_rule(royalty_rule_id) ON DELETE CASCADE,
+    tenant_id                    UUID NOT NULL,
+    tenant_product_group_type_id UUID NOT NULL,
+    created_at                   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (royalty_rule_id, tenant_product_group_type_id),
+    CONSTRAINT fk_royalty_rule_dim_type
+        FOREIGN KEY (tenant_id, tenant_product_group_type_id)
+        REFERENCES general_schema.tenant_product_group_type(tenant_id, tenant_product_group_type_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_royalty_rule_dimension_rule
+    ON pos_schema.royalty_rule_dimension(royalty_rule_id);
+
+CREATE INDEX IF NOT EXISTS idx_royalty_rule_dimension_type
+    ON pos_schema.royalty_rule_dimension(tenant_id, tenant_product_group_type_id);
 
 CREATE TABLE IF NOT EXISTS pos_schema.royalty_option (
     royalty_option_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -594,7 +629,6 @@ CREATE TABLE IF NOT EXISTS pos_schema.royalty_option (
     tenant_id                 UUID NOT NULL,
     tenant_product_group_id   UUID NOT NULL,
     quantity                  INT NOT NULL CHECK (quantity > 0),
-    scope                     TEXT NOT NULL DEFAULT 'any' CHECK (scope IN ('any', 'specific')),
     created_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (royalty_rule_id, tenant_product_group_id),
     CONSTRAINT fk_royalty_option_group FOREIGN KEY (tenant_id, tenant_product_group_id)
@@ -604,15 +638,34 @@ CREATE TABLE IF NOT EXISTS pos_schema.royalty_option (
 CREATE INDEX IF NOT EXISTS idx_royalty_option_rule
     ON pos_schema.royalty_option(royalty_rule_id);
 
-CREATE TABLE IF NOT EXISTS pos_schema.royalty_option_product (
-    royalty_option_product_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    royalty_option_id           UUID NOT NULL REFERENCES pos_schema.royalty_option(royalty_option_id) ON DELETE CASCADE,
-    product_variant_id          UUID NOT NULL,
-    UNIQUE (royalty_option_id, product_variant_id)
-);
+-- FK deferred: sale_item.royalty_option_id / royalty_rule_id (defined here, applied to sale_item above)
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'sale_item_royalty_option_id_fkey'
+          AND conrelid = 'pos_schema.sale_item'::regclass
+    ) THEN
+        ALTER TABLE pos_schema.sale_item
+            ADD CONSTRAINT sale_item_royalty_option_id_fkey
+            FOREIGN KEY (royalty_option_id)
+            REFERENCES pos_schema.royalty_option(royalty_option_id)
+            ON DELETE SET NULL;
+    END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_royalty_option_product_option
-    ON pos_schema.royalty_option_product(royalty_option_id);
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'sale_item_royalty_rule_id_fkey'
+          AND conrelid = 'pos_schema.sale_item'::regclass
+    ) THEN
+        ALTER TABLE pos_schema.sale_item
+            ADD CONSTRAINT sale_item_royalty_rule_id_fkey
+            FOREIGN KEY (royalty_rule_id)
+            REFERENCES pos_schema.royalty_rule(royalty_rule_id)
+            ON DELETE SET NULL;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS pos_schema.session_group_sales (
     session_group_sales_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),

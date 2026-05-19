@@ -234,7 +234,7 @@ COMMENT ON COLUMN accounting_schema.expense_category.account_code IS
 CREATE TABLE IF NOT EXISTS expense (
     expense_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES general_schema.tenant(tenant_id) ON DELETE CASCADE,
-    branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id),
+    branch_id UUID NOT NULL REFERENCES general_schema.branch(branch_id) ON DELETE CASCADE,
     category_id UUID NOT NULL REFERENCES accounting_schema.expense_category(category_id),
     description TEXT,
     amount NUMERIC(14,4) NOT NULL CHECK (amount > 0),
