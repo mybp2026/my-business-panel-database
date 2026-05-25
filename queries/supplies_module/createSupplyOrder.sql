@@ -1,1 +1,0 @@
-select supplies_module.create_supply_order($1, $2, $3);
